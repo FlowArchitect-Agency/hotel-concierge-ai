@@ -1,0 +1,15 @@
+.env
+.claude/
+*.local.json
+1-.txt
+airtable-cred*.json
+concierge_harness/reports/
+concierge_harness/state/
+concierge_harness/backups/
+concierge_harness/deleted-backups/
+concierge_harness/converge*.log
+__pycache__/
+node_modules/
+n8n-data/
+cloudflare-worker/.dev.vars*
+cloudflare-worker/.wrangler/

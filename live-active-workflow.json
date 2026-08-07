@@ -1,0 +1,1310 @@
+{
+    "updatedAt":  "2026-08-01T10:02:46.432Z",
+    "createdAt":  "2026-08-01T10:02:46.432Z",
+    "id":  "DHxKjYJGVlsBsNCP",
+    "name":  "ConciergeFlow AI — Memory Filter \u0026 Final Fix",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "concierge/inbound",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "42c3b713-38c1-483e-a8ed-8af5febb19f5",
+                      "name":  "Webhook · Inbound (4 channels)",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -2800,
+                                       112
+                                   ],
+                      "webhookId":  "f369eced-106b-48a6-8108-adb87ed276fe"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const UNKNOWN = \u0027unknown\u0027;\nfunction path(obj, ...keys) { let cur = obj; for (const k of keys) { if (cur == null) return undefined; cur = cur[k]; } return cur; }\nfunction maybeParseForm(input) { if (typeof input !== \u0027string\u0027) return input; try { if (input.includes(\u0027=\u0027) \u0026\u0026 !input.trim().startsWith(\u0027{\u0027)) { const out = {}; for (const pair of input.split(\u0027\u0026\u0027)) { const [k, v] = pair.split(\u0027=\u0027); out[decodeURIComponent(k)] = decodeURIComponent((v || \u0027\u0027).replace(/\\+/g, \u0027 \u0027)); } return out; } } catch (_) {} return input; }\nlet rawBody = $json.body || $json || {};\nif (typeof rawBody === \u0027string\u0027) { try { rawBody = JSON.parse(rawBody); } catch { rawBody = { message: rawBody }; } }\nif (typeof rawBody !== \u0027object\u0027 || rawBody === null) { rawBody = { message: String(rawBody) }; }\nconst body = maybeParseForm(rawBody);\nlet channel = UNKNOWN; let userIdRaw = \u0027\u0027; let message = \u0027\u0027; let language = null; let guestName = \u0027\u0027;\nif (path(body, \u0027object\u0027) === \u0027whatsapp_business_account\u0027 || path(body, \u0027entry\u0027, 0, \u0027changes\u0027, 0, \u0027value\u0027, \u0027messages\u0027)) { const value = path(body, \u0027entry\u0027, 0, \u0027changes\u0027, 0, \u0027value\u0027) || {}; const msg = (value.messages || [])[0] || {}; const contact = (value.contacts || [])[0] || {}; if (msg.from || contact.wa_id) { channel = \u0027whatsapp\u0027; userIdRaw = msg.from || contact.wa_id; guestName = path(contact, \u0027profile\u0027, \u0027name\u0027) || \u0027\u0027; if (msg.type === \u0027text\u0027) message = msg.text?.body || \u0027\u0027; else message = `[unsupported message type: ${msg.type}]`; } }\nif (channel === UNKNOWN \u0026\u0026 (body.MessageSid || body.From)) { channel = \u0027sms\u0027; userIdRaw = (body.From || \u0027\u0027).replace(/[^\\d]/g, \u0027\u0027); message = body.Body || \u0027\u0027; }\nif (channel === UNKNOWN \u0026\u0026 (body.message || body.sessionId)) { channel = \u0027web\u0027; userIdRaw = body.sessionId || \u0027anon\u0027; message = body.message || \u0027\u0027; }\nif (channel === UNKNOWN \u0026\u0026 body.channel) { channel = body.channel; userIdRaw = body.user_id || body.userId || body.sessionId || \u0027anon\u0027; message = body.message || body.text || \u0027\u0027; }\nif (!message \u0026\u0026 typeof body === \u0027string\u0027) { message = body; channel = \u0027web\u0027; userIdRaw = \u0027anon\u0027; }\nif (!message || !message.trim()) message = \u0027[empty or unsupported message]\u0027;\nconst prefix = { whatsapp: \u0027wa\u0027, instagram: \u0027ig\u0027, sms: \u0027sms\u0027, web: \u0027web\u0027 }[channel] || \u0027x\u0027;\nconst user_id = `${prefix}:${userIdRaw}`;\nreturn [{ json: { user_id, channel, message, language, guest_name: guestName, received_at: new Date().toISOString(), raw: body } }];\n"
+                                     },
+                      "id":  "4de5452d-ed76-4bef-8c22-9cebd88e8d11",
+                      "name":  "Normalize Incoming",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -2528,
+                                       112
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "create",
+                                         "base":  {
+                                                      "mode":  "id",
+                                                      "value":  "appWUORad3wvaHttY"
+                                                  },
+                                         "table":  "Conversations",
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "UserID":  "={{ $json.user_id }}",
+                                                                       "Channel":  "={{ $json.channel }}",
+                                                                       "Role":  "user",
+                                                                       "Message":  "={{ $json.message }}",
+                                                                       "Language":  "={{ $json.language }}",
+                                                                       "Timestamp":  "={{ $now.toISO() }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+
+                                                                    ]
+                                                     },
+                                         "options":  {
+                                                         "typecast":  true
+                                                     }
+                                     },
+                      "id":  "b4a19cb3-d534-4ad0-868e-9612c7bf3ad1",
+                      "name":  "Airtable · Log Inbound",
+                      "type":  "n8n-nodes-base.airtable",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -2528,
+                                       416
+                                   ],
+                      "credentials":  {
+                                          "airtableTokenApi":  {
+                                                                   "id":  "pY8UuHGkqPQqO0ep",
+                                                                   "name":  "Airtable Personal Access Token account 2"
+                                                               }
+                                      },
+                      "notes":  "Async log — does not block the reply path."
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const msg = (($json.message || \u0027\u0027) + \u0027 \u0027 + ($json.guest_name || \u0027\u0027)).toLowerCase();\nfunction matchesKeyword(haystack, kw) { if (/^[a-z0-9À-ÿ\u0027 -]+$/i.test(kw)) { const escaped = kw.replace(/[.*+?^${}()|[\\]\\\\]/g, \u0027\\\\$\u0026\u0027); return new RegExp(`(^|[^a-zA-Z0-9À-ÿ])${escaped}([^a-zA-Z0-9À-ÿ]|$)`, \u0027i\u0027).test(haystack); } return haystack.includes(kw); }\nconst RULES = [\n  { category: \u0027spa\u0027, keywords: [\u0027spa\u0027, \u0027massage\u0027, \u0027masaje\u0027, \u0027マッサージ\u0027, \u0027sauna\u0027, \u0027hammam\u0027, \u0027wellness\u0027, \u0027treatment\u0027, \u0027soin\u0027, \u0027facial\u0027] },\n  { category: \u0027restaurant\u0027, keywords: [\u0027restaurant\u0027, \u0027dinner\u0027, \u0027lunch\u0027, \u0027breakfast\u0027, \u0027table\u0027, \u0027reservation\u0027, \u0027resto\u0027, \u0027dîner\u0027, \u0027déjeuner\u0027, \u0027manger\u0027, \u0027food\u0027, \u0027eat\u0027, \u0027cuisine\u0027, \u0027michelin\u0027] },\n  { category: \u0027transport\u0027, keywords: [\u0027taxi\u0027, \u0027uber\u0027, \u0027chauffeur\u0027, \u0027car\u0027, \u0027driver\u0027, \u0027transfer\u0027, \u0027airport\u0027, \u0027cdg\u0027, \u0027orly\u0027, \u0027pick up\u0027, \u0027pickup\u0027, \u0027navette\u0027, \u0027shuttle\u0027] },\n  { category: \u0027tour\u0027, keywords: [\u0027tour\u0027, \u0027eiffel\u0027, \u0027louvre\u0027, \u0027museum\u0027, \u0027musée\u0027, \u0027cruise\u0027, \u0027croisière\u0027, \u0027seine\u0027, \u0027versailles\u0027, \u0027excursion\u0027, \u0027sightsee\u0027, \u0027guide\u0027] },\n  { category: \u0027experience\u0027, keywords: [\u0027private chef\u0027, \u0027chef\u0027, \u0027sommelier\u0027, \u0027wine tasting\u0027, \u0027dégustation\u0027, \u0027after-hours\u0027, \u0027shopping\u0027, \u0027personal shopper\u0027, \u0027photographer\u0027, \u0027proposal\u0027, \u0027anniversary\u0027, \u0027honeymoon\u0027] }\n];\nconst scores = {};\nfor (const r of RULES) { for (const kw of r.keywords) { if (matchesKeyword(msg, kw)) scores[r.category] = (scores[r.category] || 0) + 1; } }\nconst ranked = Object.entries(scores).sort((a, b) =\u003e b[1] - a[1]);\nconst primaryCategory = ranked.length ? ranked[0][0] : null;\nlet formula = primaryCategory ? `AND({Active}=TRUE(), {Category}=\"${primaryCategory}\")` : `{Active}=TRUE()`;\nconst requestVerbs = [\u0027book\u0027, \u0027reserve\u0027, \u0027need\u0027, \u0027want\u0027, \u0027arrange\u0027, \u0027organize\u0027, \u0027find\u0027, \u0027looking for\u0027, \u0027can you\u0027, \u0027je voudrais\u0027, \u0027réserver\u0027, \u0027je cherche\u0027];\nconst GREETING_STOPLIST = new Set([\u0027hi\u0027,\u0027hello\u0027,\u0027hey\u0027,\u0027salut\u0027,\u0027bonjour\u0027,\u0027bonsoir\u0027,\u0027hola\u0027,\u0027ok\u0027,\u0027okay\u0027,\u0027yes\u0027,\u0027no\u0027,\u0027oui\u0027,\u0027non\u0027,\u0027merci\u0027,\u0027thanks\u0027,\u0027thank you\u0027,\u0027こんにちは\u0027,\u0027はい\u0027,\u0027いいえ\u0027]);\nconst trimmedOriginal = (($json.message || \u0027\u0027).trim().toLowerCase()).replace(/[!.?¡¿]+$/g, \u0027\u0027);\nconst isTrivialGreeting = GREETING_STOPLIST.has(trimmedOriginal) || trimmedOriginal.length \u003c= 2;\nconst hasServiceIntent = !isTrivialGreeting \u0026\u0026 (!!primaryCategory || requestVerbs.some(v =\u003e msg.includes(v)));\nreturn [{ json: { category: primaryCategory, filterByFormula: formula, has_service_intent: hasServiceIntent, message: $json.message, language: $json.language, user_id: $json.user_id, channel: $json.channel } }];\n"
+                                     },
+                      "id":  "425e0886-6ee9-4103-9854-32557123979d",
+                      "name":  "Build Service Query",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -2240,
+                                       112
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "search",
+                                         "base":  {
+                                                      "mode":  "id",
+                                                      "value":  "appWUORad3wvaHttY"
+                                                  },
+                                         "table":  "Services",
+                                         "filterByFormula":  "={{ $json.filterByFormula }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "b9047123-c60b-4c36-9b09-1ff13ec67b58",
+                      "name":  "Airtable · Lookup Services",
+                      "type":  "n8n-nodes-base.airtable",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1968,
+                                       112
+                                   ],
+                      "alwaysOutputData":  true,
+                      "credentials":  {
+                                          "airtableTokenApi":  {
+                                                                   "id":  "pY8UuHGkqPQqO0ep",
+                                                                   "name":  "Airtable Personal Access Token account 2"
+                                                               }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const query = $items(\u0027Build Service Query\u0027, 0, 0)[0]?.json || $json;\nconst rows = $input.all().map(item =\u003e item.json);\nfunction extract(row) { const f = row.fields || row.json?.fields || row.json || row || {}; return { name: f.Name || f.name || \u0027\u0027, category: f.Category || f.category || \u0027\u0027, description: f.Description || f.description || \u0027\u0027, price: f.PriceEUR ?? f[\u0027Price EUR\u0027] ?? null, duration: f.DurationMins ?? f[\u0027Duration (mins)\u0027] ?? null, tags: f.Tags || f.tags || [] }; }\nconst services = (Array.isArray(rows) ? rows : (rows.items || [])).map(extract).filter(s =\u003e s.name);\nconst foundPartners = services.length \u003e 0;\nfunction fmtPrice(p) { return (p == null || p === \u0027\u0027) ? \u0027price on request\u0027 : `€${Number(p).toFixed(0)}`; }\nconst formattedForAI = foundPartners ? services.map((s, i) =\u003e `${i + 1}. ${s.name} (${s.category}) — ${fmtPrice(s.price)}\\n   ${s.description || \u0027\u0027}`.trimEnd()).join(\u0027\\n\\n\u0027) : \u0027(no matching partner services found in the hotel catalog)\u0027;\nreturn [{ json: { ...query, found_partners: foundPartners, needs_scrape: false, services_count: services.length, formatted_services_for_ai: formattedForAI } }];\n"
+                                     },
+                      "id":  "8ead419b-90ce-4553-8100-5b9d01e61a71",
+                      "name":  "Check Results",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1680,
+                                       112
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "search",
+                                         "base":  {
+                                                      "mode":  "id",
+                                                      "value":  "appWUORad3wvaHttY"
+                                                  },
+                                         "table":  "Conversations",
+                                         "filterByFormula":  "={{ \u0027{UserID}=\"\u0027 + $json.user_id + \u0027\"\u0027 }}",
+                                         "returnAll":  false,
+                                         "limit":  10,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "ad3e8b36-3f16-456a-a772-11e0cabe235c",
+                      "name":  "Airtable · Fetch History",
+                      "type":  "n8n-nodes-base.airtable",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -2240,
+                                       720
+                                   ],
+                      "alwaysOutputData":  true,
+                      "credentials":  {
+                                          "airtableTokenApi":  {
+                                                                   "id":  "pY8UuHGkqPQqO0ep",
+                                                                   "name":  "Airtable Personal Access Token account 2"
+                                                               }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "let context = {};\ntry { context = $(\u0027Check Results\u0027).first().json || {}; } catch (_) { context = {}; }\nconst userId = context.user_id || $json.user_id;\nconst records = $input.all().map(item =\u003e item.json);\nfunction extract(row) { const f = row.fields || row.json?.fields || row.json || row || {}; return { role: f.Role || f.role || \u0027user\u0027, message: f.Message || f.message || \u0027\u0027, language: f.Language || f.language || \u0027\u0027, timestamp: f.Timestamp || f[\u0027Created\u0027] || f.timestamp || \u0027\u0027 }; }\nlet msgs = (Array.isArray(records) ? records : (records.items || [])).map(extract).filter(m =\u003e m.message \u0026\u0026 m.message.trim() !== \u0027\u0027);\nmsgs = msgs.filter((m, i, arr) =\u003e !(i \u003e 0 \u0026\u0026 arr[i - 1].message === m.message \u0026\u0026 arr[i - 1].role === m.role));\n\n// FIX: Filter out truncated assistant messages from history so the AI doesn\u0027t mimic them and get stuck in a loop!\nmsgs = msgs.filter(m =\u003e {\n  if (m.role === \u0027assistant\u0027) {\n    const lowerMsg = m.message.toLowerCase();\n    if (lowerMsg.startsWith(\u0027allow me a brief moment\u0027) || lowerMsg.startsWith(\"i\u0027m still checking\") || lowerMsg.startsWith(\"i apologize for the delay\")) {\n      return false;\n    }\n  }\n  return true;\n});\n\nmsgs.reverse();\nif (msgs.length \u003e 10) msgs = msgs.slice(-10);\nfunction fmtTime(iso) { try { return new Date(iso).toLocaleTimeString(\u0027en-GB\u0027, { hour: \u00272-digit\u0027, minute: \u00272-digit\u0027, hour12: false }); } catch { return \u0027--:--\u0027; } }\nconst historyText = msgs.length === 0 ? \u0027(no prior conversation)\u0027 : msgs.map(m =\u003e `[${fmtTime(m.timestamp)}] ${m.role}: ${m.message}`.trim()).join(\u0027\\n\u0027);\nreturn [{ json: { ...context, user_id: userId, history_text: historyText, history_count: msgs.length } }];\n"
+                                     },
+                      "id":  "5e07d3b9-40dc-4e91-a96b-cf41e60328a3",
+                      "name":  "Shape History",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1968,
+                                       720
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "search",
+                                         "base":  {
+                                                      "mode":  "id",
+                                                      "value":  "appWUORad3wvaHttY"
+                                                  },
+                                         "table":  "Settings",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "5667e951-e0e1-48dd-a248-6ee2082b703e",
+                      "name":  "Airtable · Load Hotel Facts",
+                      "type":  "n8n-nodes-base.airtable",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1680,
+                                       720
+                                   ],
+                      "alwaysOutputData":  true,
+                      "credentials":  {
+                                          "airtableTokenApi":  {
+                                                                   "id":  "pY8UuHGkqPQqO0ep",
+                                                                   "name":  "Airtable Personal Access Token account 2"
+                                                               }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "let context = {};\ntry { context = $(\u0027Shape History\u0027).first().json || {}; } catch (_) { context = $json; }\nconst allInputItems = $input.all().map(item =\u003e item.json);\nconst settingRows = allInputItems.filter(item =\u003e { const fields = item.fields || item.json?.fields || item.json || item || {}; return !!fields.Key; });\nconst settingsFactText = settingRows.map(row =\u003e { const fields = row.fields || row.json?.fields || row.json || row || {}; return fields.Key ? `- ${fields.Key}: ${fields.Value ?? \u0027\u0027}` : \u0027\u0027; }).filter(Boolean).join(\u0027\\n\u0027);\ncontext.hotel_facts = settingsFactText || context.hotel_facts || \u0027(hotel facts not loaded)\u0027;\nconst hotelFacts = context.hotel_facts;\nconst services = context.formatted_services_for_ai || \u0027(no partner lookup performed)\u0027;\nconst history = context.history_text || \u0027(no history)\u0027;\nconst guestMsg = context.message || \u0027\u0027;\nconst userMessage = `=== GUEST MESSAGE ===\\n${guestMsg}\\n\\n=== CONVERSATION HISTORY ===\\n${history}\\n\\n=== PARTNER SERVICES AVAILABLE ===\\n${services}\\n\\n=== HOTEL FACTS ===\\n${hotelFacts}\\n\\n=== INSTRUCTIONS ===\\nReply in the guest\u0027s language. Use partner services first. Output JSON only.`.trim();\nreturn [{ json: { ...context, ai_user_message: userMessage, ai_temperature: 0.4, ai_model_hint: \u0027llama-3.3-70b-versatile\u0027 } }];\n"
+                                     },
+                      "id":  "116dba98-2e8d-4ff5-be8f-b94daabaaa66",
+                      "name":  "Build AI Context",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1408,
+                                       112
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const GROQ_API_KEY = \u0027<redacted-groq-key>\u0027;\nconst GROQ_MODEL = \u0027llama-3.3-70b-versatile\u0027;\nconst GROQ_URL = \u0027https://api.groq.com/openai/v1/chat/completions\u0027;\nconst SYSTEM_PROMPT = `# PERSONA \u0026 TONE\nYou are ConciergeFlow, the elite digital head concierge for a world-class 5-star luxury hotel. Your tone is impeccable, refined, warm, and exceptionally polite. You speak to guests as if they are standing in a grand, beautifully designed lobby.\n\n# FLUIDITY \u0026 FORMATTING (THE \"ANTI-REPORT\" RULE)\nThis is a live chat interface, NOT an email or a report. You must format your responses to feel fluid, human, and conversational.\n- NO WALLS OF TEXT: Never output a giant block of text.\n- CHAT BUBBLE PACING: Keep your thoughts to 1 or 2 short, elegant sentences maximum.\n- BREATHABILITY: You MUST use double line breaks (\\n\\n) between distinct thoughts or recommendations.\n\n# ZERO HALLUCINATION \u0026 STRICT ACCURACY\nYou are serving luxury guests; you cannot make mistakes or invent information.\n- STRICT MATCHING: You must ONLY suggest services, restaurants, or options that perfectly match the guest\u0027s request based ON THE PROVIDED DATA.\n- NO SILENT SUBSTITUTIONS: If a guest asks for a specific cuisine (e.g., Lebanese) and it is NOT in your provided context/database, DO NOT suggest a different cuisine (e.g., Moroccan) and pretend it is what they asked for. DO NOT suggest a spa if they ask for a restaurant.\n\n# THE \"LIVE SEARCH\" FALLBACK (CRITICAL - DO NOT SKIP)\nIf the guest asks for something NOT in the partner block (e.g., \"Irish bars\", \"Algerian restaurant\", \"water sliders\", \"escape rooms\"), you MUST output all 3 paragraphs in a SINGLE response. \n\nDO NOT output just the first paragraph and stop. \nDO NOT get stuck in a loop saying \"I\u0027m still checking\".\n\nYou must write your reply as a \"Live Search Narrative\" with this exact 3-paragraph structure:\nParagraph 1: Allow me a brief moment to consult our local guides for [Request Subject]...\\n\\n\nParagraph 2: I\u0027m actively searching and checking reviews for the best non-partner options that might fit what you\u0027re looking for.\\n\\n\nParagraph 3: I\u0027ve found some excellent ideas, but since they aren\u0027t official partners, our morning team will secure the perfect spot and confirm the reservation for you.\n\nIf the user follows up (e.g., \"so?\", \"any updates?\", \"did you find anything?\"), you MUST reply with ONLY this single sentence:\nI\u0027ve found some excellent ideas, but since they aren\u0027t official partners, our morning team will secure the perfect spot and confirm the reservation for you.\n\nDO NOT provide website links or URLs.\n\n# MEMORY \u0026 LANGUAGE RULE\nYou MUST reply in the EXACT SAME LANGUAGE as the guest\u0027s most recent message. You have perfect memory of the CONVERSATION HISTORY. If the guest tells you their name, you MUST remember it and use it.\n\n# CORE DIRECTIVE\n1. Read the guest\u0027s request.\n2. Acknowledge it elegantly.\n3. Check the provided data blocks (PARTNER SERVICES AVAILABLE).\n4. Provide the exact answer in short, beautifully spaced sentences.\n5. Output ONLY the requested JSON format.\n\n# OUTPUT RULE\nOutput JSON ONLY. No markdown fences.\nSchema:\n{\n  \"reply_text\": \"\u003cmessage to guest\u003e\",\n  \"language_detected\": \"\u003cISO-639-1\u003e\",\n  \"intent\": \"\u003cfaq|service_request|smalltalk|other\u003e\",\n  \"service_type\": \"\u003cspa|restaurant|tour|transport|experience|other|null\u003e\",\n  \"requests\": [{ \"service_name\": \"\u003cstring|null\u003e\", \"summary\": \"\u003cstring\u003e\", \"is_upsell\": \u003cboolean\u003e }],\n  \"requires_human\": \u003cboolean\u003e\n}`;\nconst context = $json;\nconst requestBody = {\n  model: GROQ_MODEL,\n  messages: [ { role: \u0027system\u0027, content: SYSTEM_PROMPT }, { role: \u0027user\u0027, content: context.ai_user_message || \u0027\u0027 } ],\n  temperature: 0.4, max_tokens: 1500, response_format: { type: \u0027json_object\u0027 }\n};\nlet aiContent = \u0027\u0027;\ntry {\n  const response = await this.helpers.httpRequest({ method: \u0027POST\u0027, url: GROQ_URL, headers: { \u0027Authorization\u0027: \u0027Bearer \u0027 + GROQ_API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 }, body: JSON.stringify(requestBody), json: true, timeout: 15000 });\n  aiContent = response.choices?.[0]?.message?.content || \u0027\u0027;\n} catch (e) {\n  aiContent = JSON.stringify({ reply_text: \u0027I apologize, I am having a brief technical issue. Please try again.\u0027, language_detected: \u0027en\u0027, intent: \u0027other\u0027, service_type: null, requests: [], requires_human: true });\n}\nreturn [{ json: { ...context, message: { content: aiContent }, ai_raw: aiContent } }];\n"
+                                     },
+                      "id":  "9c9bee1b-ce72-4c3c-8a57-017786064dd0",
+                      "name":  "Groq · Ultra-Fast AI (70B)",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -816,
+                                       256
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const raw = ($json.message?.content) || $json.ai_raw || \u0027\u0027;\nfunction extractJSON(text) {\n  if (!text) return null; const t = String(text).trim();\n  if (t.startsWith(\u0027{\u0027) \u0026\u0026 t.endsWith(\u0027}\u0027)) { try { return JSON.parse(t); } catch {} }\n  const fenced = t.match(/```(?:json)?\\s*([\\s\\S]*?)```/i); if (fenced) { try { return JSON.parse(fenced[1].trim()); } catch {} }\n  const start = t.indexOf(\u0027{\u0027); const end = t.lastIndexOf(\u0027}\u0027);\n  if (start !== -1 \u0026\u0026 end \u003e start) { try { return JSON.parse(t.slice(start, end + 1)); } catch {} }\n  return null;\n}\nconst parsed = extractJSON(raw);\nfunction str(x, d=\u0027\u0027) { return typeof x === \u0027string\u0027 ? x : (x == null ? d : String(x)); }\nfunction arr(x) { return Array.isArray(x) ? x : []; }\nfunction bool(x, d=false) { return typeof x === \u0027boolean\u0027 ? x : d; }\nlet result;\nif (parsed) {\n  result = {\n    reply_text: str(parsed.reply_text || parsed.reply),\n    language_detected: str(parsed.language_detected || \u0027unknown\u0027).slice(0, 5).toLowerCase(),\n    intent: parsed.intent || \u0027other\u0027,\n    service_type: parsed.service_type || null,\n    requests: arr(parsed.requests).map(r =\u003e ({ service_name: r.service_name || null, source: r.source || \u0027partner\u0027, summary: str(r.summary), est_value_eur: r.est_value_eur || null, is_upsell: bool(r.is_upsell) })),\n    requires_human: bool(parsed.requires_human)\n  };\n} else {\n  result = { reply_text: str(raw) || \u0027My apologies, could you rephrase?\u0027, language_detected: \u0027unknown\u0027, intent: \u0027other\u0027, service_type: null, requests: [], requires_human: false };\n}\nreturn [{ json: { ...$json, ...result, ai_raw: raw, has_requests: result.requests.length \u003e 0 } }];\n"
+                                     },
+                      "id":  "b0d8163b-c730-4e60-a8ab-2fe24d3c5932",
+                      "name":  "Parse AI Output",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -560,
+                                       112
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "={{ { reply: $json.reply_text, language: $json.language_detected, intent: $json.intent } }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "20bc4799-6442-4e93-adea-cf71b7f89a4b",
+                      "name":  "Respond · Web Widget (INSTANT)",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -272,
+                                       112
+                                   ],
+                      "notes":  "Fires immediately so the user sees the reply in \u003c3 seconds."
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "create",
+                                         "base":  {
+                                                      "mode":  "id",
+                                                      "value":  "appWUORad3wvaHttY"
+                                                  },
+                                         "table":  "Conversations",
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "UserID":  "={{ $json.user_id }}",
+                                                                       "Channel":  "={{ $json.channel }}",
+                                                                       "Role":  "assistant",
+                                                                       "Message":  "={{ $json.reply_text }}",
+                                                                       "Language":  "={{ $json.language_detected }}",
+                                                                       "Timestamp":  "={{ $now.toISO() }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+
+                                                                    ]
+                                                     },
+                                         "options":  {
+                                                         "typecast":  true
+                                                     }
+                                     },
+                      "id":  "73382a5c-58eb-4068-a7c7-02636fd92528",
+                      "name":  "Airtable · Log AI Reply (Background)",
+                      "type":  "n8n-nodes-base.airtable",
+                      "typeVersion":  2,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "credentials":  {
+                                          "airtableTokenApi":  {
+                                                                   "id":  "pY8UuHGkqPQqO0ep",
+                                                                   "name":  "Airtable Personal Access Token account 2"
+                                                               }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "create",
+                                         "base":  {
+                                                      "mode":  "id",
+                                                      "value":  "appWUORad3wvaHttY"
+                                                  },
+                                         "table":  "Requests",
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "UserID":  "={{ $json.user_id }}",
+                                                                       "Channel":  "={{ $json.channel }}",
+                                                                       "ServiceType":  "={{ $json.service_type }}",
+                                                                       "RequestSummary":  "={{ $json.requests[0].summary }}",
+                                                                       "Source":  "={{ $json.requests[0].source }}",
+                                                                       "Status":  "new",
+                                                                       "EstValueEUR":  "={{ $json.requests[0].est_value_eur }}",
+                                                                       "IsUpsell":  "={{ $json.requests[0].is_upsell }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+
+                                                                    ]
+                                                     },
+                                         "options":  {
+                                                         "typecast":  true
+                                                     }
+                                     },
+                      "id":  "18fa6256-d623-499e-9cf3-7a5fd6bbc94b",
+                      "name":  "Airtable · Create Requests (Background)",
+                      "type":  "n8n-nodes-base.airtable",
+                      "typeVersion":  2,
+                      "position":  [
+                                       0,
+                                       224
+                                   ],
+                      "credentials":  {
+                                          "airtableTokenApi":  {
+                                                                   "id":  "pY8UuHGkqPQqO0ep",
+                                                                   "name":  "Airtable Personal Access Token account 2"
+                                                               }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "cron"
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "id":  "758dd682-e140-49a8-9890-e002d0f0feab",
+                      "name":  "Schedule · 8 AM Paris",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -2800,
+                                       1312
+                                   ],
+                      "notes":  "Fires daily at 08:00. Set workflow timezone to Europe/Paris."
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "search",
+                                         "base":  {
+                                                      "mode":  "id",
+                                                      "value":  "appWUORad3wvaHttY"
+                                                  },
+                                         "table":  "Requests",
+                                         "filterByFormula":  "=AND({Status}=\"new\", {HandoverAt}=BLANK())",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "bf6d17ab-9b36-42c2-978a-bbd323129336",
+                      "name":  "Airtable · Overnight Requests",
+                      "type":  "n8n-nodes-base.airtable",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -2528,
+                                       1312
+                                   ],
+                      "alwaysOutputData":  true,
+                      "credentials":  {
+                                          "airtableTokenApi":  {
+                                                                   "id":  "pY8UuHGkqPQqO0ep",
+                                                                   "name":  "Airtable Personal Access Token account 2"
+                                                               }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const hotelName = \u0027Hôtel Lumière Paris\u0027;\nconst rows = $input.all().map(item =\u003e item.json);\nfunction extract(row) { const f = row.fields || row.json?.fields || row.json || row || {}; return { id: row.id || f.id || null, guest: f.GuestName || \u0027(unknown guest)\u0027, channel: f.Channel || \u0027?\u0027, serviceType: f.ServiceType || \u0027other\u0027, summary: f.RequestSummary || \u0027\u0027, estValue: Number(f.EstValueEUR || 0), isUpsell: !!f.IsUpsell, createdAt: f.CreatedAt || f[\u0027Created\u0027] || \u0027\u0027 }; }\nconst items = (Array.isArray(rows) ? rows : (rows.items || [])).map(extract);\nconst totalValue = items.reduce((s, r) =\u003e s + (r.estValue || 0), 0);\nconst upsellCount = items.filter(r =\u003e r.isUpsell).length;\nconst CH = { whatsapp: \u0027WhatsApp\u0027, instagram: \u0027Instagram\u0027, sms: \u0027SMS\u0027, web: \u0027Website\u0027 };\nfunction fmtShortTime(iso) { try { return new Date(iso).toLocaleTimeString(\u0027fr-FR\u0027, { hour: \u00272-digit\u0027, minute: \u00272-digit\u0027 }); } catch { return \u0027--:--\u0027; } }\nlet wa = `☀️ *Bonjour ${hotelName} — Morning Handoff*\\n\\n`;\nwa += `${items.length} new overnight request(s)`;\nif (upsellCount) wa += ` · ${upsellCount} AI upsell(s)`;\nwa += ` · *€${totalValue.toFixed(0)} potential revenue*\\n\\n`;\nif (items.length === 0) { wa += \u0027✅ Nothing pending. Have a beautiful day.\u0027; } else { items.slice(0, 12).forEach((r, i) =\u003e { const tag = r.isUpsell ? \u0027 🎁 upsell\u0027 : \u0027\u0027; wa += `${i + 1}. *${r.serviceType.toUpperCase()}* — ${r.guest}${tag}\\n   ${r.summary}\\n   €${r.estValue || 0} · ${CH[r.channel] || r.channel} · ${fmtShortTime(r.createdAt)}\\n\\n`; }); wa += `Full details: check your inbox.`; }\n\nconst ROWS_HTML = items.length === 0 ? `\u003ctr\u003e\u003ctd colspan=\"5\" style=\"padding:32px;text-align:center;color:#888;\"\u003eNothing pending overnight. Quiet night — enjoy your coffee. ☕\u003c/td\u003e\u003c/tr\u003e` : items.map((r, i) =\u003e { const val = r.estValue ? `€${r.estValue.toFixed(0)}` : \u0027\u003cspan style=\"color:#bbb\"\u003e—\u003c/span\u003e\u0027; const upsell = r.isUpsell ? `\u003cspan style=\"background:#C5A059;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;\"\u003eUPSELL\u003c/span\u003e` : \u0027\u0027; return `\u003ctr style=\"border-bottom:1px solid #eee;\"\u003e\u003ctd style=\"padding:12px 8px;font-weight:600;color:#0A192F;\"\u003e${i + 1}\u003c/td\u003e\u003ctd style=\"padding:12px 8px;\"\u003e\u003cdiv style=\"font-weight:600;color:#0A192F;\"\u003e${r.summary}\u003c/div\u003e\u003cdiv style=\"font-size:12px;color:#888;margin-top:2px;\"\u003e${r.guest} · ${CH[r.channel] || r.channel} · ${fmtShortTime(r.createdAt)}\u003c/div\u003e\u003c/td\u003e\u003ctd style=\"padding:12px 8px;text-transform:uppercase;font-size:11px;color:#C5A059;font-weight:600;\"\u003e${r.serviceType}\u003c/td\u003e\u003ctd style=\"padding:12px 8px;text-align:right;font-weight:600;color:#0A192F;\"\u003e${val}\u003c/td\u003e\u003ctd style=\"padding:12px 8px;text-align:center;\"\u003e${upsell}\u003c/td\u003e\u003c/tr\u003e`; }).join(\u0027\u0027);\nconst emailHtml = `\u003c!DOCTYPE html\u003e\u003chtml\u003e\u003cbody style=\"margin:0;padding:0;background:#F5F5F5;font-family:\u0027Inter\u0027,\u0027Helvetica Neue\u0027,Arial,sans-serif;\"\u003e\u003ctable width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F5F5F5;padding:24px;\"\u003e\u003ctr\u003e\u003ctd align=\"center\"\u003e\u003ctable width=\"640\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(10,25,47,0.08);\"\u003e\u003ctr\u003e\u003ctd style=\"background:#0A192F;padding:32px 40px;\"\u003e\u003cdiv style=\"font-family:Georgia,\u0027Playfair Display\u0027,serif;font-size:24px;color:#fff;\"\u003e${hotelName} \u003cspan style=\"color:#C5A059;font-style:italic;\"\u003e· ConciergeFlow\u003c/span\u003e\u003c/div\u003e\u003cdiv style=\"color:rgba(255,255,255,0.7);font-size:13px;margin-top:6px;\"\u003eOvernight handoff · ${new Date().toLocaleDateString(\u0027en-GB\u0027, { weekday:\u0027long\u0027, day:\u0027numeric\u0027, month:\u0027long\u0027 })}\u003c/div\u003e\u003c/td\u003e\u003c/tr\u003e\u003ctr\u003e\u003ctd style=\"padding:24px 40px 0;\"\u003e\u003ctable width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"\u003e\u003ctr\u003e\u003ctd style=\"width:33%;text-align:center;padding:16px;background:#FAF8F2;border-radius:8px;\"\u003e\u003cdiv style=\"font-family:Georgia,serif;font-size:28px;color:#C5A059;font-weight:700;\"\u003e${items.length}\u003c/div\u003e\u003cdiv style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\"\u003eRequests\u003c/div\u003e\u003c/td\u003e\u003ctd style=\"width:33%;text-align:center;padding:16px;background:#FAF8F2;border-radius:8px;\"\u003e\u003cdiv style=\"font-family:Georgia,serif;font-size:28px;color:#C5A059;font-weight:700;\"\u003e€${totalValue.toFixed(0)}\u003c/div\u003e\u003cdiv style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\"\u003ePotential Revenue\u003c/div\u003e\u003c/td\u003e\u003ctd style=\"width:33%;text-align:center;padding:16px;background:#FAF8F2;border-radius:8px;\"\u003e\u003cdiv style=\"font-family:Georgia,serif;font-size:28px;color:#C5A059;font-weight:700;\"\u003e${upsellCount}\u003c/div\u003e\u003cdiv style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\"\u003eAI Upsells\u003c/div\u003e\u003c/td\u003e\u003c/tr\u003e\u003c/table\u003e\u003c/td\u003e\u003c/tr\u003e\u003ctr\u003e\u003ctd style=\"padding:24px 40px 8px;\"\u003e\u003ctable width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"\u003e\u003cthead\u003e\u003ctr style=\"background:#0A192F;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:1px;\"\u003e\u003cth style=\"padding:10px 8px;text-align:left;\"\u003e#\u003c/th\u003e\u003cth style=\"padding:10px 8px;text-align:left;\"\u003eRequest\u003c/th\u003e\u003cth style=\"padding:10px 8px;text-align:left;\"\u003eType\u003c/th\u003e\u003cth style=\"padding:10px 8px;text-align:right;\"\u003eValue\u003c/th\u003e\u003cth style=\"padding:10px 8px;\"\u003eTag\u003c/th\u003e\u003c/tr\u003e\u003c/thead\u003e\u003ctbody\u003e${ROWS_HTML}\u003c/tbody\u003e\u003c/table\u003e\u003c/td\u003e\u003c/tr\u003e\u003ctr\u003e\u003ctd style=\"padding:24px 40px 32px;\"\u003e\u003cdiv style=\"background:#F5F8FF;border-left:3px solid #C5A059;padding:14px 16px;border-radius:4px;font-size:13px;color:#0A192F;\"\u003e\u003cstrong\u003eAction:\u003c/strong\u003e Execute the bookings above, then mark each as \u003cem\u003econfirmed\u003c/em\u003e or \u003cem\u003ecancelled\u003c/em\u003e in Airtable.\u003c/div\u003e\u003c/td\u003e\u003c/tr\u003e\u003c/table\u003e\u003c/td\u003e\u003c/tr\u003e\u003c/table\u003e\u003c/body\u003e\u003c/html\u003e`;\nreturn [{ json: { email_subject: `☀️ ${hotelName} — ${items.length} overnight requests · €${totalValue.toFixed(0)} potential`, email_html: emailHtml, whatsapp_text: wa, row_ids: items.map(r =\u003e r.id).filter(Boolean) } }];\n"
+                                     },
+                      "id":  "b61f3d5e-c13e-4b90-8d7d-b85b07c6133a",
+                      "name":  "Build Morning Summary",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -2240,
+                                       1312
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "fromEmail":  "concierge@conciergeflow.ai",
+                                         "toEmail":  "manager@yourhotel.com",
+                                         "subject":  "={{ $json.email_subject }}",
+                                         "emailFormat":  "html",
+                                         "html":  "={{ $json.email_html }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "234ba76e-6364-44ca-a77e-5fad8e5afa21",
+                      "name":  "Send Email · Manager",
+                      "type":  "n8n-nodes-base.emailSend",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1968,
+                                       1312
+                                   ],
+                      "webhookId":  "5bb92eb2-9cd0-4195-95db-eaa822eb691a",
+                      "credentials":  {
+                                          "smtp":  {
+                                                       "id":  "pIrxZ8A4eMZ16CuT",
+                                                       "name":  "SMTP account"
+                                                   }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Webhook · Inbound (4 channels)":  {
+                                                               "main":  [
+                                                                            [
+                                                                                {
+                                                                                    "node":  "Normalize Incoming",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ]
+                                                                        ]
+                                                           },
+                        "Normalize Incoming":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Airtable · Log Inbound",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    },
+                                                                    {
+                                                                        "node":  "Build Service Query",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Build Service Query":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Airtable · Lookup Services",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Airtable · Lookup Services":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Check Results",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Check Results":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Airtable · Fetch History",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Airtable · Fetch History":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "Shape History",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                        "Shape History":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Airtable · Load Hotel Facts",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Airtable · Load Hotel Facts":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Build AI Context",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                        "Build AI Context":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Groq · Ultra-Fast AI (70B)",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Groq · Ultra-Fast AI (70B)":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Parse AI Output",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Parse AI Output":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Respond · Web Widget (INSTANT)",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 },
+                                                                 {
+                                                                     "node":  "Airtable · Log AI Reply (Background)",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 },
+                                                                 {
+                                                                     "node":  "Airtable · Create Requests (Background)",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Schedule · 8 AM Paris":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Airtable · Overnight Requests",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Airtable · Overnight Requests":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Build Morning Summary",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "Build Morning Summary":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Send Email · Manager",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate",
+                     "availableInMCP":  false
+                 },
+    "staticData":  {
+                       "node:Schedule · 8 AM Paris":  {
+                                                          "recurrenceRules":  [
+                                                                                  null
+                                                                              ],
+                                                          "recurrenceRuleSignatures":  [
+                                                                                           null
+                                                                                       ]
+                                                      }
+                   },
+    "meta":  null,
+    "nodeGroups":  [
+
+                   ],
+    "pinData":  {
+
+                },
+    "versionId":  "4ea088c4-a03e-4dac-88ff-f8a063558741",
+    "activeVersionId":  "4ea088c4-a03e-4dac-88ff-f8a063558741",
+    "versionCounter":  1,
+    "triggerCount":  2,
+    "sourceWorkflowId":  null,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-08-01T10:02:46.437Z",
+                       "createdAt":  "2026-08-01T10:02:46.437Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "DHxKjYJGVlsBsNCP",
+                       "projectId":  "danME6ViC0oIyhtc",
+                       "project":  {
+                                       "updatedAt":  "2026-07-09T16:36:13.742Z",
+                                       "createdAt":  "2026-07-09T16:35:23.376Z",
+                                       "id":  "danME6ViC0oIyhtc",
+                                       "name":  "mehdi mechkak \u003cjacksmish868@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "customTelemetryTags":  [
+
+                                                               ],
+                                       "creatorId":  "010b92e0-031c-4c51-9673-934c0691aea1"
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-08-01T10:02:50.000Z",
+                          "createdAt":  "2026-08-01T10:02:46.441Z",
+                          "versionId":  "4ea088c4-a03e-4dac-88ff-f8a063558741",
+                          "workflowId":  "DHxKjYJGVlsBsNCP",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "concierge/inbound",
+                                                               "responseMode":  "responseNode",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "42c3b713-38c1-483e-a8ed-8af5febb19f5",
+                                            "name":  "Webhook · Inbound (4 channels)",
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -2800,
+                                                             112
+                                                         ],
+                                            "webhookId":  "f369eced-106b-48a6-8108-adb87ed276fe"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const UNKNOWN = \u0027unknown\u0027;\nfunction path(obj, ...keys) { let cur = obj; for (const k of keys) { if (cur == null) return undefined; cur = cur[k]; } return cur; }\nfunction maybeParseForm(input) { if (typeof input !== \u0027string\u0027) return input; try { if (input.includes(\u0027=\u0027) \u0026\u0026 !input.trim().startsWith(\u0027{\u0027)) { const out = {}; for (const pair of input.split(\u0027\u0026\u0027)) { const [k, v] = pair.split(\u0027=\u0027); out[decodeURIComponent(k)] = decodeURIComponent((v || \u0027\u0027).replace(/\\+/g, \u0027 \u0027)); } return out; } } catch (_) {} return input; }\nlet rawBody = $json.body || $json || {};\nif (typeof rawBody === \u0027string\u0027) { try { rawBody = JSON.parse(rawBody); } catch { rawBody = { message: rawBody }; } }\nif (typeof rawBody !== \u0027object\u0027 || rawBody === null) { rawBody = { message: String(rawBody) }; }\nconst body = maybeParseForm(rawBody);\nlet channel = UNKNOWN; let userIdRaw = \u0027\u0027; let message = \u0027\u0027; let language = null; let guestName = \u0027\u0027;\nif (path(body, \u0027object\u0027) === \u0027whatsapp_business_account\u0027 || path(body, \u0027entry\u0027, 0, \u0027changes\u0027, 0, \u0027value\u0027, \u0027messages\u0027)) { const value = path(body, \u0027entry\u0027, 0, \u0027changes\u0027, 0, \u0027value\u0027) || {}; const msg = (value.messages || [])[0] || {}; const contact = (value.contacts || [])[0] || {}; if (msg.from || contact.wa_id) { channel = \u0027whatsapp\u0027; userIdRaw = msg.from || contact.wa_id; guestName = path(contact, \u0027profile\u0027, \u0027name\u0027) || \u0027\u0027; if (msg.type === \u0027text\u0027) message = msg.text?.body || \u0027\u0027; else message = `[unsupported message type: ${msg.type}]`; } }\nif (channel === UNKNOWN \u0026\u0026 (body.MessageSid || body.From)) { channel = \u0027sms\u0027; userIdRaw = (body.From || \u0027\u0027).replace(/[^\\d]/g, \u0027\u0027); message = body.Body || \u0027\u0027; }\nif (channel === UNKNOWN \u0026\u0026 (body.message || body.sessionId)) { channel = \u0027web\u0027; userIdRaw = body.sessionId || \u0027anon\u0027; message = body.message || \u0027\u0027; }\nif (channel === UNKNOWN \u0026\u0026 body.channel) { channel = body.channel; userIdRaw = body.user_id || body.userId || body.sessionId || \u0027anon\u0027; message = body.message || body.text || \u0027\u0027; }\nif (!message \u0026\u0026 typeof body === \u0027string\u0027) { message = body; channel = \u0027web\u0027; userIdRaw = \u0027anon\u0027; }\nif (!message || !message.trim()) message = \u0027[empty or unsupported message]\u0027;\nconst prefix = { whatsapp: \u0027wa\u0027, instagram: \u0027ig\u0027, sms: \u0027sms\u0027, web: \u0027web\u0027 }[channel] || \u0027x\u0027;\nconst user_id = `${prefix}:${userIdRaw}`;\nreturn [{ json: { user_id, channel, message, language, guest_name: guestName, received_at: new Date().toISOString(), raw: body } }];\n"
+                                                           },
+                                            "id":  "4de5452d-ed76-4bef-8c22-9cebd88e8d11",
+                                            "name":  "Normalize Incoming",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -2528,
+                                                             112
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "create",
+                                                               "base":  {
+                                                                            "mode":  "id",
+                                                                            "value":  "appWUORad3wvaHttY"
+                                                                        },
+                                                               "table":  "Conversations",
+                                                               "columns":  {
+                                                                               "mappingMode":  "defineBelow",
+                                                                               "value":  {
+                                                                                             "UserID":  "={{ $json.user_id }}",
+                                                                                             "Channel":  "={{ $json.channel }}",
+                                                                                             "Role":  "user",
+                                                                                             "Message":  "={{ $json.message }}",
+                                                                                             "Language":  "={{ $json.language }}",
+                                                                                             "Timestamp":  "={{ $now.toISO() }}"
+                                                                                         },
+                                                                               "matchingColumns":  [
+
+                                                                                                   ],
+                                                                               "schema":  [
+
+                                                                                          ]
+                                                                           },
+                                                               "options":  {
+                                                                               "typecast":  true
+                                                                           }
+                                                           },
+                                            "id":  "b4a19cb3-d534-4ad0-868e-9612c7bf3ad1",
+                                            "name":  "Airtable · Log Inbound",
+                                            "type":  "n8n-nodes-base.airtable",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -2528,
+                                                             416
+                                                         ],
+                                            "credentials":  {
+                                                                "airtableTokenApi":  {
+                                                                                         "id":  "pY8UuHGkqPQqO0ep",
+                                                                                         "name":  "Airtable Personal Access Token account 2"
+                                                                                     }
+                                                            },
+                                            "notes":  "Async log — does not block the reply path."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const msg = (($json.message || \u0027\u0027) + \u0027 \u0027 + ($json.guest_name || \u0027\u0027)).toLowerCase();\nfunction matchesKeyword(haystack, kw) { if (/^[a-z0-9À-ÿ\u0027 -]+$/i.test(kw)) { const escaped = kw.replace(/[.*+?^${}()|[\\]\\\\]/g, \u0027\\\\$\u0026\u0027); return new RegExp(`(^|[^a-zA-Z0-9À-ÿ])${escaped}([^a-zA-Z0-9À-ÿ]|$)`, \u0027i\u0027).test(haystack); } return haystack.includes(kw); }\nconst RULES = [\n  { category: \u0027spa\u0027, keywords: [\u0027spa\u0027, \u0027massage\u0027, \u0027masaje\u0027, \u0027マッサージ\u0027, \u0027sauna\u0027, \u0027hammam\u0027, \u0027wellness\u0027, \u0027treatment\u0027, \u0027soin\u0027, \u0027facial\u0027] },\n  { category: \u0027restaurant\u0027, keywords: [\u0027restaurant\u0027, \u0027dinner\u0027, \u0027lunch\u0027, \u0027breakfast\u0027, \u0027table\u0027, \u0027reservation\u0027, \u0027resto\u0027, \u0027dîner\u0027, \u0027déjeuner\u0027, \u0027manger\u0027, \u0027food\u0027, \u0027eat\u0027, \u0027cuisine\u0027, \u0027michelin\u0027] },\n  { category: \u0027transport\u0027, keywords: [\u0027taxi\u0027, \u0027uber\u0027, \u0027chauffeur\u0027, \u0027car\u0027, \u0027driver\u0027, \u0027transfer\u0027, \u0027airport\u0027, \u0027cdg\u0027, \u0027orly\u0027, \u0027pick up\u0027, \u0027pickup\u0027, \u0027navette\u0027, \u0027shuttle\u0027] },\n  { category: \u0027tour\u0027, keywords: [\u0027tour\u0027, \u0027eiffel\u0027, \u0027louvre\u0027, \u0027museum\u0027, \u0027musée\u0027, \u0027cruise\u0027, \u0027croisière\u0027, \u0027seine\u0027, \u0027versailles\u0027, \u0027excursion\u0027, \u0027sightsee\u0027, \u0027guide\u0027] },\n  { category: \u0027experience\u0027, keywords: [\u0027private chef\u0027, \u0027chef\u0027, \u0027sommelier\u0027, \u0027wine tasting\u0027, \u0027dégustation\u0027, \u0027after-hours\u0027, \u0027shopping\u0027, \u0027personal shopper\u0027, \u0027photographer\u0027, \u0027proposal\u0027, \u0027anniversary\u0027, \u0027honeymoon\u0027] }\n];\nconst scores = {};\nfor (const r of RULES) { for (const kw of r.keywords) { if (matchesKeyword(msg, kw)) scores[r.category] = (scores[r.category] || 0) + 1; } }\nconst ranked = Object.entries(scores).sort((a, b) =\u003e b[1] - a[1]);\nconst primaryCategory = ranked.length ? ranked[0][0] : null;\nlet formula = primaryCategory ? `AND({Active}=TRUE(), {Category}=\"${primaryCategory}\")` : `{Active}=TRUE()`;\nconst requestVerbs = [\u0027book\u0027, \u0027reserve\u0027, \u0027need\u0027, \u0027want\u0027, \u0027arrange\u0027, \u0027organize\u0027, \u0027find\u0027, \u0027looking for\u0027, \u0027can you\u0027, \u0027je voudrais\u0027, \u0027réserver\u0027, \u0027je cherche\u0027];\nconst GREETING_STOPLIST = new Set([\u0027hi\u0027,\u0027hello\u0027,\u0027hey\u0027,\u0027salut\u0027,\u0027bonjour\u0027,\u0027bonsoir\u0027,\u0027hola\u0027,\u0027ok\u0027,\u0027okay\u0027,\u0027yes\u0027,\u0027no\u0027,\u0027oui\u0027,\u0027non\u0027,\u0027merci\u0027,\u0027thanks\u0027,\u0027thank you\u0027,\u0027こんにちは\u0027,\u0027はい\u0027,\u0027いいえ\u0027]);\nconst trimmedOriginal = (($json.message || \u0027\u0027).trim().toLowerCase()).replace(/[!.?¡¿]+$/g, \u0027\u0027);\nconst isTrivialGreeting = GREETING_STOPLIST.has(trimmedOriginal) || trimmedOriginal.length \u003c= 2;\nconst hasServiceIntent = !isTrivialGreeting \u0026\u0026 (!!primaryCategory || requestVerbs.some(v =\u003e msg.includes(v)));\nreturn [{ json: { category: primaryCategory, filterByFormula: formula, has_service_intent: hasServiceIntent, message: $json.message, language: $json.language, user_id: $json.user_id, channel: $json.channel } }];\n"
+                                                           },
+                                            "id":  "425e0886-6ee9-4103-9854-32557123979d",
+                                            "name":  "Build Service Query",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -2240,
+                                                             112
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "search",
+                                                               "base":  {
+                                                                            "mode":  "id",
+                                                                            "value":  "appWUORad3wvaHttY"
+                                                                        },
+                                                               "table":  "Services",
+                                                               "filterByFormula":  "={{ $json.filterByFormula }}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "b9047123-c60b-4c36-9b09-1ff13ec67b58",
+                                            "name":  "Airtable · Lookup Services",
+                                            "type":  "n8n-nodes-base.airtable",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1968,
+                                                             112
+                                                         ],
+                                            "alwaysOutputData":  true,
+                                            "credentials":  {
+                                                                "airtableTokenApi":  {
+                                                                                         "id":  "pY8UuHGkqPQqO0ep",
+                                                                                         "name":  "Airtable Personal Access Token account 2"
+                                                                                     }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const query = $items(\u0027Build Service Query\u0027, 0, 0)[0]?.json || $json;\nconst rows = $input.all().map(item =\u003e item.json);\nfunction extract(row) { const f = row.fields || row.json?.fields || row.json || row || {}; return { name: f.Name || f.name || \u0027\u0027, category: f.Category || f.category || \u0027\u0027, description: f.Description || f.description || \u0027\u0027, price: f.PriceEUR ?? f[\u0027Price EUR\u0027] ?? null, duration: f.DurationMins ?? f[\u0027Duration (mins)\u0027] ?? null, tags: f.Tags || f.tags || [] }; }\nconst services = (Array.isArray(rows) ? rows : (rows.items || [])).map(extract).filter(s =\u003e s.name);\nconst foundPartners = services.length \u003e 0;\nfunction fmtPrice(p) { return (p == null || p === \u0027\u0027) ? \u0027price on request\u0027 : `€${Number(p).toFixed(0)}`; }\nconst formattedForAI = foundPartners ? services.map((s, i) =\u003e `${i + 1}. ${s.name} (${s.category}) — ${fmtPrice(s.price)}\\n   ${s.description || \u0027\u0027}`.trimEnd()).join(\u0027\\n\\n\u0027) : \u0027(no matching partner services found in the hotel catalog)\u0027;\nreturn [{ json: { ...query, found_partners: foundPartners, needs_scrape: false, services_count: services.length, formatted_services_for_ai: formattedForAI } }];\n"
+                                                           },
+                                            "id":  "8ead419b-90ce-4553-8100-5b9d01e61a71",
+                                            "name":  "Check Results",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1680,
+                                                             112
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "search",
+                                                               "base":  {
+                                                                            "mode":  "id",
+                                                                            "value":  "appWUORad3wvaHttY"
+                                                                        },
+                                                               "table":  "Conversations",
+                                                               "filterByFormula":  "={{ \u0027{UserID}=\"\u0027 + $json.user_id + \u0027\"\u0027 }}",
+                                                               "returnAll":  false,
+                                                               "limit":  10,
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "ad3e8b36-3f16-456a-a772-11e0cabe235c",
+                                            "name":  "Airtable · Fetch History",
+                                            "type":  "n8n-nodes-base.airtable",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -2240,
+                                                             720
+                                                         ],
+                                            "alwaysOutputData":  true,
+                                            "credentials":  {
+                                                                "airtableTokenApi":  {
+                                                                                         "id":  "pY8UuHGkqPQqO0ep",
+                                                                                         "name":  "Airtable Personal Access Token account 2"
+                                                                                     }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "let context = {};\ntry { context = $(\u0027Check Results\u0027).first().json || {}; } catch (_) { context = {}; }\nconst userId = context.user_id || $json.user_id;\nconst records = $input.all().map(item =\u003e item.json);\nfunction extract(row) { const f = row.fields || row.json?.fields || row.json || row || {}; return { role: f.Role || f.role || \u0027user\u0027, message: f.Message || f.message || \u0027\u0027, language: f.Language || f.language || \u0027\u0027, timestamp: f.Timestamp || f[\u0027Created\u0027] || f.timestamp || \u0027\u0027 }; }\nlet msgs = (Array.isArray(records) ? records : (records.items || [])).map(extract).filter(m =\u003e m.message \u0026\u0026 m.message.trim() !== \u0027\u0027);\nmsgs = msgs.filter((m, i, arr) =\u003e !(i \u003e 0 \u0026\u0026 arr[i - 1].message === m.message \u0026\u0026 arr[i - 1].role === m.role));\n\n// FIX: Filter out truncated assistant messages from history so the AI doesn\u0027t mimic them and get stuck in a loop!\nmsgs = msgs.filter(m =\u003e {\n  if (m.role === \u0027assistant\u0027) {\n    const lowerMsg = m.message.toLowerCase();\n    if (lowerMsg.startsWith(\u0027allow me a brief moment\u0027) || lowerMsg.startsWith(\"i\u0027m still checking\") || lowerMsg.startsWith(\"i apologize for the delay\")) {\n      return false;\n    }\n  }\n  return true;\n});\n\nmsgs.reverse();\nif (msgs.length \u003e 10) msgs = msgs.slice(-10);\nfunction fmtTime(iso) { try { return new Date(iso).toLocaleTimeString(\u0027en-GB\u0027, { hour: \u00272-digit\u0027, minute: \u00272-digit\u0027, hour12: false }); } catch { return \u0027--:--\u0027; } }\nconst historyText = msgs.length === 0 ? \u0027(no prior conversation)\u0027 : msgs.map(m =\u003e `[${fmtTime(m.timestamp)}] ${m.role}: ${m.message}`.trim()).join(\u0027\\n\u0027);\nreturn [{ json: { ...context, user_id: userId, history_text: historyText, history_count: msgs.length } }];\n"
+                                                           },
+                                            "id":  "5e07d3b9-40dc-4e91-a96b-cf41e60328a3",
+                                            "name":  "Shape History",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1968,
+                                                             720
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "search",
+                                                               "base":  {
+                                                                            "mode":  "id",
+                                                                            "value":  "appWUORad3wvaHttY"
+                                                                        },
+                                                               "table":  "Settings",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "5667e951-e0e1-48dd-a248-6ee2082b703e",
+                                            "name":  "Airtable · Load Hotel Facts",
+                                            "type":  "n8n-nodes-base.airtable",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1680,
+                                                             720
+                                                         ],
+                                            "alwaysOutputData":  true,
+                                            "credentials":  {
+                                                                "airtableTokenApi":  {
+                                                                                         "id":  "pY8UuHGkqPQqO0ep",
+                                                                                         "name":  "Airtable Personal Access Token account 2"
+                                                                                     }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "let context = {};\ntry { context = $(\u0027Shape History\u0027).first().json || {}; } catch (_) { context = $json; }\nconst allInputItems = $input.all().map(item =\u003e item.json);\nconst settingRows = allInputItems.filter(item =\u003e { const fields = item.fields || item.json?.fields || item.json || item || {}; return !!fields.Key; });\nconst settingsFactText = settingRows.map(row =\u003e { const fields = row.fields || row.json?.fields || row.json || row || {}; return fields.Key ? `- ${fields.Key}: ${fields.Value ?? \u0027\u0027}` : \u0027\u0027; }).filter(Boolean).join(\u0027\\n\u0027);\ncontext.hotel_facts = settingsFactText || context.hotel_facts || \u0027(hotel facts not loaded)\u0027;\nconst hotelFacts = context.hotel_facts;\nconst services = context.formatted_services_for_ai || \u0027(no partner lookup performed)\u0027;\nconst history = context.history_text || \u0027(no history)\u0027;\nconst guestMsg = context.message || \u0027\u0027;\nconst userMessage = `=== GUEST MESSAGE ===\\n${guestMsg}\\n\\n=== CONVERSATION HISTORY ===\\n${history}\\n\\n=== PARTNER SERVICES AVAILABLE ===\\n${services}\\n\\n=== HOTEL FACTS ===\\n${hotelFacts}\\n\\n=== INSTRUCTIONS ===\\nReply in the guest\u0027s language. Use partner services first. Output JSON only.`.trim();\nreturn [{ json: { ...context, ai_user_message: userMessage, ai_temperature: 0.4, ai_model_hint: \u0027llama-3.3-70b-versatile\u0027 } }];\n"
+                                                           },
+                                            "id":  "116dba98-2e8d-4ff5-be8f-b94daabaaa66",
+                                            "name":  "Build AI Context",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1408,
+                                                             112
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const GROQ_API_KEY = \u0027<redacted-groq-key>\u0027;\nconst GROQ_MODEL = \u0027llama-3.3-70b-versatile\u0027;\nconst GROQ_URL = \u0027https://api.groq.com/openai/v1/chat/completions\u0027;\nconst SYSTEM_PROMPT = `# PERSONA \u0026 TONE\nYou are ConciergeFlow, the elite digital head concierge for a world-class 5-star luxury hotel. Your tone is impeccable, refined, warm, and exceptionally polite. You speak to guests as if they are standing in a grand, beautifully designed lobby.\n\n# FLUIDITY \u0026 FORMATTING (THE \"ANTI-REPORT\" RULE)\nThis is a live chat interface, NOT an email or a report. You must format your responses to feel fluid, human, and conversational.\n- NO WALLS OF TEXT: Never output a giant block of text.\n- CHAT BUBBLE PACING: Keep your thoughts to 1 or 2 short, elegant sentences maximum.\n- BREATHABILITY: You MUST use double line breaks (\\n\\n) between distinct thoughts or recommendations.\n\n# ZERO HALLUCINATION \u0026 STRICT ACCURACY\nYou are serving luxury guests; you cannot make mistakes or invent information.\n- STRICT MATCHING: You must ONLY suggest services, restaurants, or options that perfectly match the guest\u0027s request based ON THE PROVIDED DATA.\n- NO SILENT SUBSTITUTIONS: If a guest asks for a specific cuisine (e.g., Lebanese) and it is NOT in your provided context/database, DO NOT suggest a different cuisine (e.g., Moroccan) and pretend it is what they asked for. DO NOT suggest a spa if they ask for a restaurant.\n\n# THE \"LIVE SEARCH\" FALLBACK (CRITICAL - DO NOT SKIP)\nIf the guest asks for something NOT in the partner block (e.g., \"Irish bars\", \"Algerian restaurant\", \"water sliders\", \"escape rooms\"), you MUST output all 3 paragraphs in a SINGLE response. \n\nDO NOT output just the first paragraph and stop. \nDO NOT get stuck in a loop saying \"I\u0027m still checking\".\n\nYou must write your reply as a \"Live Search Narrative\" with this exact 3-paragraph structure:\nParagraph 1: Allow me a brief moment to consult our local guides for [Request Subject]...\\n\\n\nParagraph 2: I\u0027m actively searching and checking reviews for the best non-partner options that might fit what you\u0027re looking for.\\n\\n\nParagraph 3: I\u0027ve found some excellent ideas, but since they aren\u0027t official partners, our morning team will secure the perfect spot and confirm the reservation for you.\n\nIf the user follows up (e.g., \"so?\", \"any updates?\", \"did you find anything?\"), you MUST reply with ONLY this single sentence:\nI\u0027ve found some excellent ideas, but since they aren\u0027t official partners, our morning team will secure the perfect spot and confirm the reservation for you.\n\nDO NOT provide website links or URLs.\n\n# MEMORY \u0026 LANGUAGE RULE\nYou MUST reply in the EXACT SAME LANGUAGE as the guest\u0027s most recent message. You have perfect memory of the CONVERSATION HISTORY. If the guest tells you their name, you MUST remember it and use it.\n\n# CORE DIRECTIVE\n1. Read the guest\u0027s request.\n2. Acknowledge it elegantly.\n3. Check the provided data blocks (PARTNER SERVICES AVAILABLE).\n4. Provide the exact answer in short, beautifully spaced sentences.\n5. Output ONLY the requested JSON format.\n\n# OUTPUT RULE\nOutput JSON ONLY. No markdown fences.\nSchema:\n{\n  \"reply_text\": \"\u003cmessage to guest\u003e\",\n  \"language_detected\": \"\u003cISO-639-1\u003e\",\n  \"intent\": \"\u003cfaq|service_request|smalltalk|other\u003e\",\n  \"service_type\": \"\u003cspa|restaurant|tour|transport|experience|other|null\u003e\",\n  \"requests\": [{ \"service_name\": \"\u003cstring|null\u003e\", \"summary\": \"\u003cstring\u003e\", \"is_upsell\": \u003cboolean\u003e }],\n  \"requires_human\": \u003cboolean\u003e\n}`;\nconst context = $json;\nconst requestBody = {\n  model: GROQ_MODEL,\n  messages: [ { role: \u0027system\u0027, content: SYSTEM_PROMPT }, { role: \u0027user\u0027, content: context.ai_user_message || \u0027\u0027 } ],\n  temperature: 0.4, max_tokens: 1500, response_format: { type: \u0027json_object\u0027 }\n};\nlet aiContent = \u0027\u0027;\ntry {\n  const response = await this.helpers.httpRequest({ method: \u0027POST\u0027, url: GROQ_URL, headers: { \u0027Authorization\u0027: \u0027Bearer \u0027 + GROQ_API_KEY, \u0027Content-Type\u0027: \u0027application/json\u0027 }, body: JSON.stringify(requestBody), json: true, timeout: 15000 });\n  aiContent = response.choices?.[0]?.message?.content || \u0027\u0027;\n} catch (e) {\n  aiContent = JSON.stringify({ reply_text: \u0027I apologize, I am having a brief technical issue. Please try again.\u0027, language_detected: \u0027en\u0027, intent: \u0027other\u0027, service_type: null, requests: [], requires_human: true });\n}\nreturn [{ json: { ...context, message: { content: aiContent }, ai_raw: aiContent } }];\n"
+                                                           },
+                                            "id":  "9c9bee1b-ce72-4c3c-8a57-017786064dd0",
+                                            "name":  "Groq · Ultra-Fast AI (70B)",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -816,
+                                                             256
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const raw = ($json.message?.content) || $json.ai_raw || \u0027\u0027;\nfunction extractJSON(text) {\n  if (!text) return null; const t = String(text).trim();\n  if (t.startsWith(\u0027{\u0027) \u0026\u0026 t.endsWith(\u0027}\u0027)) { try { return JSON.parse(t); } catch {} }\n  const fenced = t.match(/```(?:json)?\\s*([\\s\\S]*?)```/i); if (fenced) { try { return JSON.parse(fenced[1].trim()); } catch {} }\n  const start = t.indexOf(\u0027{\u0027); const end = t.lastIndexOf(\u0027}\u0027);\n  if (start !== -1 \u0026\u0026 end \u003e start) { try { return JSON.parse(t.slice(start, end + 1)); } catch {} }\n  return null;\n}\nconst parsed = extractJSON(raw);\nfunction str(x, d=\u0027\u0027) { return typeof x === \u0027string\u0027 ? x : (x == null ? d : String(x)); }\nfunction arr(x) { return Array.isArray(x) ? x : []; }\nfunction bool(x, d=false) { return typeof x === \u0027boolean\u0027 ? x : d; }\nlet result;\nif (parsed) {\n  result = {\n    reply_text: str(parsed.reply_text || parsed.reply),\n    language_detected: str(parsed.language_detected || \u0027unknown\u0027).slice(0, 5).toLowerCase(),\n    intent: parsed.intent || \u0027other\u0027,\n    service_type: parsed.service_type || null,\n    requests: arr(parsed.requests).map(r =\u003e ({ service_name: r.service_name || null, source: r.source || \u0027partner\u0027, summary: str(r.summary), est_value_eur: r.est_value_eur || null, is_upsell: bool(r.is_upsell) })),\n    requires_human: bool(parsed.requires_human)\n  };\n} else {\n  result = { reply_text: str(raw) || \u0027My apologies, could you rephrase?\u0027, language_detected: \u0027unknown\u0027, intent: \u0027other\u0027, service_type: null, requests: [], requires_human: false };\n}\nreturn [{ json: { ...$json, ...result, ai_raw: raw, has_requests: result.requests.length \u003e 0 } }];\n"
+                                                           },
+                                            "id":  "b0d8163b-c730-4e60-a8ab-2fe24d3c5932",
+                                            "name":  "Parse AI Output",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -560,
+                                                             112
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "respondWith":  "json",
+                                                               "responseBody":  "={{ { reply: $json.reply_text, language: $json.language_detected, intent: $json.intent } }}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "20bc4799-6442-4e93-adea-cf71b7f89a4b",
+                                            "name":  "Respond · Web Widget (INSTANT)",
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             -272,
+                                                             112
+                                                         ],
+                                            "notes":  "Fires immediately so the user sees the reply in \u003c3 seconds."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "create",
+                                                               "base":  {
+                                                                            "mode":  "id",
+                                                                            "value":  "appWUORad3wvaHttY"
+                                                                        },
+                                                               "table":  "Conversations",
+                                                               "columns":  {
+                                                                               "mappingMode":  "defineBelow",
+                                                                               "value":  {
+                                                                                             "UserID":  "={{ $json.user_id }}",
+                                                                                             "Channel":  "={{ $json.channel }}",
+                                                                                             "Role":  "assistant",
+                                                                                             "Message":  "={{ $json.reply_text }}",
+                                                                                             "Language":  "={{ $json.language_detected }}",
+                                                                                             "Timestamp":  "={{ $now.toISO() }}"
+                                                                                         },
+                                                                               "matchingColumns":  [
+
+                                                                                                   ],
+                                                                               "schema":  [
+
+                                                                                          ]
+                                                                           },
+                                                               "options":  {
+                                                                               "typecast":  true
+                                                                           }
+                                                           },
+                                            "id":  "73382a5c-58eb-4068-a7c7-02636fd92528",
+                                            "name":  "Airtable · Log AI Reply (Background)",
+                                            "type":  "n8n-nodes-base.airtable",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             0,
+                                                             0
+                                                         ],
+                                            "credentials":  {
+                                                                "airtableTokenApi":  {
+                                                                                         "id":  "pY8UuHGkqPQqO0ep",
+                                                                                         "name":  "Airtable Personal Access Token account 2"
+                                                                                     }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "create",
+                                                               "base":  {
+                                                                            "mode":  "id",
+                                                                            "value":  "appWUORad3wvaHttY"
+                                                                        },
+                                                               "table":  "Requests",
+                                                               "columns":  {
+                                                                               "mappingMode":  "defineBelow",
+                                                                               "value":  {
+                                                                                             "UserID":  "={{ $json.user_id }}",
+                                                                                             "Channel":  "={{ $json.channel }}",
+                                                                                             "ServiceType":  "={{ $json.service_type }}",
+                                                                                             "RequestSummary":  "={{ $json.requests[0].summary }}",
+                                                                                             "Source":  "={{ $json.requests[0].source }}",
+                                                                                             "Status":  "new",
+                                                                                             "EstValueEUR":  "={{ $json.requests[0].est_value_eur }}",
+                                                                                             "IsUpsell":  "={{ $json.requests[0].is_upsell }}"
+                                                                                         },
+                                                                               "matchingColumns":  [
+
+                                                                                                   ],
+                                                                               "schema":  [
+
+                                                                                          ]
+                                                                           },
+                                                               "options":  {
+                                                                               "typecast":  true
+                                                                           }
+                                                           },
+                                            "id":  "18fa6256-d623-499e-9cf3-7a5fd6bbc94b",
+                                            "name":  "Airtable · Create Requests (Background)",
+                                            "type":  "n8n-nodes-base.airtable",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             0,
+                                                             224
+                                                         ],
+                                            "credentials":  {
+                                                                "airtableTokenApi":  {
+                                                                                         "id":  "pY8UuHGkqPQqO0ep",
+                                                                                         "name":  "Airtable Personal Access Token account 2"
+                                                                                     }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rule":  {
+                                                                            "interval":  [
+                                                                                             {
+                                                                                                 "field":  "cron"
+                                                                                             }
+                                                                                         ]
+                                                                        }
+                                                           },
+                                            "id":  "758dd682-e140-49a8-9890-e002d0f0feab",
+                                            "name":  "Schedule · 8 AM Paris",
+                                            "type":  "n8n-nodes-base.scheduleTrigger",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             -2800,
+                                                             1312
+                                                         ],
+                                            "notes":  "Fires daily at 08:00. Set workflow timezone to Europe/Paris."
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "search",
+                                                               "base":  {
+                                                                            "mode":  "id",
+                                                                            "value":  "appWUORad3wvaHttY"
+                                                                        },
+                                                               "table":  "Requests",
+                                                               "filterByFormula":  "=AND({Status}=\"new\", {HandoverAt}=BLANK())",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "bf6d17ab-9b36-42c2-978a-bbd323129336",
+                                            "name":  "Airtable · Overnight Requests",
+                                            "type":  "n8n-nodes-base.airtable",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -2528,
+                                                             1312
+                                                         ],
+                                            "alwaysOutputData":  true,
+                                            "credentials":  {
+                                                                "airtableTokenApi":  {
+                                                                                         "id":  "pY8UuHGkqPQqO0ep",
+                                                                                         "name":  "Airtable Personal Access Token account 2"
+                                                                                     }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const hotelName = \u0027Hôtel Lumière Paris\u0027;\nconst rows = $input.all().map(item =\u003e item.json);\nfunction extract(row) { const f = row.fields || row.json?.fields || row.json || row || {}; return { id: row.id || f.id || null, guest: f.GuestName || \u0027(unknown guest)\u0027, channel: f.Channel || \u0027?\u0027, serviceType: f.ServiceType || \u0027other\u0027, summary: f.RequestSummary || \u0027\u0027, estValue: Number(f.EstValueEUR || 0), isUpsell: !!f.IsUpsell, createdAt: f.CreatedAt || f[\u0027Created\u0027] || \u0027\u0027 }; }\nconst items = (Array.isArray(rows) ? rows : (rows.items || [])).map(extract);\nconst totalValue = items.reduce((s, r) =\u003e s + (r.estValue || 0), 0);\nconst upsellCount = items.filter(r =\u003e r.isUpsell).length;\nconst CH = { whatsapp: \u0027WhatsApp\u0027, instagram: \u0027Instagram\u0027, sms: \u0027SMS\u0027, web: \u0027Website\u0027 };\nfunction fmtShortTime(iso) { try { return new Date(iso).toLocaleTimeString(\u0027fr-FR\u0027, { hour: \u00272-digit\u0027, minute: \u00272-digit\u0027 }); } catch { return \u0027--:--\u0027; } }\nlet wa = `☀️ *Bonjour ${hotelName} — Morning Handoff*\\n\\n`;\nwa += `${items.length} new overnight request(s)`;\nif (upsellCount) wa += ` · ${upsellCount} AI upsell(s)`;\nwa += ` · *€${totalValue.toFixed(0)} potential revenue*\\n\\n`;\nif (items.length === 0) { wa += \u0027✅ Nothing pending. Have a beautiful day.\u0027; } else { items.slice(0, 12).forEach((r, i) =\u003e { const tag = r.isUpsell ? \u0027 🎁 upsell\u0027 : \u0027\u0027; wa += `${i + 1}. *${r.serviceType.toUpperCase()}* — ${r.guest}${tag}\\n   ${r.summary}\\n   €${r.estValue || 0} · ${CH[r.channel] || r.channel} · ${fmtShortTime(r.createdAt)}\\n\\n`; }); wa += `Full details: check your inbox.`; }\n\nconst ROWS_HTML = items.length === 0 ? `\u003ctr\u003e\u003ctd colspan=\"5\" style=\"padding:32px;text-align:center;color:#888;\"\u003eNothing pending overnight. Quiet night — enjoy your coffee. ☕\u003c/td\u003e\u003c/tr\u003e` : items.map((r, i) =\u003e { const val = r.estValue ? `€${r.estValue.toFixed(0)}` : \u0027\u003cspan style=\"color:#bbb\"\u003e—\u003c/span\u003e\u0027; const upsell = r.isUpsell ? `\u003cspan style=\"background:#C5A059;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;\"\u003eUPSELL\u003c/span\u003e` : \u0027\u0027; return `\u003ctr style=\"border-bottom:1px solid #eee;\"\u003e\u003ctd style=\"padding:12px 8px;font-weight:600;color:#0A192F;\"\u003e${i + 1}\u003c/td\u003e\u003ctd style=\"padding:12px 8px;\"\u003e\u003cdiv style=\"font-weight:600;color:#0A192F;\"\u003e${r.summary}\u003c/div\u003e\u003cdiv style=\"font-size:12px;color:#888;margin-top:2px;\"\u003e${r.guest} · ${CH[r.channel] || r.channel} · ${fmtShortTime(r.createdAt)}\u003c/div\u003e\u003c/td\u003e\u003ctd style=\"padding:12px 8px;text-transform:uppercase;font-size:11px;color:#C5A059;font-weight:600;\"\u003e${r.serviceType}\u003c/td\u003e\u003ctd style=\"padding:12px 8px;text-align:right;font-weight:600;color:#0A192F;\"\u003e${val}\u003c/td\u003e\u003ctd style=\"padding:12px 8px;text-align:center;\"\u003e${upsell}\u003c/td\u003e\u003c/tr\u003e`; }).join(\u0027\u0027);\nconst emailHtml = `\u003c!DOCTYPE html\u003e\u003chtml\u003e\u003cbody style=\"margin:0;padding:0;background:#F5F5F5;font-family:\u0027Inter\u0027,\u0027Helvetica Neue\u0027,Arial,sans-serif;\"\u003e\u003ctable width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#F5F5F5;padding:24px;\"\u003e\u003ctr\u003e\u003ctd align=\"center\"\u003e\u003ctable width=\"640\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(10,25,47,0.08);\"\u003e\u003ctr\u003e\u003ctd style=\"background:#0A192F;padding:32px 40px;\"\u003e\u003cdiv style=\"font-family:Georgia,\u0027Playfair Display\u0027,serif;font-size:24px;color:#fff;\"\u003e${hotelName} \u003cspan style=\"color:#C5A059;font-style:italic;\"\u003e· ConciergeFlow\u003c/span\u003e\u003c/div\u003e\u003cdiv style=\"color:rgba(255,255,255,0.7);font-size:13px;margin-top:6px;\"\u003eOvernight handoff · ${new Date().toLocaleDateString(\u0027en-GB\u0027, { weekday:\u0027long\u0027, day:\u0027numeric\u0027, month:\u0027long\u0027 })}\u003c/div\u003e\u003c/td\u003e\u003c/tr\u003e\u003ctr\u003e\u003ctd style=\"padding:24px 40px 0;\"\u003e\u003ctable width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"\u003e\u003ctr\u003e\u003ctd style=\"width:33%;text-align:center;padding:16px;background:#FAF8F2;border-radius:8px;\"\u003e\u003cdiv style=\"font-family:Georgia,serif;font-size:28px;color:#C5A059;font-weight:700;\"\u003e${items.length}\u003c/div\u003e\u003cdiv style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\"\u003eRequests\u003c/div\u003e\u003c/td\u003e\u003ctd style=\"width:33%;text-align:center;padding:16px;background:#FAF8F2;border-radius:8px;\"\u003e\u003cdiv style=\"font-family:Georgia,serif;font-size:28px;color:#C5A059;font-weight:700;\"\u003e€${totalValue.toFixed(0)}\u003c/div\u003e\u003cdiv style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\"\u003ePotential Revenue\u003c/div\u003e\u003c/td\u003e\u003ctd style=\"width:33%;text-align:center;padding:16px;background:#FAF8F2;border-radius:8px;\"\u003e\u003cdiv style=\"font-family:Georgia,serif;font-size:28px;color:#C5A059;font-weight:700;\"\u003e${upsellCount}\u003c/div\u003e\u003cdiv style=\"font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;\"\u003eAI Upsells\u003c/div\u003e\u003c/td\u003e\u003c/tr\u003e\u003c/table\u003e\u003c/td\u003e\u003c/tr\u003e\u003ctr\u003e\u003ctd style=\"padding:24px 40px 8px;\"\u003e\u003ctable width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\"\u003e\u003cthead\u003e\u003ctr style=\"background:#0A192F;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:1px;\"\u003e\u003cth style=\"padding:10px 8px;text-align:left;\"\u003e#\u003c/th\u003e\u003cth style=\"padding:10px 8px;text-align:left;\"\u003eRequest\u003c/th\u003e\u003cth style=\"padding:10px 8px;text-align:left;\"\u003eType\u003c/th\u003e\u003cth style=\"padding:10px 8px;text-align:right;\"\u003eValue\u003c/th\u003e\u003cth style=\"padding:10px 8px;\"\u003eTag\u003c/th\u003e\u003c/tr\u003e\u003c/thead\u003e\u003ctbody\u003e${ROWS_HTML}\u003c/tbody\u003e\u003c/table\u003e\u003c/td\u003e\u003c/tr\u003e\u003ctr\u003e\u003ctd style=\"padding:24px 40px 32px;\"\u003e\u003cdiv style=\"background:#F5F8FF;border-left:3px solid #C5A059;padding:14px 16px;border-radius:4px;font-size:13px;color:#0A192F;\"\u003e\u003cstrong\u003eAction:\u003c/strong\u003e Execute the bookings above, then mark each as \u003cem\u003econfirmed\u003c/em\u003e or \u003cem\u003ecancelled\u003c/em\u003e in Airtable.\u003c/div\u003e\u003c/td\u003e\u003c/tr\u003e\u003c/table\u003e\u003c/td\u003e\u003c/tr\u003e\u003c/table\u003e\u003c/body\u003e\u003c/html\u003e`;\nreturn [{ json: { email_subject: `☀️ ${hotelName} — ${items.length} overnight requests · €${totalValue.toFixed(0)} potential`, email_html: emailHtml, whatsapp_text: wa, row_ids: items.map(r =\u003e r.id).filter(Boolean) } }];\n"
+                                                           },
+                                            "id":  "b61f3d5e-c13e-4b90-8d7d-b85b07c6133a",
+                                            "name":  "Build Morning Summary",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -2240,
+                                                             1312
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "fromEmail":  "concierge@conciergeflow.ai",
+                                                               "toEmail":  "manager@yourhotel.com",
+                                                               "subject":  "={{ $json.email_subject }}",
+                                                               "emailFormat":  "html",
+                                                               "html":  "={{ $json.email_html }}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "234ba76e-6364-44ca-a77e-5fad8e5afa21",
+                                            "name":  "Send Email · Manager",
+                                            "type":  "n8n-nodes-base.emailSend",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1968,
+                                                             1312
+                                                         ],
+                                            "webhookId":  "5bb92eb2-9cd0-4195-95db-eaa822eb691a",
+                                            "credentials":  {
+                                                                "smtp":  {
+                                                                             "id":  "pIrxZ8A4eMZ16CuT",
+                                                                             "name":  "SMTP account"
+                                                                         }
+                                                            }
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Webhook · Inbound (4 channels)":  {
+                                                                                     "main":  [
+                                                                                                  [
+                                                                                                      {
+                                                                                                          "node":  "Normalize Incoming",
+                                                                                                          "type":  "main",
+                                                                                                          "index":  0
+                                                                                                      }
+                                                                                                  ]
+                                                                                              ]
+                                                                                 },
+                                              "Normalize Incoming":  {
+                                                                         "main":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "Airtable · Log Inbound",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          },
+                                                                                          {
+                                                                                              "node":  "Build Service Query",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                     },
+                                              "Build Service Query":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Airtable · Lookup Services",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                                              "Airtable · Lookup Services":  {
+                                                                                 "main":  [
+                                                                                              [
+                                                                                                  {
+                                                                                                      "node":  "Check Results",
+                                                                                                      "type":  "main",
+                                                                                                      "index":  0
+                                                                                                  }
+                                                                                              ]
+                                                                                          ]
+                                                                             },
+                                              "Check Results":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Airtable · Fetch History",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                },
+                                              "Airtable · Fetch History":  {
+                                                                               "main":  [
+                                                                                            [
+                                                                                                {
+                                                                                                    "node":  "Shape History",
+                                                                                                    "type":  "main",
+                                                                                                    "index":  0
+                                                                                                }
+                                                                                            ]
+                                                                                        ]
+                                                                           },
+                                              "Shape History":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Airtable · Load Hotel Facts",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                },
+                                              "Airtable · Load Hotel Facts":  {
+                                                                                  "main":  [
+                                                                                               [
+                                                                                                   {
+                                                                                                       "node":  "Build AI Context",
+                                                                                                       "type":  "main",
+                                                                                                       "index":  0
+                                                                                                   }
+                                                                                               ]
+                                                                                           ]
+                                                                              },
+                                              "Build AI Context":  {
+                                                                       "main":  [
+                                                                                    [
+                                                                                        {
+                                                                                            "node":  "Groq · Ultra-Fast AI (70B)",
+                                                                                            "type":  "main",
+                                                                                            "index":  0
+                                                                                        }
+                                                                                    ]
+                                                                                ]
+                                                                   },
+                                              "Groq · Ultra-Fast AI (70B)":  {
+                                                                                 "main":  [
+                                                                                              [
+                                                                                                  {
+                                                                                                      "node":  "Parse AI Output",
+                                                                                                      "type":  "main",
+                                                                                                      "index":  0
+                                                                                                  }
+                                                                                              ]
+                                                                                          ]
+                                                                             },
+                                              "Parse AI Output":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Respond · Web Widget (INSTANT)",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       },
+                                                                                       {
+                                                                                           "node":  "Airtable · Log AI Reply (Background)",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       },
+                                                                                       {
+                                                                                           "node":  "Airtable · Create Requests (Background)",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                                              "Schedule · 8 AM Paris":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Airtable · Overnight Requests",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                                              "Airtable · Overnight Requests":  {
+                                                                                    "main":  [
+                                                                                                 [
+                                                                                                     {
+                                                                                                         "node":  "Build Morning Summary",
+                                                                                                         "type":  "main",
+                                                                                                         "index":  0
+                                                                                                     }
+                                                                                                 ]
+                                                                                             ]
+                                                                                },
+                                              "Build Morning Summary":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Send Email · Manager",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        }
+                                          },
+                          "nodeGroups":  [
+
+                                         ],
+                          "authors":  "mehdi mechkak",
+                          "name":  "Version 4ea088c4",
+                          "description":  "",
+                          "autosaved":  true,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-08-01T10:02:50.176Z",
+                                                             "id":  76,
+                                                             "workflowId":  "DHxKjYJGVlsBsNCP",
+                                                             "versionId":  "4ea088c4-a03e-4dac-88ff-f8a063558741",
+                                                             "event":  "activated",
+                                                             "userId":  "010b92e0-031c-4c51-9673-934c0691aea1"
+                                                         }
+                                                     ]
+                      }
+}

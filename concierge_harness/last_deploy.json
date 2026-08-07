@@ -1,0 +1,59 @@
+{
+  "hash": "5ab2be4e61153c3ee80b163f4c3bbc25a14dcae4c077c5c84c803c7ba16b8bcc",
+  "ts": 1785628277.2019904,
+  "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T235114Z.json",
+  "previous": {
+    "hash": "9585eaf5d7a6827f37bd06b0603c6d1ddd54890e25a06ad55b982c822c4c6fcf",
+    "ts": 1785627785.2982497,
+    "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T234302Z.json",
+    "previous": {
+      "hash": "696952230413aa2d5de1b56e1a1e70545dcb3d8cf499ca94157d79daa52d379e",
+      "ts": 1785627221.1639457,
+      "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T233338Z.json",
+      "previous": {
+        "hash": "696952230413aa2d5de1b56e1a1e70545dcb3d8cf499ca94157d79daa52d379e",
+        "ts": 1785627216.6289778,
+        "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T233333Z.json",
+        "previous": {
+          "hash": "6e0a91357d4ba2cdbc1137a80171095b4f466d34a7357f8cf80ef1be13553a42",
+          "ts": 1785627017.305305,
+          "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T233014Z.json",
+          "previous": {
+            "hash": "6e0a91357d4ba2cdbc1137a80171095b4f466d34a7357f8cf80ef1be13553a42",
+            "ts": 1785626970.570848,
+            "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T232925Z.json",
+            "previous": {
+              "hash": "b5ce6d9077329c0d35b59e6722dcac5c79582dbf7bc6458c22d40833b157ac78",
+              "ts": 1785624635.4352117,
+              "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T225032Z.json",
+              "previous": {
+                "hash": "53426f0ad2f0f047a98f0b97948e65a0b3be8665b854d6c04fe1044d95d4c590",
+                "ts": 1785624469.9841008,
+                "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T224744Z.json",
+                "previous": {
+                  "hash": "4606f1481748f2daf917e7785c6866c3ccf22e62c20bdcb7178072178958c12e",
+                  "ts": 1785624088.7476869,
+                  "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T224122Z.json",
+                  "previous": {
+                    "hash": "6fa2b6b3eda896ed64be9841cb86bf22d87334b9690902760f84cde79e523219",
+                    "ts": 1785623361.3570209,
+                    "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T222910Z.json",
+                    "previous": {
+                      "hash": "e0b2f9f234c1c8a0e0fa3c615742d556e4ada479d947bfbd72e5b88ab5089413",
+                      "ts": 1785619789.1844072,
+                      "backup_path": "C:\\Users\\ALEM\\Documents\\Codex\\2026-07-27\\act-as-a-senior-full-stack\\outputs\\concierge_harness\\backups\\live_20260801T212944Z.json",
+                      "previous": {
+                        "hash": "527e9b935c6b55fe88809ab59ab109811802d3f274c29b6c6ef9f86d4e8af0ae",
+                        "ts": 1785613877.9228413
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

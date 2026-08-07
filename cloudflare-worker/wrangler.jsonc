@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "conciergeflow-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-02",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGIN": "https://flowarchitect-agency.github.io",
+    "HOTEL_NAME": "H\u00f4tel Lumi\u00e8re Paris",
+    "HOTEL_CITY": "Paris",
+    "LEADS_AIRTABLE_BASE_ID": "app5IahpKr1nBhU8O",
+    "GROQ_MODEL": "qwen/qwen3.6-27b",
+    "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b"
+  }
+}

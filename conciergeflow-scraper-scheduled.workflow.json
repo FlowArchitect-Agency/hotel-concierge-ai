@@ -1,0 +1,329 @@
+{
+  "name": "ConciergeFlow — Scheduled Service Scraper (Daily)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 1 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-001",
+      "name": "Schedule · 3 AM Paris (Daily)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1680,
+        304
+      ],
+      "notes": "Runs daily at 1 AM UTC = 3 AM Paris. Fills the Services table with fresh external options so the live conversation scraper rarely needs to fire."
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * build-category-searches.js  —  n8n Code node\n * ------------------------------------------------------------------\n * Generates one item per category × search-query variation so the\n * downstream HTTP node hits ScrapingBee for each.\n *\n * Each item:\n *   { category, search_query, google_url }\n *\n * Categories: spa, restaurant, transport, tour, experience\n * 2 search variations per category = 10 total API calls per run.\n * ------------------------------------------------------------------\n */\n\nconst SEARCHES = [\n  // --- SPA ---\n  { category: 'spa', query: 'best luxury spa wellness Paris' },\n  { category: 'spa', query: 'top-rated spa treatments hammam Paris 2026' },\n\n  // --- RESTAURANT ---\n  { category: 'restaurant', query: 'best restaurants Paris 2026 Michelin recommended' },\n  { category: 'restaurant', query: 'top rooftop restaurants with Eiffel view Paris' },\n\n  // --- TRANSPORT ---\n  { category: 'transport', query: 'private chauffeur airport transfer Paris CDG Orly' },\n  { category: 'transport', query: 'luxury car service with driver Paris' },\n\n  // --- TOUR ---\n  { category: 'tour', query: 'best private guided tours Paris museum Louvre Orsay' },\n  { category: 'tour', query: 'Seine river cruise private boat Paris 2026' },\n\n  // --- EXPERIENCE ---\n  { category: 'experience', query: 'luxury exclusive experiences Paris private chef wine tasting' },\n  { category: 'experience', query: 'unique romantic experiences Paris couples private tour' },\n];\n\nreturn SEARCHES.map(s => ({\n  json: {\n    category: s.category,\n    search_query: s.query,\n    google_url: 'https://www.google.com/search?q=' + encodeURIComponent(s.query),\n    scraper_search_term: s.query,\n  },\n}));\n"
+      },
+      "id": "code-gen-queries-001",
+      "name": "Code · Build Category Searches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1408,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://app.scrapingbee.com/api/v1/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $env.SCRAPINGBEE_API_KEY }}"
+            },
+            {
+              "name": "url",
+              "value": "={{ $json.google_url }}"
+            },
+            {
+              "name": "render_js",
+              "value": "false"
+            },
+            {
+              "name": "premium_proxy",
+              "value": "false"
+            },
+            {
+              "name": "country_code",
+              "value": "fr"
+            },
+            {
+              "name": "custom_google",
+              "value": "true"
+            },
+            {
+              "name": "block_ads",
+              "value": "true"
+            },
+            {
+              "name": "extract_rules",
+              "value": "={ \"results\": { \"selector\": \"div.g, div.tF2Cxc\", \"type\": \"list\", \"output\": { \"title\": \"h3\", \"snippet\": \".VwiC3b, .IsZvec\", \"link\": \"a @href\" } } }"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 45000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "http-scrapingbee-001",
+      "name": "HTTP · ScrapingBee Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1136,
+        304
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput",
+      "notes": "One request per search query. ScrapingBee returns parsed JSON via extract_rules."
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * parse-scraped-services.js  —  n8n Code node\n * ------------------------------------------------------------------\n * Normalizes ScrapingBee extract_rules output into clean service records\n * ready for Airtable upsert.\n *\n * Input (per item):  { category, search_query, google_url } + scraper response\n * Output (0-N items): { name, category, phone, rating, reviews_count,\n *                        address, website, snippet, source, source_url }\n *\n * We extract structured data from Google organic results and drop anything\n * that doesn't look like a real business (no name, junk results, etc.).\n * ------------------------------------------------------------------\n */\n\nconst category = $json.category || 'other';\nconst source_query = $json.search_query || '';\n\n// ---- 1. Unwrap the ScrapingBee response ---------------------------\nfunction unwrap(resp) {\n  if (!resp) return { results: [] };\n  // ScrapingBee extract_rules returns { results: [...] }\n  if (resp.results && Array.isArray(resp.results)) return resp;\n  // Sometimes the HTTP node wraps in .data\n  if (resp.data && resp.data.results) return resp.data;\n  // Fallback: try to parse body\n  if (typeof resp.body === 'string') {\n    try { const parsed = JSON.parse(resp.body); if (parsed.results) return parsed; } catch {}\n  }\n  return { results: [] };\n}\n\nconst raw = unwrap($json);\n\n// ---- 2. Extraction helpers ----------------------------------------\nconst PHONE_RE = /(?:\\+?\\d[\\d\\s().-]{7,}\\d)/;\nconst RATING_RE = /(\\d(?:[.,]\\d)?)\\s*(?:\\/\\s*5|\\bstars?\\b|\\bstars\\b|★|\\beval)/i;\nconst REVIEWS_RE = /(\\d[\\d.,]*)\\s*(?:reviews?|avis|evaluations?)/i;\nconst ADDR_RE = /\\b(?:\\d{1,3}\\s+)?(?:rue|avenue|boulevard|bd|av\\.?|place|pl\\.?|quai|faubourg|passage|cité|impasse|allée|cours|square)\\s+[^,\\n]{3,80}/i;\n\nfunction cleanTitle(t) {\n  if (!t) return '';\n  // Remove Google suffix clutter: \"— Restaurant à Paris\", \"| Site officiel\", etc.\n  return t.replace(/\\s[–|\\-|·|—]\\s.*$/, '').replace(/\\s{2,}/g, ' ').trim().slice(0, 150);\n}\n\nfunction firstMatch(re, s) {\n  const m = (s || '').match(re);\n  return m ? m[0].trim() : null;\n}\n\nfunction extractDomain(link) {\n  if (!link) return null;\n  try { return new URL(link).hostname.replace(/^www\\./, ''); } catch { return null; }\n}\n\n// ---- 3. Build clean records ---------------------------------------\nconst seen = new Set();\nconst services = [];\n\nfor (const r of (raw.results || [])) {\n  const title = cleanTitle(r.title);\n  if (!title) continue;\n\n  // Drop junk results (too short, map pins, Google ads labels)\n  if (title.length < 3) continue;\n  if (/^(map|maps|images|news|videos|shopping|books|flights|finance|maps\\.google)/i.test(title)) continue;\n  if (/^Ad\\b|Sponsored|Annonce/i.test(title)) continue;\n\n  const key = title.toLowerCase();\n  if (seen.has(key)) continue;\n  seen.add(key);\n\n  const text = `${title} ${r.snippet || ''}`;\n  const rating_raw = firstMatch(RATING_RE, text);\n\n  services.push({\n    name: title,\n    category: category,\n    phone: firstMatch(PHONE_RE, text) || null,\n    rating: rating_raw ? String(rating_raw).replace(',', '.') : null,\n    reviews_count: firstMatch(REVIEWS_RE, text) || null,\n    address: firstMatch(ADDR_RE, text) || 'Paris (exact address to be confirmed)',\n    website: r.link || null,\n    domain: extractDomain(r.link),\n    snippet: (r.snippet || '').slice(0, 300),\n    source: 'external',\n    source_query: source_query,\n    scraped_at: new Date().toISOString(),\n  });\n\n  // Cap at 5 results per search query (10 queries × 5 max = 50 total)\n  if (services.length >= 5) break;\n}\n\n// ---- 4. Emit one item per service (or one empty item if none found)\nif (services.length === 0) {\n  return [{\n    json: {\n      _skip: true,\n      category: category,\n      found_count: 0,\n      note: 'No usable results found for this query',\n    },\n  }];\n}\n\nreturn services.map(s => ({ json: s }));\n"
+      },
+      "id": "code-parse-results-001",
+      "name": "Code · Parse Scraped Services",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json._skip }}",
+              "value2": true
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "if-has-results-001",
+      "name": "IF · Has Results?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "record",
+        "operation": "upsert",
+        "base": {
+          "mode": "id",
+          "value": "appWUORad3wvaHttY"
+        },
+        "table": "Services",
+        "upsertField": "Name",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Category": "={{ $json.category }}",
+            "Description": "={{ $json.snippet }}",
+            "PhoneNumber": "={{ $json.phone }}",
+            "Location": "={{ $json.address }}",
+            "Website": "={{ $json.website }}",
+            "Active": true
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false
+            },
+            {
+              "id": "Description",
+              "displayName": "Description",
+              "required": false
+            },
+            {
+              "id": "PhoneNumber",
+              "displayName": "Phone Number",
+              "required": false
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false
+            },
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false
+            },
+            {
+              "id": "Active",
+              "displayName": "Active",
+              "required": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "airtable-upsert-001",
+      "name": "Airtable · Upsert Service",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        304
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "pY8UuHGkqPQqO0ep",
+          "name": "Airtable Personal Access Token account 2"
+        }
+      },
+      "notes": "Upserts by Name — creates if new, updates if exists. Category is set from the search context."
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * build-scrape-summary.js  —  n8n Code node\n * ------------------------------------------------------------------\n * Aggregates results across all categories and logs a summary.\n * Runs once after all upserts complete.\n *\n * Output: { total_upserted, categories_scraped[], services_by_category, ... }\n * ------------------------------------------------------------------\n */\n\nconst items = $input.all().map(item => item.json);\n\n// Count by category\nconst byCategory = {};\nfor (const item of items) {\n  if (item._skip) continue;\n  const cat = item.category || 'other';\n  byCategory[cat] = (byCategory[cat] || 0) + 1;\n}\n\nconst totalUpserted = Object.values(byCategory).reduce((a, b) => a + b, 0);\n\nconst summaryLines = [\n  `ConciergeFlow Scheduled Scrape — ${new Date().toISOString()}`,\n  `Total services upserted: ${totalUpserted}`,\n  ...Object.entries(byCategory).map(([cat, n]) => `  ${cat}: ${n} services`),\n];\n\nreturn [{\n  json: {\n    total_upserted: totalUpserted,\n    categories_scraped: Object.keys(byCategory),\n    services_by_category: byCategory,\n    summary_text: summaryLines.join('\\n'),\n    timestamp: new Date().toISOString(),\n  },\n}];\n"
+      },
+      "id": "code-summary-001",
+      "name": "Code · Scrape Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule · 3 AM Paris (Daily)": {
+      "main": [
+        [
+          {
+            "node": "Code · Build Category Searches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code · Build Category Searches": {
+      "main": [
+        [
+          {
+            "node": "HTTP · ScrapingBee Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP · ScrapingBee Search": {
+      "main": [
+        [
+          {
+            "node": "Code · Parse Scraped Services",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code · Parse Scraped Services": {
+      "main": [
+        [
+          {
+            "node": "IF · Has Results?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF · Has Results?": {
+      "main": [
+        [
+          {
+            "node": "Airtable · Upsert Service",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code · Scrape Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable · Upsert Service": {
+      "main": [
+        [
+          {
+            "node": "Code · Scrape Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "1.0.0",
+  "active": true,
+  "createdAt": "2026-07-28T00:00:00.000Z",
+  "updatedAt": "2026-07-28T00:00:00.000Z",
+  "id": "conciergeflow-scraper-scheduled",
+  "tags": [
+    {
+      "id": "scheduled",
+      "name": "Scheduled"
+    },
+    {
+      "id": "scraping",
+      "name": "Scraping"
+    }
+  ]
+}
