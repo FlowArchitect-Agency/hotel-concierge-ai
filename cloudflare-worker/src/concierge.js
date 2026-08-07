@@ -111,6 +111,7 @@ export function parseGuestInput(body) {
 
 export function classifyRequest(message) {
   const text = normalized(message);
+  const isLanguageQuery = /\b(hablas?|hablan|hables?|parles?|parlez|speak|speaks|speaking|parla|parlano)\b/i.test(text);
   const scores = new Map();
   for (const rule of CATEGORY_RULES) {
     for (const word of rule.words) {
@@ -119,13 +120,17 @@ export function classifyRequest(message) {
   }
   if (ITINERARY_WORDS.some((word) => hasTerm(text, word))) scores.set('itinerary', 1);
   let category = [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-  const cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
-  // A named cuisine is always a dining request. This also prevents nearby
-  // landmarks (for example, "Spanish restaurant near the Eiffel Tower")
-  // from incorrectly changing the category to a tour.
-  if (cuisine) category = 'restaurant';
+  let cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
+  
+  if (isLanguageQuery) {
+    cuisine = null;
+    category = null;
+  } else if (cuisine) {
+    category = 'restaurant';
+  }
+  
   const trimmed = text.replace(/[!.?\u00a1\u00bf]+$/g, '');
-  const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2;
+  const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2 || isLanguageQuery;
   const hasIntent = !isGreeting && Boolean(category || cuisine || REQUEST_WORDS.some((word) => hasTerm(text, word)));
   return { category, cuisine, location: inferLocation(message), hasIntent };
 }

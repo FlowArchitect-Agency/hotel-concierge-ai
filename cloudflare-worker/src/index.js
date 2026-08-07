@@ -383,6 +383,9 @@ function isSafeWebsiteUrl(value) {
 
 function curatedDiningResponse(input, classification, services) {
   if (classification.category !== 'restaurant' || !classification.cuisine || classification.location) return null;
+  const text = String(input.message || '').toLowerCase();
+  const hasExplicitDiningWord = /\b(restaurant|restaurants|restaurante|restaurantes|dining|food|eat|table|michelin|cena|comida|almuerzo|diner|dejeuner|bistrot|bistro|brasserie|tapas|paella|pizza)\b/i.test(text);
+  if (!hasExplicitDiningWord) return null;
   const eligible = services.filter((service) => !service.isPartner && isSafeWebsiteUrl(service.websiteUrl));
   if (!eligible.length) return null;
   const cards = (preferenceForOneRecommendation(input.message) ? eligible.slice(0, 1) : eligible.slice(0, 3)).map((service) => ({
