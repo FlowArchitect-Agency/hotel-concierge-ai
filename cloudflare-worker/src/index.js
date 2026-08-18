@@ -871,11 +871,72 @@ export async function runScheduledOutreach(env) {
   return results;
 }
 
+async function handleWhatsAppWebhook(request, env, ctx) {
+  const url = new URL(request.url);
+
+  // Meta Verification Challenge (GET)
+  if (request.method === 'GET') {
+    const mode = url.searchParams.get('hub.mode');
+    const token = url.searchParams.get('hub.verify_token');
+    const challenge = url.searchParams.get('hub.challenge');
+
+    const expectedToken = env.WHATSAPP_VERIFY_TOKEN || 'lumiere_concierge_secret_token_2026';
+    if (mode === 'subscribe' && token === expectedToken) {
+      return new Response(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } });
+    }
+    return new Response('Verification failed', { status: 403 });
+  }
+
+  // Inbound Message from Meta (POST)
+  if (request.method === 'POST') {
+    const payload = await request.json();
+    const entry = payload?.entry?.[0];
+    const change = entry?.changes?.[0]?.value;
+    const message = change?.messages?.[0];
+
+    if (message && message.type === 'text') {
+      const fromPhone = message.from;
+      const textBody = message.text?.body;
+      const contactName = change?.contacts?.[0]?.profile?.name || 'Guest';
+
+      if (fromPhone && textBody) {
+        ctx.waitUntil(
+          (async () => {
+            try {
+              const outcome = await resolveChat(
+                {
+                  message: textBody,
+                  userId: `wa:${fromPhone}`,
+                  sessionId: `wa:${fromPhone}`,
+                  contactName,
+                },
+                env,
+                ctx
+              );
+              if (outcome?.reply) {
+                await sendWhatsAppMessage(env, { phone: fromPhone, text: outcome.reply });
+              }
+            } catch (err) {
+              console.error('Error handling WhatsApp message:', err);
+            }
+          })()
+        );
+      }
+    }
+    return new Response('EVENT_RECEIVED', { status: 200 });
+  }
+
+  return new Response('Method not allowed', { status: 405 });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request, env) });
     if (request.method === 'GET' && url.pathname === '/health') return response({ ok: true, service: 'conciergeflow-api' }, 200, request, env);
+    if (['/webhook', '/api/whatsapp-webhook'].includes(url.pathname)) {
+      return await handleWhatsAppWebhook(request, env, ctx);
+    }
     if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/test-cron') {
       const result = await runScheduledOutreach(env);
       return response(result, 200, request, env);
