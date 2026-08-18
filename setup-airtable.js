@@ -120,6 +120,18 @@ const tables = [
       field('CreatedAt', 'createdTime'),
     ],
   },
+  {
+    name: 'Guest Profiles',
+    fields: [
+      field('Phone', 'singleLineText'),
+      field('GuestName', 'singleLineText'),
+      field('Language', 'singleLineText'),
+      field('DietaryRestrictions', 'singleLineText'),
+      field('PurposeOfStay', 'singleLineText'),
+      field('GeneralPreferences', 'multilineText'),
+      field('LastInteraction', 'createdTime'),
+    ],
+  },
 ];
 
 function assertConfiguration() {

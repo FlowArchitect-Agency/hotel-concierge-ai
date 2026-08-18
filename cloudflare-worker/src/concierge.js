@@ -542,3 +542,25 @@ GUEST MESSAGE:
 DRAFT RESPONSE:
 "${draftReply}"`;
 }
+
+export function buildMemoryExtractionPrompt({ message, history, language }) {
+  const historyText = Array.isArray(history) && history.length
+    ? history.map((item) => `${item.role}: ${item.message}`).join('\n')
+    : `user: ${message}`;
+  return `You are a Data Extraction Assistant for Hôtel Lumière Paris.
+Analyze the guest conversation transcript below. Extract permanent guest profile facts. Return a valid json object only.
+
+Schema to return:
+{
+  "phone": "string|null (phone number or WhatsApp ID if mentioned, e.g. +33612345678)",
+  "guestName": "string|null (guest name if mentioned)",
+  "language": "${language || 'en'}",
+  "dietaryRestrictions": "string|null (e.g. Gluten-free, Vegan, Nut allergy, Halal, Kosher)",
+  "purposeOfStay": "string|null (e.g. 10th Anniversary, Birthday, Business, Honeymoon)",
+  "generalPreferences": "string|null (e.g. Loves seafood, prefers Eiffel Tower views, asked about museum tours)"
+}
+
+CONVERSATION TRANSCRIPT:
+${historyText}
+user: ${message}`;
+}

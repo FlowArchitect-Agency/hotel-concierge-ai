@@ -1,5 +1,6 @@
 import {
   buildEvaluatorPrompt,
+  buildMemoryExtractionPrompt,
   buildPrompt,
   classifyRequest,
   enforceContract,
@@ -591,6 +592,78 @@ async function persistDiscoveryLead(env, lead) {
   });
 }
 
+async function upsertGuestProfile(env, profile) {
+  if (!profile || typeof profile !== 'object') return null;
+  const phoneKey = String(profile.phone || profile.userId || '').trim();
+  if (!phoneKey && !profile.guestName && !profile.dietaryRestrictions && !profile.purposeOfStay && !profile.generalPreferences) {
+    return null;
+  }
+  const key = phoneKey || `web:${profile.sessionId || 'guest'}`;
+
+  // Check if existing profile exists in 'Guest Profiles' table
+  try {
+    const existing = await airtable(env, 'Guest Profiles', {
+      params: {
+        filterByFormula: `{Phone} = '${key}'`,
+        maxRecords: 1,
+      },
+    });
+    const record = existing.records?.[0];
+    if (record) {
+      // Merge preferences (no duplicate overwrite)
+      const prevDiet = record.fields?.DietaryRestrictions || '';
+      const newDiet = [prevDiet, profile.dietaryRestrictions].filter(Boolean).filter((item, pos, self) => self.indexOf(item) === pos).join(', ');
+
+      const prevPurpose = record.fields?.PurposeOfStay || '';
+      const newPurpose = profile.purposeOfStay || prevPurpose;
+
+      const prevPref = record.fields?.GeneralPreferences || '';
+      const newPref = [prevPref, profile.generalPreferences].filter(Boolean).filter((item, pos, self) => self.indexOf(item) === pos).join('; ');
+
+      return await airtable(env, `Guest Profiles/${record.id}`, {
+        method: 'PATCH',
+        fields: {
+          GuestName: profile.guestName || record.fields?.GuestName || undefined,
+          Language: profile.language || record.fields?.Language || 'en',
+          DietaryRestrictions: newDiet || undefined,
+          PurposeOfStay: newPurpose || undefined,
+          GeneralPreferences: newPref || undefined,
+        },
+      });
+    }
+  } catch {
+    /* proceed to create if search fails */
+  }
+
+  // Create new Guest Profile record
+  return airtable(env, 'Guest Profiles', {
+    method: 'POST',
+    fields: {
+      Phone: key,
+      GuestName: profile.guestName || undefined,
+      Language: profile.language || 'en',
+      DietaryRestrictions: profile.dietaryRestrictions || undefined,
+      PurposeOfStay: profile.purposeOfStay || undefined,
+      GeneralPreferences: profile.generalPreferences || undefined,
+    },
+  });
+}
+
+async function extractAndPersistGuestProfile(env, input, history) {
+  try {
+    const extractPrompt = buildMemoryExtractionPrompt({ message: input.message, history, language: input.language });
+    const extractResult = await callLLM(env, extractPrompt, { maxTokens: 250, router: true });
+    const profile = parseModelJson(extractResult.content);
+    if (profile) {
+      profile.userId = input.userId;
+      profile.sessionId = input.sessionId;
+      await upsertGuestProfile(env, profile);
+    }
+  } catch {
+    /* background task fail-safe */
+  }
+}
+
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   requireSecrets(env);
   const input = parseGuestInput(body);
@@ -601,7 +674,12 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   const instantDining = curatedDiningResponse(input, classification, initialServiceSet.matching);
   if (instantDining) {
     if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, { reply: instantDining.reply, requests: [] }).catch(() => undefined));
+      ctx.waitUntil(
+        Promise.all([
+          persistConversation(env, input, { reply: instantDining.reply, requests: [] }),
+          extractAndPersistGuestProfile(env, input, []),
+        ]).catch(() => undefined)
+      );
     }
     return instantDining;
   }
@@ -651,7 +729,12 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   }
 
   if (!input.testMode || input.testMode === 'write_verified') {
-    ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
+    ctx.waitUntil(
+      Promise.all([
+        persistConversation(env, input, outcome),
+        extractAndPersistGuestProfile(env, input, history),
+      ]).catch(() => undefined)
+    );
   }
   return {
     reply: outcome.reply,
