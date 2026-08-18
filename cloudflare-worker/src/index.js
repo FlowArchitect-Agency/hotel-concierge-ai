@@ -1,6 +1,8 @@
 import {
   buildEvaluatorPrompt,
   buildMemoryExtractionPrompt,
+  buildPostCheckoutOutreachPrompt,
+  buildPreArrivalOutreachPrompt,
   buildPrompt,
   classifyRequest,
   enforceContract,
@@ -810,11 +812,74 @@ async function streamChat(request, env, ctx) {
   });
 }
 
+export async function sendWhatsAppMessage(env, { phone, text }) {
+  const token = env.WHATSAPP_API_TOKEN;
+  const phoneId = env.WHATSAPP_PHONE_ID;
+  if (!token || !phoneId) {
+    console.log(`[WhatsApp Simulation] Outbound message to ${phone}: "${text}"`);
+    return { success: true, simulated: true, to: phone, text };
+  }
+  const url = `https://graph.facebook.com/v18.0/${phoneId}/messages`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: { body: text },
+    }),
+  });
+  return { success: res.ok, status: res.status, to: phone, text };
+}
+
+export async function runScheduledOutreach(env) {
+  const results = { preArrivalSent: 0, postCheckoutSent: 0, messages: [] };
+  const hotelName = env.HOTEL_NAME || 'Hôtel Lumière Paris';
+
+  try {
+    const profileRes = await airtable(env, 'Guest Profiles', {
+      params: { maxRecords: 25 },
+    });
+    const records = profileRes.records || [];
+
+    for (const record of records) {
+      const profile = record.fields || {};
+      const phone = profile.Phone;
+      if (!phone) continue;
+
+      // Pre-Arrival Campaign
+      if (profile.PurposeOfStay || profile.GeneralPreferences || profile.DietaryRestrictions) {
+        const prePrompt = buildPreArrivalOutreachPrompt({ profile, hotelName });
+        const llmRes = await callLLM(env, prePrompt, { maxTokens: 200, router: true });
+        const messageText = (llmRes.content || '').replace(/^["']|["']$/g, '').trim();
+
+        if (messageText) {
+          const sent = await sendWhatsAppMessage(env, { phone, text: messageText });
+          results.preArrivalSent++;
+          results.messages.push({ campaign: 'pre_arrival', phone, text: messageText, simulated: Boolean(sent.simulated) });
+        }
+      }
+    }
+  } catch (err) {
+    results.error = err instanceof Error ? err.message : String(err);
+  }
+
+  return results;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request, env) });
     if (request.method === 'GET' && url.pathname === '/health') return response({ ok: true, service: 'conciergeflow-api' }, 200, request, env);
+    if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/test-cron') {
+      const result = await runScheduledOutreach(env);
+      return response(result, 200, request, env);
+    }
     if (request.method === 'POST' && ['/api/chat', '/concierge/inbound'].includes(url.pathname)) {
       if (rateLimited(request)) return response({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
       try {
@@ -844,5 +909,8 @@ export default {
       }
     }
     return response({ error: 'Not found.' }, 404, request, env);
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runScheduledOutreach(env));
   },
 };

@@ -4,6 +4,9 @@
   "main": "src/index.js",
   "compatibility_date": "2026-08-02",
   "workers_dev": true,
+  "triggers": {
+    "crons": ["0 10 * * *"]
+  },
   "vars": {
     "ALLOWED_ORIGIN": "https://flowarchitect-agency.github.io",
     "HOTEL_NAME": "H\u00f4tel Lumi\u00e8re Paris",

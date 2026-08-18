@@ -564,3 +564,39 @@ CONVERSATION TRANSCRIPT:
 ${historyText}
 user: ${message}`;
 }
+
+export function buildPreArrivalOutreachPrompt({ profile, hotelName = 'Hôtel Lumière Paris' }) {
+  return `You are the Head Concierge at ${hotelName}.
+Write a personalized, warm pre-arrival welcome message to be sent via WhatsApp to a guest arriving in 48 hours.
+
+GUEST PROFILE:
+- Name: ${profile.GuestName || 'Valued Guest'}
+- Language: ${profile.Language || 'en'}
+- Purpose of Stay: ${profile.PurposeOfStay || 'Paris Getaway'}
+- Dietary Restrictions: ${profile.DietaryRestrictions || 'None specified'}
+- Preferences: ${profile.GeneralPreferences || 'Luxury experience'}
+
+RULES:
+- Compose the message in the guest's language (${profile.Language || 'en'}).
+- Warm, personal, 5-star Paris luxury concierge tone.
+- Naturally offer a relevant premium hotel service (e.g., Private Mercedes Chauffeur airport transfer, Lumière Spa reservation, or Eiffel View rooftop dinner table).
+- Keep it concise, friendly, and under 4 sentences.
+- Return raw text string only (no JSON, no markdown formatting).`;
+}
+
+export function buildPostCheckoutOutreachPrompt({ profile, hotelName = 'Hôtel Lumière Paris' }) {
+  return `You are the Head Concierge at ${hotelName}.
+Write a polite, personal post-checkout thank you message to be sent via WhatsApp to a guest who checked out earlier today.
+
+GUEST PROFILE:
+- Name: ${profile.GuestName || 'Valued Guest'}
+- Language: ${profile.Language || 'en'}
+- Purpose of Stay: ${profile.PurposeOfStay || 'Stay'}
+
+RULES:
+- Compose the message in the guest's language (${profile.Language || 'en'}).
+- Express sincere gratitude for staying at ${hotelName}.
+- Politely ask how their stay was and invite them to leave a review or share any private feedback directly with the team.
+- Warm, discreet, and refined tone. Keep under 4 sentences.
+- Return raw text string only (no JSON, no markdown formatting).`;
+}
