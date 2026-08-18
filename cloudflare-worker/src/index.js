@@ -1,4 +1,5 @@
 import {
+  buildEvaluatorPrompt,
   buildPrompt,
   classifyRequest,
   enforceContract,
@@ -633,6 +634,21 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     excluded: serviceSet.excluded,
     externalOptions,
   });
+
+  // Phase 2: Reflection & Evaluator Loop
+  if (outcome.reply && outcome.intent !== 'smalltalk' && classification.route !== 'greeting') {
+    reportStatus('Evaluating luxury service alignment & tone\u2026');
+    try {
+      const evalPrompt = buildEvaluatorPrompt({ input, draftReply: outcome.reply, classification, facts });
+      const evalResult = await callLLM(env, evalPrompt, { maxTokens: 220, router: true });
+      const evalJson = parseModelJson(evalResult.content);
+      if (evalJson && evalJson.passed === false && evalJson.improved_reply && typeof evalJson.improved_reply === 'string') {
+        outcome.reply = evalJson.improved_reply.trim();
+      }
+    } catch {
+      /* fallback gracefully if evaluator loop encounters network error or timeout */
+    }
+  }
 
   if (!input.testMode || input.testMode === 'write_verified') {
     ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
