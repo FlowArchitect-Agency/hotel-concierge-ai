@@ -174,7 +174,44 @@ function preferenceForOneRecommendation(message) {
   return /\b(the best|best one|only one|just one|one that'?s best|one excellent)\b/.test(text);
 }
 
-async function callLLM(env, prompt, { maxTokens = 350, router = false } = {}) {
+const CONCIERGE_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'create_reservation',
+      description: 'Book or request a reservation for a hotel service, spa, restaurant, or private transfer',
+      parameters: {
+        type: 'object',
+        properties: {
+          serviceName: { type: 'string', description: 'Name of the requested service' },
+          guestName: { type: 'string', description: 'Full name of the guest' },
+          email: { type: 'string', description: 'Contact email address' },
+          preferredDate: { type: 'string', description: 'Date of reservation' },
+          preferredTime: { type: 'string', description: 'Time of reservation' },
+          partySize: { type: 'number', description: 'Number of people' },
+        },
+        required: ['serviceName', 'guestName', 'email'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_paris_addresses',
+      description: 'Search current independently verified Paris venues, museums, or restaurants',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search term or venue category' },
+          cuisine: { type: 'string', description: 'Specific cuisine if applicable' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+];
+
+async function callLLM(env, prompt, { maxTokens = 350, router = false, tools = null } = {}) {
   if (env.GEMINI_API_KEY) {
     try {
       const geminiModel = env.GEMINI_MODEL || 'gemini-1.5-flash';
@@ -184,13 +221,13 @@ async function callLLM(env, prompt, { maxTokens = 350, router = false } = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: maxTokens, temperature: 0.2 }
-        })
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: maxTokens, temperature: 0.2 },
+        }),
       });
       if (response.ok) {
         const data = await response.json();
         const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (content) return { content, providerFailure: '' };
+        if (content) return { content, toolCalls: [], providerFailure: '' };
       }
     } catch {
       /* fallback to Groq / OpenAI */
@@ -198,7 +235,7 @@ async function callLLM(env, prompt, { maxTokens = 350, router = false } = {}) {
   }
 
   const apiKey = env.GROQ_API_KEY || env.OPENAI_API_KEY || env.OPENROUTER_API_KEY;
-  if (!apiKey) return { content: '', providerFailure: 'missing_api_key' };
+  if (!apiKey) return { content: '', toolCalls: [], providerFailure: 'missing_api_key' };
 
   const baseUrl = env.GROQ_API_KEY
     ? 'https://api.groq.com/openai/v1/chat/completions'
@@ -217,7 +254,7 @@ async function callLLM(env, prompt, { maxTokens = 350, router = false } = {}) {
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2,
         max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
+        ...(tools ? { tools, tool_choice: 'auto' } : { response_format: { type: 'json_object' } }),
         ...(model.startsWith('qwen/') ? { reasoning_effort: 'none', reasoning_format: 'hidden' } : {}),
       };
       const result = await fetch(baseUrl, {
@@ -230,14 +267,16 @@ async function callLLM(env, prompt, { maxTokens = 350, router = false } = {}) {
         continue;
       }
       const data = await result.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (content) return { content, providerFailure: '' };
+      const message = data.choices?.[0]?.message;
+      const content = message?.content || '';
+      const toolCalls = message?.tool_calls || [];
+      if (content || toolCalls.length) return { content, toolCalls, providerFailure: '' };
       failure = 'empty_response';
     } catch {
       failure = 'request_error';
     }
   }
-  return { content: '', providerFailure: failure || 'provider_unavailable' };
+  return { content: '', toolCalls: [], providerFailure: failure || 'provider_unavailable' };
 }
 const callGroq = callLLM;
 
