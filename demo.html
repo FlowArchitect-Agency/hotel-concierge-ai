@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConciergeFlow AI — Luxury Hotel WhatsApp AI Simulator</title>
+  <link rel="stylesheet" href="demo.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="sim-navbar">
+    <a href="index.html" class="sim-brand">
+      <div class="sim-logo-badge">HL</div>
+      <div class="sim-brand-text">
+        <h1>HÔTEL LUMIÈRE PARIS</h1>
+        <span>AI Concierge Production Simulator</span>
+      </div>
+    </a>
+    <div class="sim-nav-actions">
+      <div class="badge-live">
+        <div class="pulse-dot"></div>
+        <span>Engine: Online (v2.4)</span>
+      </div>
+      <a href="index.html" class="btn-nav-outline">← Back to Main Hotel Site</a>
+    </div>
+  </header>
+
+  <!-- 3-Panel Main Layout Container -->
+  <main class="sim-container">
+
+    <!-- PANEL 1: MISSION CONTROL (LEFT) -->
+    <section class="panel-mission">
+      <div class="panel-header">
+        <h2>🎛️ Mission Control</h2>
+        <p>Configure guest context & trigger proactive scenarios</p>
+      </div>
+
+      <div class="panel-body">
+        <!-- Scenario Presets -->
+        <div class="preset-section">
+          <label>Quick Demo Scenarios</label>
+          <div class="preset-grid">
+            <div class="preset-card active" data-scenario="pre_arrival">
+              <span class="p-title">48h Pre-Arrival</span>
+              <span class="p-desc">Chauffeur & Rooftop upsells</span>
+            </div>
+            <div class="preset-card" data-scenario="in_stay">
+              <span class="p-title">In-Stay Request</span>
+              <span class="p-desc">Towels & Staff dispatch</span>
+            </div>
+            <div class="preset-card" data-scenario="itinerary">
+              <span class="p-title">Paris Discovery</span>
+              <span class="p-desc">Michelin dining & Rooftop</span>
+            </div>
+            <div class="preset-card" data-scenario="checkout">
+              <span class="p-title">Post-Checkout</span>
+              <span class="p-desc">5★ Review router</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Form Inputs -->
+        <div class="form-group">
+          <label for="scenarioSelect">Scenario Trigger</label>
+          <select id="scenarioSelect" class="form-control">
+            <option value="pre_arrival">48h Pre-Arrival Logistics & Upsell</option>
+            <option value="in_stay">In-Stay Room Service (Towels / Clean)</option>
+            <option value="itinerary">Luxury Paris Itinerary & Rooftop Dining</option>
+            <option value="checkout">Post-Checkout Reputation Review Routing</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="guestName">Virtual Guest Name</label>
+          <input type="text" id="guestName" class="form-control" value="Alexander Dupont">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="guestLang">Language</label>
+            <select id="guestLang" class="form-control">
+              <option value="en">English (US/UK)</option>
+              <option value="fr">Français (French)</option>
+              <option value="es">Español (Spanish)</option>
+              <option value="de">Deutsch (German)</option>
+              <option value="it">Italiano (Italian)</option>
+              <option value="ja">日本語 (Japanese)</option>
+              <option value="ar">العربية (Arabic)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="vipSelect">VIP Status</label>
+            <select id="vipSelect" class="form-control">
+              <option value="VIP">VIP Tier</option>
+              <option value="Celebrity">Celebrity</option>
+              <option value="Standard">Standard</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="roomNumber">Room / Suite</label>
+          <input type="text" id="roomNumber" class="form-control" value="Suite 304">
+        </div>
+
+        <!-- Demo Isolation Flag -->
+        <div class="demo-flag-box">
+          <span>🛡️ Database Isolation Mode</span>
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" id="isDemoFlag" checked>
+            <span style="font-size:11px; color:#c5a880; font-weight:600;">Is_Demo = TRUE</span>
+          </label>
+        </div>
+
+        <button id="launchBtn" class="btn-launch">
+          <span>🚀</span> Launch Simulation
+        </button>
+      </div>
+    </section>
+
+    <!-- PANEL 2: THE WHATSAPP CLONE (CENTER) -->
+    <section class="panel-whatsapp">
+      <div class="phone-frame">
+        
+        <!-- Top Speaker Notch -->
+        <div class="phone-notch">
+          <div class="phone-speaker"></div>
+        </div>
+
+        <!-- WhatsApp Header -->
+        <div class="wa-header">
+          <div class="wa-header-left">
+            <span class="wa-back-btn">←</span>
+            <div class="wa-avatar">HL</div>
+            <div class="wa-info">
+              <h3>Hôtel Lumière <span class="wa-verified-badge">✓</span></h3>
+              <span class="wa-status">online</span>
+            </div>
+          </div>
+          <div class="wa-header-icons">
+            <span>📹</span>
+            <span>📞</span>
+            <span>⋮</span>
+          </div>
+        </div>
+
+        <!-- WhatsApp Chat Viewport Canvas -->
+        <div id="chatCanvas" class="wa-chat-canvas">
+          <div class="wa-date-pill">TODAY</div>
+          <div class="wa-enc-pill">🔒 Messages and calls are end-to-end encrypted. No one outside of this chat can read or listen to them.</div>
+        </div>
+
+        <!-- WhatsApp Bottom Input Bar -->
+        <div class="wa-input-bar">
+          <span class="wa-icon-btn">😊</span>
+          <span class="wa-icon-btn">📎</span>
+          <input type="text" id="msgInput" class="wa-text-input" placeholder="Type a message">
+          <button id="sendBtn" class="wa-send-btn">➤</button>
+        </div>
+
+        <!-- Meta Interactive UI: List Message Bottom Sheet Menu -->
+        <div id="bottomSheet" class="wa-bottom-sheet">
+          <div class="wa-sheet-header">
+            <h4>Hôtel Lumière Exclusive Collection</h4>
+            <span id="closeSheetBtn" class="wa-sheet-close">✕</span>
+          </div>
+          <div class="wa-sheet-list">
+            <div class="wa-sheet-item" onclick="window.selectService('Mercedes S-Class Chauffeur', '€180')">
+              <h5><span>🚗 Private Mercedes Chauffeur</span> <strong>€180</strong></h5>
+              <p>Airport transfer or Paris city tour with private chauffeur.</p>
+            </div>
+            <div class="wa-sheet-item" onclick="window.selectService('Lumière Signature Spa & Massage', '€220')">
+              <h5><span>💆 Lumière Signature Spa Ritual</span> <strong>€220</strong></h5>
+              <p>90-min bespoke deep tissue massage & revitalizing facial.</p>
+            </div>
+            <div class="wa-sheet-item" onclick="window.selectService('Eiffel View Rooftop Table', '€240')">
+              <h5><span>🍽️ Eiffel View Rooftop Tasting Menu</span> <strong>€240</strong></h5>
+              <p>7-course Michelin-level tasting menu with panoramic Eiffel views.</p>
+            </div>
+            <div class="wa-sheet-item" onclick="window.selectService('Private Seine Sunset Cruise', '€450')">
+              <h5><span>🛥️ Private Seine Sunset Cruise</span> <strong>€450</strong></h5>
+              <p>2-hour private yacht cruise with vintage champagne & caviar.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- PANEL 3: RECEPTIONIST INBOX & ESCAPE HATCH (RIGHT) -->
+    <section class="panel-inbox">
+      <div class="panel-header">
+        <h2>🛎️ Front Desk Ops Center</h2>
+        <p>Live guest profile, AI collision control & staff routing</p>
+      </div>
+
+      <div class="panel-body">
+        
+        <!-- Live Guest Card -->
+        <div class="inbox-guest-card">
+          <div class="guest-card-header">
+            <div class="guest-identity">
+              <div class="guest-avatar-large">AD</div>
+              <div>
+                <h4 id="deskGuestName">Alexander Dupont</h4>
+                <span id="deskRoom">Suite 304</span>
+              </div>
+            </div>
+            <span id="deskVip" class="vip-badge">VIP</span>
+          </div>
+          <div class="guest-tags" id="deskTags">
+            <span class="tag-pill">10th Anniversary</span>
+            <span class="tag-pill">Gluten-Free</span>
+            <span class="tag-pill">High Floor</span>
+          </div>
+        </div>
+
+        <!-- Escape Hatch: Human Handoff & Coexistence Control -->
+        <div class="handoff-card">
+          <div class="handoff-status-row">
+            <span class="status-label">Engine Status:</span>
+            <div id="handoffStatus" class="status-indicator ai-active">
+              <div class="pulse-dot"></div>
+              <span>AI Concierge Active</span>
+            </div>
+          </div>
+          <button id="handoffBtn" class="btn-handoff">
+            <span>✋</span> Take Over Chat (Human Handoff)
+          </button>
+        </div>
+
+        <!-- Live Operational Staff Routing Alert Box -->
+        <div id="staffAlertBox" class="staff-routing-box" style="display: none;">
+          <h5><span>🛎️</span> Live Staff Routing Alert</h5>
+          <p id="staffAlertContent">
+            <strong>Role:</strong> Housekeeping (On-Duty)<br>
+            <strong>Task:</strong> Extra towels to Suite 304<br>
+            <strong>Status:</strong> Dispatched via WhatsApp Alert
+          </p>
+        </div>
+
+        <!-- Live Real-Time Transcript Feed -->
+        <div class="transcript-section">
+          <label style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 600;">
+            Live Session Transcript Log
+          </label>
+          <div id="transcriptFeed" class="transcript-feed">
+            <!-- Dynamic Log entries -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Script Engine -->
+  <script src="demo.js"></script>
+</body>
+</html>
