@@ -133,6 +133,26 @@
     return button;
   }
 
+  function showToast(message) {
+    let toast = document.querySelector(".demo-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.className = "demo-toast";
+      toast.setAttribute("role", "status");
+      toast.setAttribute("aria-live", "polite");
+      document.body.append(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add("is-visible");
+    if (toast.dataset.timeoutId) {
+      window.clearTimeout(Number(toast.dataset.timeoutId));
+    }
+    const timeoutId = window.setTimeout(() => {
+      toast.classList.remove("is-visible");
+    }, 2600);
+    toast.dataset.timeoutId = String(timeoutId);
+  }
+
   // Render WhatsApp chat bubble with optional rich media (Bug 2 Fix)
   function addMessage({ sender, text, quickReplies = [], listMessage = false, media = null }) {
     const message = document.createElement("article");
@@ -145,6 +165,7 @@
         docCard.className = "message-media-doc";
         docCard.setAttribute("role", "group");
         docCard.setAttribute("aria-label", "PDF Attachment");
+        docCard.style.cursor = "pointer";
 
         const docIcon = document.createElement("div");
         docIcon.className = "media-doc-icon";
@@ -167,15 +188,19 @@
         const docBtn = document.createElement("button");
         docBtn.type = "button";
         docBtn.className = "media-doc-action";
-        docBtn.title = "View Document";
-        docBtn.setAttribute("aria-label", "View Document");
+        docBtn.title = "Download / View Document";
+        docBtn.setAttribute("aria-label", "Download / View Document");
         docBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`;
-        docBtn.addEventListener("click", () => {
-          addTranscript("Document Preview", `Opened document: ${media.title || media.filename}`, "ai");
-          if (media.url && !media.url.startsWith("assets/")) {
-            window.open(media.url, "_blank", "noopener,noreferrer");
-          }
-        });
+        
+        const handleDocClick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          showToast("Demo Mode: Document download simulated.");
+          addTranscript("Document Preview", `Simulated download: ${media.title || media.filename}`, "ai");
+        };
+
+        docBtn.addEventListener("click", handleDocClick);
+        docCard.addEventListener("click", handleDocClick);
 
         docCard.append(docIcon, docInfo, docBtn);
         message.append(docCard);

@@ -140,6 +140,8 @@ export function parseGuestInput(body) {
   const language = requestedLanguage || (detectedLanguage !== 'en' || hasExplicitEnglishSignal(message)
     ? detectedLanguage
     : (SUPPORTED_REPLY_LANGUAGES.has(preferredLanguage) ? preferredLanguage : detectedLanguage));
+  const guestName = String(raw.guestName ?? raw.guest_name ?? raw.name ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 100);
+  const isDemo = raw.is_demo === true || raw.isDemo === true || raw.demo === true;
   return {
     message,
     // Keep one, clearly namespaced history per guest and channel. WhatsApp
@@ -152,8 +154,9 @@ export function parseGuestInput(body) {
     languageRequested: Boolean(requestedLanguage),
     testMode,
     testRunId: String(raw.testRunId ?? '').slice(0, 80),
-    guestName: String(raw.guestName ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 100),
-    isDemo: raw.is_demo === true,
+    guestName: guestName || (isDemo ? 'Demo Guest' : ''),
+    isDemo,
+    is_demo: isDemo,
     chatHistory: Array.isArray(raw.chatHistory) ? raw.chatHistory : null,
     scenario: String(raw.scenario ?? '').trim().slice(0, 48),
     receivedAt: new Date().toISOString(),

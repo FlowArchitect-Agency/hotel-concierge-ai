@@ -302,27 +302,37 @@ async function fetchHistory(env, userId) {
 }
 
 function demoFlagFields(input) {
-  return input.isDemo ? { Is_Demo: true } : {};
+  return (input && (input.isDemo || input.is_demo || input.demo)) ? { Is_Demo: true } : {};
 }
 
 async function upsertGuest(env, input) {
-  if (!input.guestName) return;
-  const safeUser = input.userId.replace(/'/g, "\\'");
-  const existing = await airtable(env, 'Guests', {
-    params: {
-      filterByFormula: `{UserID}='${safeUser}'`,
-      maxRecords: 1,
-    },
-  });
+  const isDemo = Boolean(input?.isDemo || input?.is_demo || input?.demo);
+  const rawName = String(input?.guestName || input?.guest_name || input?.name || '').trim();
+  if (!rawName && !isDemo) return;
+  const guestName = rawName || (isDemo ? 'Demo Guest' : 'Guest');
+  const safeUser = String(input?.userId || '').replace(/'/g, "\\'");
+  if (!safeUser) return;
+
   const fields = {
     UserID: input.userId,
-    Name: input.guestName,
-    PreferredLanguage: input.language,
-    ...demoFlagFields(input),
+    Name: guestName,
+    PreferredLanguage: input.language || 'English',
+    ...(isDemo ? { Is_Demo: true } : {}),
   };
-  const recordId = existing.records?.[0]?.id;
-  if (recordId) return airtable(env, 'Guests', { method: 'PATCH', recordId, fields });
-  return airtable(env, 'Guests', { method: 'POST', fields });
+
+  try {
+    const existing = await airtable(env, 'Guests', {
+      params: {
+        filterByFormula: `{UserID}='${safeUser}'`,
+        maxRecords: 1,
+      },
+    });
+    const recordId = existing?.records?.[0]?.id;
+    if (recordId) return await airtable(env, 'Guests', { method: 'PATCH', recordId, fields });
+    return await airtable(env, 'Guests', { method: 'POST', fields });
+  } catch (err) {
+    console.error('Error upserting guest in Airtable:', err);
+  }
 }
 
 async function fetchFacts(env) {
@@ -551,8 +561,11 @@ async function enrichSemanticRoute(env, input, history, classification) {
 
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
+  const guestName = String(input?.guestName || input?.guest_name || input?.name || '').trim() || (input?.isDemo || input?.is_demo ? 'Demo Guest' : 'Guest');
+  const flags = demoFlagFields(input);
+
   await Promise.all([
-    upsertGuest(env, input),
+    upsertGuest(env, input).catch(() => undefined),
     airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
@@ -562,9 +575,9 @@ async function persistConversation(env, input, outcome) {
         Message: input.message,
         Language: input.language,
         Timestamp: input.receivedAt,
-        ...demoFlagFields(input),
+        ...flags,
       },
-    }),
+    }).catch(() => undefined),
     airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
@@ -574,9 +587,9 @@ async function persistConversation(env, input, outcome) {
         Message: outcome.reply,
         Language: input.language,
         Timestamp: time,
-        ...demoFlagFields(input),
+        ...flags,
       },
-    }),
+    }).catch(() => undefined),
   ]);
   const requests = outcome.requests.filter((item) => item.summary);
   await Promise.all(requests.map((item) => airtable(env, 'Requests', {
@@ -584,7 +597,7 @@ async function persistConversation(env, input, outcome) {
     fields: {
       UserID: input.userId,
       Channel: input.channel,
-      GuestName: input.guestName || undefined,
+      GuestName: guestName,
       ServiceType: outcome.serviceType || 'other',
       RequestSummary: item.summary,
       Source: item.source === 'external' ? 'external' : 'partner',
@@ -594,9 +607,9 @@ async function persistConversation(env, input, outcome) {
       IsUpsell: Boolean(item.isUpsell),
       Language: input.language,
       HandoverAt: time,
-      ...demoFlagFields(input),
+      ...flags,
     },
-  })));
+  }).catch(() => undefined)));
 }
 
 const PARTNER_CARD_IMAGES = {

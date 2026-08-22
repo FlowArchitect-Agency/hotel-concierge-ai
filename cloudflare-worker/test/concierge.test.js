@@ -994,9 +994,18 @@ test('An empty unfamiliar discovery asks one useful refinement instead of deferr
 
 test('Sentiment Override: Frustrated guest or manager request immediately triggers escape hatch without upselling', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
+  const writtenTables = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('api.airtable.com')) {
+      if (options.body) {
+        writtenTables.push({ url: target, fields: JSON.parse(options.body).fields });
+      }
+      return Response.json({ records: [], id: 'rec_sentiment_test' });
+    }
     throw new Error(`Unexpected call: ${url}`);
   };
+  const scheduled = [];
   try {
     const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
       method: 'POST',
@@ -1010,9 +1019,10 @@ test('Sentiment Override: Frustrated guest or manager request immediately trigge
         chatHistory: [{ role: 'user', content: 'This service is terrible and unacceptable. I want to speak to the manager right now!' }],
       }),
     }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
-      waitUntil() {},
+      waitUntil(p) { scheduled.push(p); },
     });
     const data = await response.json();
+    await Promise.all(scheduled);
     assert.equal(response.status, 200);
     assert.equal(data.escape_hatch_triggered, true);
     assert.equal(data.requires_human, true);
@@ -1022,6 +1032,10 @@ test('Sentiment Override: Frustrated guest or manager request immediately trigge
     assert.doesNotMatch(data.reply, /upgrade/i);
     assert.ok(data.staff_alerts.length > 0);
     assert.equal(data.staff_alerts[0].role, 'Duty Manager / Front Desk');
+    assert.ok(writtenTables.length > 0);
+    assert.ok(writtenTables.every((entry) => entry.fields.Is_Demo === true));
+    const guestWrite = writtenTables.find((w) => w.url.includes('/Guests'));
+    assert.equal(guestWrite?.fields.Name, 'Angry Guest');
   } finally {
     globalThis.fetch = originalFetch;
   }
