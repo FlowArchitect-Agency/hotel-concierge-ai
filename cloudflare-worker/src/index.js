@@ -79,10 +79,136 @@ async function airtable(env, table, { method = 'GET', params, fields, baseId = e
   return result.json();
 }
 
+const AIRTABLE_SCHEMA = {
+  Guests: {
+    table: 'tblzYZNa0Z3BbI6BB',
+    fields: {
+      phone: 'fld5XgQjXrP3CvqUR',
+      name: 'fldB9MF2Zh3oN9C4C',
+      language: 'fldRhFTWTRO7rGpQf',
+      vipStatus: 'fldoYRZA6ig0YGTUm',
+      knownPreferences: 'fldCftrTVWTx8wl8e',
+    },
+  },
+  Reservations: {
+    table: 'tblVOAvaOrbYjg7vG',
+    fields: {
+      id: 'fldpGGsT2dM8XC0YW',
+      guest: 'fldhFLhCro87WibaH',
+      checkIn: 'fldx783w7rtBD75jD',
+      checkOut: 'fld81RW6bDR7shQWR',
+      roomNumber: 'fldF0Y1LwianGcX0r',
+      status: 'fldGek8a7krKkLv66',
+    },
+  },
+  Staff: {
+    table: 'tblCbZ2uEcJmHAK31',
+    fields: {
+      name: 'fldh8GYQxVccVaaL4',
+      role: 'fldzC231otHnIxPVn',
+      whatsAppNumber: 'fldJpwWvvfe20XTEH',
+      onDuty: 'fldcLblGxiNTO86hs',
+    },
+  },
+  Requests: {
+    table: 'tblpZpF2blAii44MS',
+    fields: {
+      id: 'fld2QxTOdw9iJIbYL',
+      guest: 'fld0NHn9iuB2DwifU',
+      assignedStaff: 'fldCawPPdYoCRfDKZ',
+      taskDetails: 'fldpNRN1vOUTTL87s',
+      status: 'fldS3LtiRsRa4yMC8',
+    },
+  },
+  Conversations: {
+    table: 'tbl6OqURSczymufG5',
+    fields: {
+      id: 'fldOzKpo2oiAgoaXC',
+      guest: 'fldU4RXzl8UPr1ViA',
+      sender: 'fldbLaHSnQJGpXiPQ',
+      message: 'fldNRantEIy4DYeXy',
+      timestamp: 'fldSjp107JhjVYQPY',
+    },
+  },
+  Services: {
+    table: 'tblp5UppwYbt4nZyQ',
+    fields: {
+      name: 'fldULLX5B0rxlKWDc',
+      price: 'fldmN67wdugIz3XXy',
+      hours: 'fldl4Bvd8ulKI80ob',
+      details: 'fldofT4KVWCnHOT4X',
+      active: 'fldRCfZFA1YSzh7RH',
+    },
+  },
+};
+
+async function getOrCreateGuestRecord(env, { phone, name, language, preferences }) {
+  const phoneKey = String(phone || '').trim();
+  if (!phoneKey) return null;
+  const G = AIRTABLE_SCHEMA.Guests;
+  try {
+    const existing = await airtable(env, G.table, {
+      params: { filterByFormula: `{${G.fields.phone}} = '${phoneKey}'`, maxRecords: 1 },
+    });
+    if (existing.records?.[0]) {
+      const rec = existing.records[0];
+      if (name || preferences) {
+        await airtable(env, `${G.table}/${rec.id}`, {
+          method: 'PATCH',
+          fields: {
+            [G.fields.name]: name || rec.fields?.[G.fields.name] || undefined,
+            [G.fields.knownPreferences]: preferences || rec.fields?.[G.fields.knownPreferences] || undefined,
+          },
+        }).catch(() => undefined);
+      }
+      return rec.id;
+    }
+    const created = await airtable(env, G.table, {
+      method: 'POST',
+      fields: {
+        [G.fields.phone]: phoneKey,
+        [G.fields.name]: name || 'Guest',
+        [G.fields.language]: language || 'en',
+        [G.fields.vipStatus]: 'Standard',
+        [G.fields.knownPreferences]: preferences || undefined,
+      },
+    });
+    return created.id;
+  } catch (err) {
+    console.error('Error fetching/creating guest record:', err);
+    return null;
+  }
+}
+
+async function routeOperationalTaskToOnDutyStaff(env, { taskDetails, guestName, targetRole = 'Housekeeping' }) {
+  const S = AIRTABLE_SCHEMA.Staff;
+  try {
+    const staffRes = await airtable(env, S.table, {
+      params: {
+        filterByFormula: `AND({${S.fields.onDuty}} = 1, {${S.fields.role}} = '${targetRole}')`,
+        maxRecords: 1,
+      },
+    });
+    const staffRec = staffRes.records?.[0];
+    if (staffRec) {
+      const staffName = staffRec.fields?.[S.fields.name] || 'On-Duty Staff';
+      const staffPhone = staffRec.fields?.[S.fields.whatsAppNumber];
+      if (staffPhone) {
+        const alertText = `🛎️ [HOTEL TASK ALERT]\nGuest: ${guestName || 'Valued Guest'}\nRole: ${targetRole}\nTask: ${taskDetails}\nAssigned: ${staffName}`;
+        await sendWhatsAppMessage(env, { phone: staffPhone, text: alertText });
+      }
+      return staffRec.id;
+    }
+  } catch (err) {
+    console.error('Error routing to on-duty staff:', err);
+  }
+  return null;
+}
+
 async function fetchServices(env) {
-  const payload = await airtable(env, 'Services', {
-    params: { filterByFormula: '{Active}=TRUE()', pageSize: 100 },
-  });
+  const payload = await airtable(env, AIRTABLE_SCHEMA.Services.table, {
+    params: { filterByFormula: `{${AIRTABLE_SCHEMA.Services.fields.active}}=1`, pageSize: 100 },
+  }).catch(() => airtable(env, 'Services', { params: { filterByFormula: '{Active}=TRUE()', pageSize: 100 } }));
   return payload.records || [];
 }
 
@@ -95,10 +221,10 @@ async function fetchHistory(env, userId) {
       'sort[0][direction]': 'desc',
       maxRecords: 12,
     },
-  });
+  }).catch(() => ({ records: [] }));
   return (payload.records || []).map((record) => ({
     role: record.fields?.Role === 'assistant' ? 'assistant' : 'user',
-    message: String(record.fields?.Message || ''),
+    message: String(record.fields?.Message || record.fields?.[AIRTABLE_SCHEMA.Conversations.fields.message] || ''),
   })).filter((item) => item.message).reverse();
 }
 
@@ -349,33 +475,81 @@ async function enrichSemanticRoute(env, input, history, classification) {
 
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
+  const phone = input.userId?.replace(/^wa:/, '') || input.phone || '';
+  const guestRecordId = await getOrCreateGuestRecord(env, {
+    phone,
+    name: input.contactName || 'Guest',
+    language: input.language,
+  });
+
+  const C = AIRTABLE_SCHEMA.Conversations;
+  const R = AIRTABLE_SCHEMA.Requests;
+
   await Promise.all([
-    airtable(env, 'Conversations', {
+    airtable(env, C.table, {
       method: 'POST',
-      fields: { UserID: input.userId, Channel: input.channel, Role: 'user', Message: input.message, Language: input.language, Timestamp: input.receivedAt },
-    }),
-    airtable(env, 'Conversations', {
+      fields: {
+        UserID: input.userId,
+        Channel: input.channel,
+        Role: 'user',
+        Message: input.message,
+        Language: input.language,
+        Timestamp: input.receivedAt,
+        [C.fields.message]: input.message,
+        [C.fields.sender]: 'Guest',
+        [C.fields.timestamp]: input.receivedAt,
+        ...(guestRecordId ? { [C.fields.guest]: [guestRecordId] } : {}),
+      },
+    }).catch(() => undefined),
+    airtable(env, C.table, {
       method: 'POST',
-      fields: { UserID: input.userId, Channel: input.channel, Role: 'assistant', Message: outcome.reply, Language: input.language, Timestamp: time },
-    }),
+      fields: {
+        UserID: input.userId,
+        Channel: input.channel,
+        Role: 'assistant',
+        Message: outcome.reply,
+        Language: input.language,
+        Timestamp: time,
+        [C.fields.message]: outcome.reply,
+        [C.fields.sender]: 'AI',
+        [C.fields.timestamp]: time,
+        ...(guestRecordId ? { [C.fields.guest]: [guestRecordId] } : {}),
+      },
+    }).catch(() => undefined),
   ]);
+
   const requests = outcome.requests.filter((item) => item.summary);
-  await Promise.all(requests.map((item) => airtable(env, 'Requests', {
-    method: 'POST',
-    fields: {
-      UserID: input.userId,
-      Channel: input.channel,
-      ServiceType: outcome.serviceType || 'other',
-      RequestSummary: item.summary,
-      Source: item.source === 'external' ? 'external' : 'partner',
-      ServiceRef: item.serviceName || '',
-      Status: 'new',
-      EstValueEUR: item.estValueEur ?? undefined,
-      IsUpsell: Boolean(item.isUpsell),
-      Language: input.language,
-      HandoverAt: time,
-    },
-  })));
+  await Promise.all(
+    requests.map(async (item) => {
+      const targetRole = /towel|clean|linen|amenity|pillow|blanket|bed/i.test(item.summary) ? 'Housekeeping' : 'Receptionist';
+      const staffRecordId = await routeOperationalTaskToOnDutyStaff(env, {
+        taskDetails: item.summary,
+        guestName: input.contactName || 'Guest',
+        targetRole,
+      });
+
+      return airtable(env, R.table, {
+        method: 'POST',
+        fields: {
+          UserID: input.userId,
+          Channel: input.channel,
+          ServiceType: outcome.serviceType || 'other',
+          RequestSummary: item.summary,
+          Source: item.source === 'external' ? 'external' : 'partner',
+          ServiceRef: item.serviceName || '',
+          Status: 'new',
+          EstValueEUR: item.estValueEur ?? undefined,
+          IsUpsell: Boolean(item.isUpsell),
+          Language: input.language,
+          HandoverAt: time,
+          [R.fields.taskDetails]: item.summary,
+          [R.fields.status]: 'new',
+          ...(guestRecordId ? { [R.fields.guest]: [guestRecordId] } : {}),
+          ...(staffRecordId ? { [R.fields.assignedStaff]: [staffRecordId] } : {}),
+        },
+      }).catch(() => undefined);
+    })
+  );
 }
 
 const PARTNER_CARD_IMAGES = {
@@ -491,6 +665,15 @@ function parseBookingEnquiry(body) {
 }
 
 async function persistBookingEnquiry(env, enquiry) {
+  const guestRecordId = await getOrCreateGuestRecord(env, {
+    phone: enquiry.phone || enquiry.email,
+    name: enquiry.guestName,
+    language: enquiry.language,
+  }).catch(() => null);
+
+  const Res = AIRTABLE_SCHEMA.Reservations;
+  const Req = AIRTABLE_SCHEMA.Requests;
+
   try {
     await airtable(env, 'Reservations', {
       method: 'POST',
@@ -507,6 +690,9 @@ async function persistBookingEnquiry(env, enquiry) {
         Status: 'new',
         SessionID: enquiry.userId,
         Language: enquiry.language || 'en',
+        [Res.fields.checkIn]: enquiry.preferredDate || undefined,
+        [Res.fields.status]: 'new',
+        ...(guestRecordId ? { [Res.fields.guest]: [guestRecordId] } : {}),
       },
     });
   } catch (err) {
@@ -535,6 +721,9 @@ async function persistBookingEnquiry(env, enquiry) {
       IsUpsell: true,
       Language: enquiry.language,
       HandoverAt: new Date().toISOString(),
+      [Req.fields.taskDetails]: details,
+      [Req.fields.status]: 'new',
+      ...(guestRecordId ? { [Req.fields.guest]: [guestRecordId] } : {}),
     },
   });
 }

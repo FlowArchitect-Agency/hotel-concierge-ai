@@ -1,0 +1,128 @@
+{
+  "baseId": "appWUORad3wvaHttY",
+  "tables": {
+    "Conversations": {
+      "tableId": "tbl6OqURSczymufG5",
+      "fields": {
+        "UserID": "fldjKwt5UaH8llg9A",
+        "Channel": "fldE9y0quGLwvMNd6",
+        "Role": "fldOYWYU9CXetspeR",
+        "Message": "fldNRantEIy4DYeXy",
+        "Language": "fldtXvvODWK8gs4Ov",
+        "Timestamp": "fldSjp107JhjVYQPY",
+        "Guest (Link)": "fldbaF7tGfHzgzBcy",
+        "Request (Link)": "fldz3ukjmn7J9k6ML",
+        "Conversation Summary (AI)": "fld2EOGGULNtr5iav",
+        "Message ID": "fldOzKpo2oiAgoaXC",
+        "Linked Guest": "fldu9Hz128oCEm8BM",
+        "Sender": "fldbLaHSnQJGpXiPQ",
+        "Message Content": "fldFYjfxePZKGCUSV",
+        "Guest": "fldU4RXzl8UPr1ViA"
+      }
+    },
+    "Requests": {
+      "tableId": "tblpZpF2blAii44MS",
+      "fields": {
+        "UserID": "fldWdC8i6SfijmROW",
+        "Channel": "fldQ9Z02oZ1jMaL51",
+        "GuestName": "fldW0jQYvbwxqzFfZ",
+        "ServiceType": "fldsndn6AJGFYeado",
+        "RequestSummary": "fldgZK4T8S11XGEcS",
+        "Source": "fldhBcZQqfL5Ouo93",
+        "ServiceRef": "fldlIaF6d4VDEGaO1",
+        "Status": "fldS3LtiRsRa4yMC8",
+        "EstValueEUR": "fldMehmiXaneh3DL3",
+        "IsUpsell": "fldWXtnNxONMZP2gr",
+        "Language": "fldeT1l3Y2Bdt56K8",
+        "HandoverAt": "fldNV8Laj16sUHKZb",
+        "Guest (Link)": "fldsnSmfUs2gW3PF4",
+        "Service (Link)": "fldGOnHTBD2zS0uLd",
+        "Priority (AI)": "fldVRgd2N9whBtL7w",
+        "Conversations": "fldIasqv4iXFYo7kG",
+        "Request ID": "fld2QxTOdw9iJIbYL",
+        "Linked Guest": "fldoeNXhVUCf1lUCP",
+        "Linked Staff": "fldMJVTjphknQqTCQ",
+        "Task Details": "fldpNRN1vOUTTL87s",
+        "Guest Name": "fldVmThxh8Ga63taM",
+        "Is Upsell": "fldxpycVHDUercMF1",
+        "Guest": "fld0NHn9iuB2DwifU",
+        "Assigned Staff": "fldCawPPdYoCRfDKZ"
+      }
+    },
+    "Services": {
+      "tableId": "tblp5UppwYbt4nZyQ",
+      "fields": {
+        "Name": "fldmwDliECbWsh4jO",
+        "Category": "fldm1Uxs1jY3gKCpI",
+        "SubType": "fldo7QW9oYlonzAWf",
+        "Description": "fld7Up5U1QzQJbZ6G",
+        "PriceEUR": "fld0JjKMm03pC1gyb",
+        "DurationMins": "fldmGkMfN98wV0Y7g",
+        "Location": "fldwwmLyJ53SFQHHq",
+        "PhoneNumber": "fldvEb1ouH1uInhr3",
+        "Availability": "fldYBNsRBaX1bPydk",
+        "Tags": "fldALuLpqN2gyFtq1",
+        "Active": "fldRCfZFA1YSzh7RH",
+        "Average Rating (AI)": "flddAb9Q4lbq0QjkJ",
+        "Requests": "fldth4Lsxxk7LrFqr",
+        "IsPartner": "fld9kRB0RNp5YUXsd",
+        "WebsiteURL": "fldpIcN2D00vJY00x",
+        "ImageURL": "flddk6XHz1cKp4vsu",
+        "Service Name": "fldULLX5B0rxlKWDc",
+        "Price": "fldmN67wdugIz3XXy",
+        "Operating Hours": "fldl4Bvd8ulKI80ob",
+        "URL Attachment": "fldUnJIpOv7GCZedT",
+        "Details/Attachments": "fldofT4KVWCnHOT4X"
+      }
+    },
+    "Guests": {
+      "tableId": "tblzYZNa0Z3BbI6BB",
+      "fields": {
+        "UserID": "fldcXkzmG99tcf9nG",
+        "GuestName": "fldnfHtccZRcoyDOl",
+        "phone number": "fld5XgQjXrP3CvqUR",
+        "Language": "fldRhFTWTRO7rGpQf",
+        "VIPStatus": "fldgQJHJuvfkwDnzR",
+        "Known Preferences (AI)": "fldU2aSuDvu9wgTB2",
+        "Conversations": "fldgmJhxwYK2graID",
+        "Requests": "fldvr0tDB0f4rVGXh",
+        "WhatsApp Number": "fld2kB3JK7Y8XEFSZ",
+        "Full Name": "fldrorltfXgb6rCPH",
+        "VIP Status": "fldoYRZA6ig0YGTUm",
+        "Known Preferences": "fldCftrTVWTx8wl8e",
+        "Room Number": "fld5qyMPU1fz3DWUk",
+        "Notes": "fld48E6g7HgnZFzLc",
+        "Name": "fldB9MF2Zh3oN9C4C",
+        "Reservations": "fldKqGZ4lvoW6CjXD",
+        "Requests 2": "fldnXR4nNV0iZYYe8",
+        "Conversations 2": "fldgEdzVEWn0mPE2v"
+      }
+    },
+    "Reservations": {
+      "tableId": "tblVOAvaOrbYjg7vG",
+      "fields": {
+        "Reservation ID": "fldpGGsT2dM8XC0YW",
+        "Linked Guest": "fldjrIbSfmoEJWXV0",
+        "Check-In Date": "fldx783w7rtBD75jD",
+        "Check-Out Date": "fld81RW6bDR7shQWR",
+        "Room Number": "fldF0Y1LwianGcX0r",
+        "Guest Name": "fldg0VR1Qrpzn4D0k",
+        "Email": "fldaz8TU6KELrtpPO",
+        "Phone": "fldaASTzIodcizJkl",
+        "Service Name": "fldHUx8mIsnZmPeSM",
+        "Status": "fldGek8a7krKkLv66",
+        "Guest": "fldhFLhCro87WibaH"
+      }
+    },
+    "Staff": {
+      "tableId": "tblCbZ2uEcJmHAK31",
+      "fields": {
+        "Staff Name": "fldh8GYQxVccVaaL4",
+        "Role": "fldzC231otHnIxPVn",
+        "WhatsApp Number": "fldJpwWvvfe20XTEH",
+        "On-Duty": "fldcLblGxiNTO86hs",
+        "Requests": "fldmwqX7ECXoEaYux"
+      }
+    }
+  }
+}
