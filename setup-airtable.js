@@ -89,7 +89,7 @@ const tables = [
     name: 'Guests',
     fields: [
       field('UserID', 'singleLineText'),
-      field('Name', 'singleLineText'),
+      field('GuestName', 'singleLineText'),
       field('PreferredLanguage', 'singleLineText'),
       field('RoomNumber', 'singleLineText'),
       field('Notes', 'multilineText'),

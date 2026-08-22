@@ -207,7 +207,7 @@ export function detectMediaBrochure(message, category = null) {
         filename: 'Lumiere_Spa_Wellness_Menu.pdf',
         size: '2.4 MB',
         pages: '12 pages',
-        url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/assets/brochures/spa-wellness-menu.pdf',
+        url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Spa_Wellness_Menu.pdf',
         thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
       };
     }
@@ -239,9 +239,47 @@ export function detectMediaBrochure(message, category = null) {
   return null;
 }
 
+const OPERATIONAL_TERMS = [
+  'towel', 'towels', 'serviette', 'serviettes', 'toalla', 'toallas', 'handtuch', 'asciugamano', 'タオル',
+  'pillow', 'pillows', 'oreiller', 'oreillers', 'almohada', 'almohadas', 'kissen', 'cuscino', '枕',
+  'blanket', 'blankets', 'duvet', 'couverture', 'couvertures', 'manta', 'mantas', 'decke', 'coperta', '毛布',
+  'bedsheet', 'bedsheets', 'linen', 'linens', 'drap', 'draps', 'sabana', 'sabanas', 'シーツ',
+  'water', 'bottled water', 'bottle of water', 'eau', 'bouteille d\'eau', 'agua', 'botella de agua', 'wasser', 'acqua', '水', 'お水',
+  'toiletries', 'shampoo', 'conditioner', 'soap', 'body wash', 'lotion', 'toothbrush', 'toothpaste', 'shaver', 'razor',
+  'shampoing', 'savon', 'gel douche', 'brosse a dents', 'dentifrice', 'champú', 'jabon', 'cepillo de dientes',
+  'slippers', 'chaussons', 'pantuflas', 'hausschuhe', 'スリッパ',
+  'bathrobe', 'bathrobes', 'robe', 'peignoir', 'peignoirs', 'albornoz', 'bademantel', 'バスローブ',
+  'iron', 'ironing board', 'fer a repasser', 'plancha', 'アイロン',
+  'hair dryer', 'hairdryer', 'seche-cheveux', 'secador', 'ドライヤー',
+  'trash', 'bin', 'poubelle', 'basura', 'ゴミ',
+  'clean my room', 'clean the room', 'housekeeping', 'make up the room', 'nettoyer la chambre', 'menage', 'limpiar la habitacion', '清掃',
+  'air conditioning', 'ac', 'heating', 'heater', 'climatisation', 'clim', 'chauffage', 'aire acondicionado', 'calefaccion', 'エアコン',
+  'leak', 'leaking', 'clogged', 'light bulb', 'bulb', 'tv remote', 'key card', 'door lock', 'safe',
+  'en panne', 'ne marche pas', 'fuite', 'bouche', 'ampoule', 'telecommande', 'carte cle', 'serrure',
+  'no funciona', 'fuga', 'atascado', 'bombilla', 'mando', 'tarjeta', 'cerradura',
+  'luggage', 'bags', 'baggage', 'valise', 'valises', 'bagages', 'maleta', 'maletas', '荷物'
+];
+
+export function isOperationalRequest(message) {
+  const text = normalized(message);
+  return OPERATIONAL_TERMS.some((term) => hasTerm(text, term));
+}
+
+export const OPERATIONAL_REPLIES = {
+  en: 'I have logged your request and notified our team to deliver this to your room promptly.',
+  fr: 'J’ai bien pris note de votre demande et alerté notre équipe d’étage pour vous apporter cela en chambre dans les plus brefs délais.',
+  es: 'He registrado su solicitud y avisado a nuestro equipo para que se lo lleve a su habitación a la mayor brevedad.',
+  de: 'Ich habe Ihre Anfrage erfasst und unser Team verständigt, dies umgehend auf Ihr Zimmer zu bringen.',
+  it: 'Ho registrato la sua richiesta e informato il nostro personale affinché venga recapitata rapidamente in camera.',
+  ja: 'ご依頼を承りました。担当スタッフへ手配し、速やかにお部屋へお届けいたします。',
+  zh: '已收到您的客房需求，我已通知客房服务团队为您尽快送至房间。',
+  ar: 'تم تسجيل طلبكم وإبلاغ فريق الخدمة لتوصيله إلى غرفتكم في أقرب وقت ممكن.',
+};
+
 export function classifyRequest(message) {
   const text = normalized(message);
   const hasEscalation = isEscalation(message);
+  const isOperational = isOperationalRequest(message);
   const scores = new Map();
   for (const rule of CATEGORY_RULES) {
     for (const word of rule.words) {
@@ -252,10 +290,11 @@ export function classifyRequest(message) {
   let category = [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
   if (cuisine) category = 'restaurant';
+  if (isOperational) category = 'housekeeping';
   const trimmed = text.replace(/[!.?\u00a1\u00bf]+$/g, '');
   const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2;
-  const hasIntent = !isGreeting && Boolean(category || cuisine || hasEscalation || REQUEST_WORDS.some((word) => hasTerm(text, word)));
-  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation };
+  const hasIntent = !isGreeting && Boolean(category || cuisine || hasEscalation || isOperational || REQUEST_WORDS.some((word) => hasTerm(text, word)));
+  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational };
 }
 
 export function inheritConversationContext(classification, history, latestMessage) {
@@ -585,7 +624,7 @@ export function enforceContract(model, { language, classification, matching, exc
     requests = requests.filter((item) => optionNames.some((name) => normalized(item.serviceName).includes(normalized(name))));
   }
 
-  if (!isAngry && classification.route !== 'partner_catalog' && classification.hasIntent && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
+  if (!isAngry && !classification.isOperational && classification.route !== 'partner_catalog' && classification.hasIntent && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
     const service = matching[0];
     const details = [service.price === null || service.price === '' ? '' : `EUR ${Number(service.price).toFixed(0)}`, service.duration ? `${service.duration} min` : ''].filter(Boolean).join(', ');
     const partnerSuffix = {
@@ -604,9 +643,9 @@ export function enforceContract(model, { language, classification, matching, exc
 
   return {
     reply: finalReply || (DEFERRED[language] ?? DEFERRED.en),
-    intent: isAngry ? 'complaint' : model.intent,
-    serviceType: isAngry ? 'escalation' : model.serviceType,
-    requiresHuman: isAngry || Boolean(model.requiresHuman) || Boolean(classification.cuisine),
+    intent: isAngry ? 'complaint' : (classification.isOperational ? 'service_request' : model.intent),
+    serviceType: isAngry ? 'escalation' : (classification.isOperational ? 'housekeeping' : model.serviceType),
+    requiresHuman: isAngry || Boolean(model.requiresHuman) || Boolean(classification.cuisine) || Boolean(classification.isOperational),
     escapeHatchTriggered: isAngry || Boolean(model.escapeHatchTriggered),
     requests: requests.filter((item) => !excludedNames.some((name) => normalized(item.serviceName).includes(normalized(name)))),
     externalOptionNames: optionNames,
@@ -622,17 +661,18 @@ export function buildPrompt({ input, classification, history, services, external
 
 Hard rules:
 - Reply entirely in the guest's latest-message language (${input.language}).
+- OPERATIONAL & ROOM ITEM REQUESTS: If a guest asks for a physical item to be delivered to their room (e.g., towels, water, pillows, blankets, toiletries, amenities) or reports a maintenance/housekeeping issue, you MUST acknowledge the delivery to their room and trigger an operational request for staff. Do NOT offer hotel partner services, catalog items, or attempt to upsell for operational requests.
 - SENTIMENT OVERRIDE: If the guest expresses frustration, anger, complaint, or requests a manager/human/reception, apologize sincerely and empathetically. NEVER offer upsells, services, or room upgrades. Set requires_human: true.
 - Use only the facts, partner services, and external search results below.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
-- Partner services are preferred. State a catalog price only when it is supplied below.
+- Partner services are preferred for leisure & hospitality inquiries. State a catalog price only when it is supplied below.
 - When the guest asks about hotel services or partners, name only the actual partner services supplied below; do not invent a generic catalogue.
 - External results are non-partner suggestions. Never invent a price, rating, address, link, or availability. Keep reply_text to one or two elegant sentences; cards are rendered separately by the website.
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
 - Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request.
 
 Return exactly this JSON shape:
-{"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"spa|restaurant|tour|transport|experience|other|null","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
+{"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"spa|restaurant|tour|transport|experience|housekeeping|maintenance|other|null","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
 
 GUEST MESSAGE:
 ${input.message}

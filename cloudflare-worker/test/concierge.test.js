@@ -221,7 +221,7 @@ test('Demo chat accepts only the GitHub Pages origin and marks every demo record
     assert.match(body.reply, /welcome/i);
     assert.deepEqual(body.staff_alerts, []);
     assert.equal(guestWrites[0].Is_Demo, true);
-    assert.equal(guestWrites[0].Name, 'Demo Guest');
+    assert.equal(guestWrites[0].GuestName, 'Demo Guest');
     assert.equal(conversationWrites.length, 2);
     assert.ok(conversationWrites.every((fields) => fields.Is_Demo === true));
 
@@ -1035,7 +1035,7 @@ test('Sentiment Override: Frustrated guest or manager request immediately trigge
     assert.ok(writtenTables.length > 0);
     assert.ok(writtenTables.every((entry) => entry.fields.Is_Demo === true));
     const guestWrite = writtenTables.find((w) => w.url.includes('/Guests'));
-    assert.equal(guestWrite?.fields.Name, 'Angry Guest');
+    assert.equal(guestWrite?.fields.GuestName, 'Angry Guest');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1087,8 +1087,62 @@ test('Rich Media: Spa or menu query returns PDF brochure document card metadata'
     assert.equal(data.media.type, 'document');
     assert.equal(data.media.format, 'PDF');
     assert.match(data.media.filename, /Spa/i);
+    assert.match(data.media.url, /Lumiere_Spa_Wellness_Menu\.pdf/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Operational requests: Physical items (towels/water) alert Housekeeping with zero upselling', async () => {
+  const originalFetch = globalThis.fetch;
+  const writtenTables = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('api.airtable.com')) {
+      if (options.body) {
+        writtenTables.push({ url: target, fields: JSON.parse(options.body).fields });
+      }
+      return Response.json({ records: [], id: 'rec_operational_test' });
+    }
+    throw new Error(`Unexpected call: ${url}`);
+  };
+  const scheduled = [];
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://flowarchitect-agency.github.io',
+        'CF-Connecting-IP': '203.0.113.88',
+      },
+      body: JSON.stringify({
+        guestName: 'In-Stay Guest',
+        language: 'English',
+        scenario: 'in-stay',
+        is_demo: true,
+        sessionId: 'demo_in_stay_towels',
+        chatHistory: [{ role: 'user', content: 'Could you please bring extra towels and bottles of water to room 302?' }],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil(p) { scheduled.push(p); },
+    });
+    const data = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.match(data.reply, /logged your request|delivered to your room|team/i);
+    assert.doesNotMatch(data.reply, /Partner option/i);
+    assert.doesNotMatch(data.reply, /upgrade/i);
+    assert.ok(data.staff_alerts.length > 0);
+    assert.equal(data.staff_alerts[0].role, 'Housekeeping team');
+    const requestWrite = writtenTables.find((w) => w.url.includes('/Requests'));
+    assert.ok(requestWrite);
+    assert.equal(requestWrite.fields.GuestName, 'In-Stay Guest');
+    assert.equal(requestWrite.fields.Is_Demo, true);
+    assert.equal(requestWrite.fields.IsUpsell, false);
+    assert.equal(requestWrite.fields.ServiceType, 'housekeeping');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 

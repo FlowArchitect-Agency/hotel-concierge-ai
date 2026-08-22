@@ -6,7 +6,9 @@ import {
   ESCALATION_REPLIES,
   inheritConversationContext,
   isEscalation,
+  isOperationalRequest,
   matchingServices,
+  OPERATIONAL_REPLIES,
   parseExternalResults,
   parseGuestInput,
   parseModelJson,
@@ -315,7 +317,7 @@ async function upsertGuest(env, input) {
 
   const fields = {
     UserID: input.userId,
-    Name: guestName,
+    GuestName: guestName,
     PreferredLanguage: input.language || 'English',
     ...(isDemo ? { Is_Demo: true } : {}),
   };
@@ -1099,6 +1101,9 @@ function staffRoleFor(serviceType) {
     tour: 'Concierge desk',
     experience: 'Concierge desk',
     escalation: 'Duty Manager / Front Desk',
+    housekeeping: 'Housekeeping team',
+    maintenance: 'Maintenance team',
+    operational: 'Housekeeping team',
   }[serviceType] || 'Reception team';
 }
 
@@ -1157,6 +1162,26 @@ function escalationResponse(input) {
   return chatResponseFromOutcome(outcome, { category: 'escalation', hasEscalation: true }, input.language);
 }
 
+function operationalResponse(input) {
+  if (!isOperationalRequest(input.message)) return null;
+  const reply = OPERATIONAL_REPLIES[input.language] ?? OPERATIONAL_REPLIES.en;
+  const outcome = {
+    reply,
+    intent: 'service_request',
+    serviceType: 'housekeeping',
+    requiresHuman: true,
+    requests: [{
+      serviceName: 'Room Delivery / Operational Request',
+      source: 'partner',
+      summary: `Room Request: "${input.message}"`,
+      isUpsell: false,
+    }],
+    externalOptionNames: [],
+    recommendations: [],
+  };
+  return chatResponseFromOutcome(outcome, { category: 'housekeeping', isOperational: true, hasIntent: true }, input.language, [], '', null, input.message);
+}
+
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   const input = parseGuestInput(body);
   const instantEscalation = escalationResponse(input);
@@ -1164,6 +1189,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     if (!input.testMode || input.testMode === 'write_verified') {
       ctx.waitUntil(persistConversation(env, input, {
         reply: instantEscalation.reply,
+        serviceType: 'escalation',
         requests: [{
           serviceName: 'Duty Manager Escalation',
           source: 'partner',
@@ -1173,6 +1199,22 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       }).catch(() => undefined));
     }
     return instantEscalation;
+  }
+  const instantOperational = operationalResponse(input);
+  if (instantOperational) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, {
+        reply: instantOperational.reply,
+        serviceType: 'housekeeping',
+        requests: [{
+          serviceName: 'Room Delivery / Operational Request',
+          source: 'partner',
+          summary: `Room Request: "${input.message}"`,
+          isUpsell: false,
+        }],
+      }).catch(() => undefined));
+    }
+    return instantOperational;
   }
   let classification = classifyRequest(input.message);
   reportStatus('Reviewing the details of your request\u2026');

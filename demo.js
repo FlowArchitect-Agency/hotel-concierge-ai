@@ -161,11 +161,17 @@
     // Render Rich Media Attachment Card if present
     if (media && typeof media === "object") {
       if (media.type === "document" || media.format === "PDF") {
-        const docCard = document.createElement("div");
+        const fileUrl = media.url || "Lumiere_Spa_Wellness_Menu.pdf";
+        const fileName = media.filename || "Lumiere_Spa_Wellness_Menu.pdf";
+
+        const docCard = document.createElement("a");
         docCard.className = "message-media-doc";
+        docCard.href = fileUrl;
+        docCard.download = fileName;
+        docCard.target = "_blank";
+        docCard.rel = "noopener noreferrer";
         docCard.setAttribute("role", "group");
-        docCard.setAttribute("aria-label", "PDF Attachment");
-        docCard.style.cursor = "pointer";
+        docCard.setAttribute("aria-label", `Download ${media.title || fileName}`);
 
         const docIcon = document.createElement("div");
         docIcon.className = "media-doc-icon";
@@ -177,7 +183,7 @@
 
         const docTitle = document.createElement("div");
         docTitle.className = "media-doc-title";
-        docTitle.textContent = media.title || media.filename || "Brochure (PDF)";
+        docTitle.textContent = media.title || fileName;
 
         const docMeta = document.createElement("div");
         docMeta.className = "media-doc-meta";
@@ -185,24 +191,16 @@
 
         docInfo.append(docTitle, docMeta);
 
-        const docBtn = document.createElement("button");
-        docBtn.type = "button";
+        const docBtn = document.createElement("span");
         docBtn.className = "media-doc-action";
-        docBtn.title = "Download / View Document";
-        docBtn.setAttribute("aria-label", "Download / View Document");
+        docBtn.title = "Download Document";
+        docBtn.setAttribute("aria-label", "Download Document");
         docBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`;
-        
-        const handleDocClick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          showToast("Demo Mode: Document download simulated.");
-          addTranscript("Document Preview", `Simulated download: ${media.title || media.filename}`, "ai");
-        };
-
-        docBtn.addEventListener("click", handleDocClick);
-        docCard.addEventListener("click", handleDocClick);
 
         docCard.append(docIcon, docInfo, docBtn);
+        docCard.addEventListener("click", () => {
+          addTranscript("Document Download", `Downloaded: ${media.title || fileName}`, "ai");
+        });
         message.append(docCard);
       } else if (media.type === "image" || media.url || media.thumbnail) {
         const imgCard = document.createElement("div");
