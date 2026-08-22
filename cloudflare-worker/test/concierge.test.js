@@ -1139,7 +1139,7 @@ test('Operational requests: Physical items (towels/water) alert Housekeeping wit
     assert.equal(requestWrite.fields.GuestName, 'In-Stay Guest');
     assert.equal(requestWrite.fields.Is_Demo, true);
     assert.equal(requestWrite.fields.IsUpsell, false);
-    assert.equal(requestWrite.fields.ServiceType, 'housekeeping');
+    assert.equal(requestWrite.fields.ServiceType, 'Housekeeping');
   } finally {
     globalThis.fetch = originalFetch;
   }

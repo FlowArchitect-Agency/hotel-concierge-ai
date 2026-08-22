@@ -318,7 +318,7 @@ async function upsertGuest(env, input) {
   const fields = {
     UserID: input.userId,
     GuestName: guestName,
-    PreferredLanguage: input.language || 'English',
+    Language: input.language || 'English',
     ...(isDemo ? { Is_Demo: true } : {}),
   };
 
@@ -561,6 +561,15 @@ async function enrichSemanticRoute(env, input, history, classification) {
   };
 }
 
+function mapServiceTypeForRequests(type) {
+  const t = String(type || '').trim().toLowerCase();
+  if (t === 'housekeeping') return 'Housekeeping';
+  if (t === 'room service' || t === 'room_service') return 'Room Service';
+  if (t === 'concierge' || t === 'escalation') return 'Concierge';
+  if (['spa', 'restaurant', 'transport', 'tour', 'experience', 'other'].includes(t)) return t;
+  return 'other';
+}
+
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
   const guestName = String(input?.guestName || input?.guest_name || input?.name || '').trim() || (input?.isDemo || input?.is_demo ? 'Demo Guest' : 'Guest');
@@ -600,7 +609,7 @@ async function persistConversation(env, input, outcome) {
       UserID: input.userId,
       Channel: input.channel,
       GuestName: guestName,
-      ServiceType: outcome.serviceType || 'other',
+      ServiceType: mapServiceTypeForRequests(outcome.serviceType),
       RequestSummary: item.summary,
       Source: item.source === 'external' ? 'external' : 'partner',
       ServiceRef: item.serviceName || '',
@@ -611,7 +620,7 @@ async function persistConversation(env, input, outcome) {
       HandoverAt: time,
       ...flags,
     },
-  }).catch(() => undefined)));
+  }).catch((err) => console.error('Error creating request in Airtable:', err))));
 }
 
 const PARTNER_CARD_IMAGES = {
