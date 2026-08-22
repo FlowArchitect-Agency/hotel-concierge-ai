@@ -4,7 +4,7 @@
 
 n8n Cloud blocks its public API during the trial and requires a paid plan for automation through that API. Its Cloud plans also don't provide custom environment variables, while the legacy workflow relies on private provider values. The Worker replaces the live n8n path with ordinary version-controlled JavaScript.
 
-The frontend remains on GitHub Pages. The Worker exposes `POST /api/chat`, holds all provider credentials as encrypted secrets, reads and writes Airtable, calls Groq, and uses ScrapingBee only when no matching hotel partner exists.
+The frontend remains on GitHub Pages. The Worker exposes `POST /api/chat` and the isolated simulator route `POST /api/demo-chat`, holds all provider credentials as encrypted secrets, reads and writes Airtable, calls Groq, and uses ScrapingBee only when no matching hotel partner exists.
 
 ## One-time account handoff
 
@@ -25,7 +25,17 @@ The deployment adds these as encrypted Worker secrets, never to GitHub or browse
 - `AIRTABLE_BASE_ID`
 - `SCRAPINGBEE_API_KEY` (optional; without it, unavailable external recommendations are safely deferred to the hotel team)
 
-The non-secret settings are `ALLOWED_ORIGIN`, `HOTEL_NAME`, `HOTEL_CITY`, `GROQ_MODEL`, and `GROQ_FALLBACK_MODEL` in `wrangler.jsonc`.
+The non-secret settings are `ALLOWED_ORIGIN`, `DEMO_ALLOWED_ORIGIN`, `HOTEL_NAME`, `HOTEL_CITY`, `GROQ_MODEL`, and `GROQ_FALLBACK_MODEL` in `wrangler.jsonc`. Set both origin values to the exact GitHub Pages origin, with no trailing slash.
+
+## Simulator data isolation
+
+Before deploying the demo route, run the Airtable schema migration once from the repository root:
+
+```powershell
+node setup-airtable.js
+```
+
+It adds an `Is_Demo` checkbox to `Guests`, `Conversations`, and `Requests` when those fields are missing. The `/api/demo-chat` route rejects `is_demo: false`, sets `Is_Demo` on every demo record, and only responds to the configured GitHub Pages origin. It then calls the same concierge resolver as the WhatsApp webhook and `/api/chat`.
 
 ## Local verification
 
@@ -34,4 +44,4 @@ Set-Location cloudflare-worker
 node --test
 ```
 
-The tests cover the reported cuisine regression, external-result filtering, and input validation. The production deployment test additionally sends the multilingual and Airtable test suite to the Worker endpoint before the public website is switched over.
+The tests cover the reported cuisine regression, external-result filtering, input validation, strict simulator CORS, and demo record marking. The production deployment test additionally sends the multilingual and Airtable test suite to the Worker endpoint before the public website is switched over.

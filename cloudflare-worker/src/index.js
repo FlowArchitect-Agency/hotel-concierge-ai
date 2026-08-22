@@ -1,8 +1,4 @@
 import {
-  buildEvaluatorPrompt,
-  buildMemoryExtractionPrompt,
-  buildPostCheckoutOutreachPrompt,
-  buildPreArrivalOutreachPrompt,
   buildPrompt,
   classifyRequest,
   enforceContract,
@@ -15,23 +11,50 @@ import {
 } from './concierge.js';
 
 const RECENT_REQUESTS = new Map();
+const RECENT_WHATSAPP_MESSAGES = new Map();
+const SERVICE_CACHE_TTL_MS = 120_000;
+const WHATSAPP_MESSAGE_TTL_MS = 24 * 60 * 60 * 1_000;
+const WHATSAPP_GRAPH_VERSION = 'v24.0';
+let serviceCache = { records: null, expiresAt: 0, pending: null };
 
 function allowedOrigin(request, env) {
   const origin = request.headers.get('Origin');
-  if (!origin) return '*';
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(origin)) return origin;
-  if (origin === 'null') return 'null';
-  const configured = env.ALLOWED_ORIGIN || 'https://flowarchitect-agency.github.io';
-  if (origin === configured) return origin;
-  return origin;
+  const allowed = new Set([
+    env.ALLOWED_ORIGIN || 'https://flowarchitect-agency.github.io',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+    // A direct file:// preview has the browser Origin value "null". The
+    // endpoint is intentionally public and rate-limited, so permit this
+    // narrow development origin without broadening access to arbitrary sites.
+    'null',
+  ]);
+  return allowed.has(origin) ? origin : '';
 }
 
 function cors(request, env, contentType = 'application/json; charset=utf-8') {
   const origin = allowedOrigin(request, env);
   return {
-    ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : { 'Access-Control-Allow-Origin': '*' }),
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization, X-Requested-With',
+    ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': contentType,
+    'Cache-Control': 'no-store',
+  };
+}
+
+function demoAllowedOrigin(request, env) {
+  const origin = request.headers.get('Origin');
+  const configuredOrigin = env.DEMO_ALLOWED_ORIGIN || env.ALLOWED_ORIGIN || 'https://flowarchitect-agency.github.io';
+  return origin === configuredOrigin ? origin : '';
+}
+
+function demoCors(request, env, contentType = 'application/json; charset=utf-8') {
+  const origin = demoAllowedOrigin(request, env);
+  return {
+    ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '600',
     'Content-Type': contentType,
     'Cache-Control': 'no-store',
   };
@@ -41,6 +64,36 @@ function response(body, status, request, env) {
   return new Response(JSON.stringify(body), { status, headers: cors(request, env) });
 }
 
+function demoResponse(body, status, request, env) {
+  return new Response(JSON.stringify(body), { status, headers: demoCors(request, env) });
+}
+
+function webhookResponse(body, status = 200) {
+  return new Response(body, {
+    status,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+function twimlResponse(message = '', status = 200) {
+  const escaped = String(message || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+  return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response>${escaped ? `<Message>${escaped}</Message>` : ''}</Response>`, {
+    status,
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 function rateLimited(request) {
   const key = request.headers.get('CF-Connecting-IP') || 'unknown';
   const now = Date.now();
@@ -48,6 +101,135 @@ function rateLimited(request) {
   timestamps.push(now);
   RECENT_REQUESTS.set(key, timestamps);
   return timestamps.length > 20;
+}
+
+function missingWhatsAppSecrets(env, { inbound = false } = {}) {
+  const names = inbound
+    ? ['WA_APP_SECRET', 'WA_ACCESS_TOKEN', 'WA_PHONE_NUMBER_ID']
+    : ['WA_WEBHOOK_VERIFY_TOKEN'];
+  return names.filter((name) => !env[name]);
+}
+
+function missingTwilioSecrets(env) {
+  return ['TWILIO_AUTH_TOKEN'].filter((name) => !env[name]);
+}
+
+function constantTimeEqual(left, right) {
+  const first = String(left || '');
+  const second = String(right || '');
+  if (first.length !== second.length) return false;
+  let difference = 0;
+  for (let index = 0; index < first.length; index += 1) difference |= first.charCodeAt(index) ^ second.charCodeAt(index);
+  return difference === 0;
+}
+
+async function verifyWhatsAppSignature(rawBody, header, appSecret) {
+  const supplied = String(header || '').replace(/^sha256=/i, '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(supplied) || !appSecret) return false;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(appSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
+  const expected = [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return constantTimeEqual(expected, supplied);
+}
+
+function twilioSignaturePayload(url, entries) {
+  const grouped = new Map();
+  for (const [key, value] of entries) {
+    if (typeof value !== 'string') continue;
+    const values = grouped.get(key) || [];
+    values.push(value);
+    grouped.set(key, values);
+  }
+  let payload = String(url);
+  for (const key of [...grouped.keys()].sort()) {
+    for (const value of grouped.get(key).sort()) payload += `${key}${value}`;
+  }
+  return payload;
+}
+
+async function verifyTwilioSignature(url, entries, header, authToken) {
+  const supplied = String(header || '').trim();
+  if (!supplied || !authToken) return false;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(authToken),
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(twilioSignaturePayload(url, entries)));
+  const expected = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  return constantTimeEqual(expected, supplied);
+}
+
+function rememberWhatsAppMessage(messageId, source = 'meta') {
+  const id = String(messageId || '').trim();
+  if (!id) return true;
+  const key = `${source}:${id}`;
+  const now = Date.now();
+  for (const [knownId, receivedAt] of RECENT_WHATSAPP_MESSAGES) {
+    if (now - receivedAt > WHATSAPP_MESSAGE_TTL_MS) RECENT_WHATSAPP_MESSAGES.delete(knownId);
+  }
+  if (RECENT_WHATSAPP_MESSAGES.has(key)) return false;
+  RECENT_WHATSAPP_MESSAGES.set(key, now);
+  return true;
+}
+
+function inboundWhatsAppTexts(payload) {
+  const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+  return entries.flatMap((entry) => (Array.isArray(entry?.changes) ? entry.changes : []))
+    .filter((change) => change?.field === 'messages')
+    .flatMap((change) => Array.isArray(change?.value?.messages) ? change.value.messages : [])
+    .filter((message) => message?.type === 'text' && message?.text?.body && message?.from)
+    .map((message) => ({
+      id: String(message.id || ''),
+      from: String(message.from).replace(/\D/g, ''),
+      text: String(message.text.body).trim(),
+    }))
+    .filter((message) => message.from && message.text && message.text.length <= 1200);
+}
+
+function whatsappReplyText(result) {
+  const lines = [String(result.reply || '').trim()];
+  const offers = Array.isArray(result.partner_offers) ? result.partner_offers : [];
+  const recommendations = Array.isArray(result.recommendations) ? result.recommendations : [];
+  const cards = [...offers, ...recommendations].slice(0, 5);
+  for (const card of cards) {
+    const details = [card.name, card.description, card.website_url || card.websiteUrl]
+      .filter(Boolean)
+      .join('\n');
+    if (details) lines.push(details);
+  }
+  return lines.filter(Boolean).join('\n\n').slice(0, 4000)
+    || 'Thank you for your message. Our concierge will be pleased to assist you.';
+}
+
+async function sendWhatsAppText(env, recipient, text) {
+  const version = /^v\d+\.\d+$/.test(String(env.WA_GRAPH_API_VERSION || ''))
+    ? env.WA_GRAPH_API_VERSION
+    : WHATSAPP_GRAPH_VERSION;
+  const url = `https://graph.facebook.com/${version}/${encodeURIComponent(env.WA_PHONE_NUMBER_ID)}/messages`;
+  const sent = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.WA_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: recipient,
+      type: 'text',
+      text: { preview_url: false, body: text },
+    }),
+  });
+  if (!sent.ok) throw new Error(`WhatsApp message delivery failed (${sent.status}).`);
 }
 
 function requireSecrets(env) {
@@ -65,8 +247,9 @@ function requireLeadsAirtable(env) {
   if (missing.length) throw new Error(`Lead capture configuration is incomplete: ${missing.join(', ')}`);
 }
 
-async function airtable(env, table, { method = 'GET', params, fields, baseId = env.AIRTABLE_BASE_ID } = {}) {
-  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
+async function airtable(env, table, { method = 'GET', params, fields, recordId = '', baseId = env.AIRTABLE_BASE_ID } = {}) {
+  const recordPath = recordId ? `/${encodeURIComponent(recordId)}` : '';
+  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}${recordPath}`);
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }
@@ -79,143 +262,24 @@ async function airtable(env, table, { method = 'GET', params, fields, baseId = e
   return result.json();
 }
 
-const AIRTABLE_SCHEMA = {
-  Guests: {
-    table: 'tblzYZNa0Z3BbI6BB',
-    fields: {
-      phone: 'fld5XgQjXrP3CvqUR',
-      name: 'fldB9MF2Zh3oN9C4C',
-      language: 'fldRhFTWTRO7rGpQf',
-      vipStatus: 'fldoYRZA6ig0YGTUm',
-      knownPreferences: 'fldCftrTVWTx8wl8e',
-      isDemo: 'fldZmbdJKDtwAyOL5',
-    },
-  },
-  Reservations: {
-    table: 'tblVOAvaOrbYjg7vG',
-    fields: {
-      id: 'fldpGGsT2dM8XC0YW',
-      guest: 'fldhFLhCro87WibaH',
-      checkIn: 'fldx783w7rtBD75jD',
-      checkOut: 'fld81RW6bDR7shQWR',
-      roomNumber: 'fldF0Y1LwianGcX0r',
-      status: 'fldGek8a7krKkLv66',
-      isDemo: 'fldnlrFREhOWSQ8Yt',
-    },
-  },
-  Staff: {
-    table: 'tblCbZ2uEcJmHAK31',
-    fields: {
-      name: 'fldh8GYQxVccVaaL4',
-      role: 'fldzC231otHnIxPVn',
-      whatsAppNumber: 'fldJpwWvvfe20XTEH',
-      onDuty: 'fldcLblGxiNTO86hs',
-    },
-  },
-  Requests: {
-    table: 'tblpZpF2blAii44MS',
-    fields: {
-      id: 'fld2QxTOdw9iJIbYL',
-      guest: 'fld0NHn9iuB2DwifU',
-      assignedStaff: 'fldCawPPdYoCRfDKZ',
-      taskDetails: 'fldpNRN1vOUTTL87s',
-      status: 'fldS3LtiRsRa4yMC8',
-      isDemo: 'fld3ZT2AozREWd3DS',
-    },
-  },
-  Conversations: {
-    table: 'tbl6OqURSczymufG5',
-    fields: {
-      id: 'fldOzKpo2oiAgoaXC',
-      guest: 'fldU4RXzl8UPr1ViA',
-      sender: 'fldbLaHSnQJGpXiPQ',
-      message: 'fldNRantEIy4DYeXy',
-      timestamp: 'fldSjp107JhjVYQPY',
-      isDemo: 'fldwn2jA6eNyLaSjN',
-    },
-  },
-  Services: {
-    table: 'tblp5UppwYbt4nZyQ',
-    fields: {
-      name: 'fldULLX5B0rxlKWDc',
-      price: 'fldmN67wdugIz3XXy',
-      hours: 'fldl4Bvd8ulKI80ob',
-      details: 'fldofT4KVWCnHOT4X',
-      active: 'fldRCfZFA1YSzh7RH',
-    },
-  },
-};
+async function fetchServices(env, { bypassCache = false } = {}) {
+  const now = Date.now();
+  if (!bypassCache && Array.isArray(serviceCache.records) && serviceCache.expiresAt > now) return serviceCache.records;
+  if (!bypassCache && serviceCache.pending) return serviceCache.pending;
 
-async function getOrCreateGuestRecord(env, { phone, name, language, preferences, isDemo = false }) {
-  const phoneKey = String(phone || '').trim();
-  if (!phoneKey) return null;
-  const G = AIRTABLE_SCHEMA.Guests;
+  const request = airtable(env, 'Services', {
+    params: { filterByFormula: '{Active}=TRUE()', pageSize: 100 },
+  }).then((payload) => payload.records || []);
+
+  if (!bypassCache) serviceCache.pending = request;
   try {
-    const existing = await airtable(env, G.table, {
-      params: { filterByFormula: `{${G.fields.phone}} = '${phoneKey}'`, maxRecords: 1 },
-    });
-    if (existing.records?.[0]) {
-      const rec = existing.records[0];
-      if (name || preferences || isDemo) {
-        await airtable(env, `${G.table}/${rec.id}`, {
-          method: 'PATCH',
-          fields: {
-            [G.fields.name]: name || rec.fields?.[G.fields.name] || undefined,
-            [G.fields.knownPreferences]: preferences || rec.fields?.[G.fields.knownPreferences] || undefined,
-            ...(isDemo ? { [G.fields.isDemo]: true, Is_Demo: true } : {}),
-          },
-        }).catch(() => undefined);
-      }
-      return rec.id;
-    }
-    const created = await airtable(env, G.table, {
-      method: 'POST',
-      fields: {
-        [G.fields.phone]: phoneKey,
-        [G.fields.name]: name || 'Guest',
-        [G.fields.language]: language || 'en',
-        [G.fields.vipStatus]: 'Standard',
-        [G.fields.knownPreferences]: preferences || undefined,
-        ...(isDemo ? { [G.fields.isDemo]: true, Is_Demo: true } : {}),
-      },
-    });
-    return created.id;
-  } catch (err) {
-    console.error('Error fetching/creating guest record:', err);
-    return null;
+    const records = await request;
+    if (!bypassCache) serviceCache = { records, expiresAt: Date.now() + SERVICE_CACHE_TTL_MS, pending: null };
+    return records;
+  } catch (error) {
+    if (!bypassCache) serviceCache.pending = null;
+    throw error;
   }
-}
-
-async function routeOperationalTaskToOnDutyStaff(env, { taskDetails, guestName, targetRole = 'Housekeeping' }) {
-  const S = AIRTABLE_SCHEMA.Staff;
-  try {
-    const staffRes = await airtable(env, S.table, {
-      params: {
-        filterByFormula: `AND({${S.fields.onDuty}} = 1, {${S.fields.role}} = '${targetRole}')`,
-        maxRecords: 1,
-      },
-    });
-    const staffRec = staffRes.records?.[0];
-    if (staffRec) {
-      const staffName = staffRec.fields?.[S.fields.name] || 'On-Duty Staff';
-      const staffPhone = staffRec.fields?.[S.fields.whatsAppNumber];
-      if (staffPhone) {
-        const alertText = `🛎️ [HOTEL TASK ALERT]\nGuest: ${guestName || 'Valued Guest'}\nRole: ${targetRole}\nTask: ${taskDetails}\nAssigned: ${staffName}`;
-        await sendWhatsAppMessage(env, { phone: staffPhone, text: alertText });
-      }
-      return staffRec.id;
-    }
-  } catch (err) {
-    console.error('Error routing to on-duty staff:', err);
-  }
-  return null;
-}
-
-async function fetchServices(env) {
-  const payload = await airtable(env, AIRTABLE_SCHEMA.Services.table, {
-    params: { filterByFormula: `{${AIRTABLE_SCHEMA.Services.fields.active}}=1`, pageSize: 100 },
-  }).catch(() => airtable(env, 'Services', { params: { filterByFormula: '{Active}=TRUE()', pageSize: 100 } }));
-  return payload.records || [];
 }
 
 async function fetchHistory(env, userId) {
@@ -227,11 +291,35 @@ async function fetchHistory(env, userId) {
       'sort[0][direction]': 'desc',
       maxRecords: 12,
     },
-  }).catch(() => ({ records: [] }));
+  });
   return (payload.records || []).map((record) => ({
     role: record.fields?.Role === 'assistant' ? 'assistant' : 'user',
-    message: String(record.fields?.Message || record.fields?.[AIRTABLE_SCHEMA.Conversations.fields.message] || ''),
+    message: String(record.fields?.Message || ''),
   })).filter((item) => item.message).reverse();
+}
+
+function demoFlagFields(input) {
+  return input.isDemo ? { Is_Demo: true } : {};
+}
+
+async function upsertGuest(env, input) {
+  if (!input.guestName) return;
+  const safeUser = input.userId.replace(/'/g, "\\'");
+  const existing = await airtable(env, 'Guests', {
+    params: {
+      filterByFormula: `{UserID}='${safeUser}'`,
+      maxRecords: 1,
+    },
+  });
+  const fields = {
+    UserID: input.userId,
+    Name: input.guestName,
+    PreferredLanguage: input.language,
+    ...demoFlagFields(input),
+  };
+  const recordId = existing.records?.[0]?.id;
+  if (recordId) return airtable(env, 'Guests', { method: 'PATCH', recordId, fields });
+  return airtable(env, 'Guests', { method: 'POST', fields });
 }
 
 async function fetchFacts(env) {
@@ -246,6 +334,55 @@ async function fetchFacts(env) {
   } catch {
     return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', text: fallback };
   }
+}
+
+const SIMPLE_GREETINGS = new Set(['hi', 'hello', 'hey', 'salut', 'bonjour', 'bonsoir', 'hola', 'ciao', 'hallo']);
+const GREETING_REPLIES = {
+  en: 'Bonjour and welcome to H\u00f4tel Lumi\u00e8re Paris. How may I assist you with your stay today?',
+  fr: 'Bonsoir et bienvenue \u00e0 l\u2019H\u00f4tel Lumi\u00e8re Paris. Comment puis-je vous aider pendant votre s\u00e9jour ?',
+  es: 'Bienvenido al H\u00f4tel Lumi\u00e8re Paris. \u00bfC\u00f3mo puedo ayudarle durante su estancia?',
+  it: 'Benvenuto all\u2019H\u00f4tel Lumi\u00e8re Paris. Come posso assisterla durante il suo soggiorno?',
+  de: 'Willkommen im H\u00f4tel Lumi\u00e8re Paris. Wie darf ich Ihnen bei Ihrem Aufenthalt behilflich sein?',
+};
+
+const LANGUAGE_SWITCH_REPLIES = {
+  en: 'Of course. I will continue in English. How may I assist you?',
+  fr: 'Bien s\u00fbr. Je continuerai en fran\u00e7ais. Comment puis-je vous aider ?',
+  es: 'Por supuesto. A partir de ahora le responder\u00e9 en espa\u00f1ol. \u00bfC\u00f3mo puedo ayudarle?',
+  it: 'Certamente. Da questo momento le risponder\u00f2 in italiano. Come posso aiutarla?',
+  de: 'Sehr gern. Ab jetzt antworte ich Ihnen auf Deutsch. Wie darf ich Ihnen helfen?',
+  ar: '\u0628\u0627\u0644\u0637\u0628\u0639. \u0633\u0623\u0631\u062f \u0639\u0644\u064a\u0643\u0645 \u0645\u0646 \u0627\u0644\u0622\u0646 \u0641\u0635\u0627\u0639\u062f\u0627\u064b \u0628\u0627\u0644\u0639\u0631\u0628\u064a\u0629. \u0643\u064a\u0641 \u064a\u0645\u0643\u0646\u0646\u064a \u0645\u0633\u0627\u0639\u062f\u062a\u0643\u0645\u061f',
+  ja: '\u3082\u3061\u308d\u3093\u3067\u3059\u3002\u4eca\u5f8c\u306f\u65e5\u672c\u8a9e\u3067\u304a\u624b\u4f1d\u3044\u3057\u307e\u3059\u3002\u3054\u5e0c\u671b\u3092\u304a\u805e\u304b\u305b\u304f\u3060\u3055\u3044\u3002',
+  zh: '\u5f53\u7136\u53ef\u4ee5\u3002\u4ece\u73b0\u5728\u8d77\u6211\u5c06\u7528\u4e2d\u6587\u4e3a\u60a8\u670d\u52a1\u3002\u8bf7\u95ee\u5982\u4f55\u5e2e\u52a9\u60a8\uff1f',
+};
+
+function simpleGreetingResponse(input) {
+  const message = String(input.message || '').trim().toLocaleLowerCase().replace(/[!.?\s]+$/g, '');
+  if (!SIMPLE_GREETINGS.has(message)) return null;
+  return {
+    reply: GREETING_REPLIES[input.language] || GREETING_REPLIES.en,
+    language: input.language,
+    intent: 'smalltalk',
+    external_option_names: [],
+    recommendations: [],
+    partner_offers: [],
+    provider_failure: '',
+    requires_human: false,
+  };
+}
+
+function languagePreferenceResponse(input) {
+  if (!input.languageRequested) return null;
+  return {
+    reply: LANGUAGE_SWITCH_REPLIES[input.language] || LANGUAGE_SWITCH_REPLIES.en,
+    language: input.language,
+    intent: 'language_preference',
+    external_option_names: [],
+    recommendations: [],
+    partner_offers: [],
+    provider_failure: '',
+    requires_human: false,
+  };
 }
 
 function locationSearchHint(location) {
@@ -310,78 +447,11 @@ function preferenceForOneRecommendation(message) {
   return /\b(the best|best one|only one|just one|one that'?s best|one excellent)\b/.test(text);
 }
 
-const CONCIERGE_TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'create_reservation',
-      description: 'Book or request a reservation for a hotel service, spa, restaurant, or private transfer',
-      parameters: {
-        type: 'object',
-        properties: {
-          serviceName: { type: 'string', description: 'Name of the requested service' },
-          guestName: { type: 'string', description: 'Full name of the guest' },
-          email: { type: 'string', description: 'Contact email address' },
-          preferredDate: { type: 'string', description: 'Date of reservation' },
-          preferredTime: { type: 'string', description: 'Time of reservation' },
-          partySize: { type: 'number', description: 'Number of people' },
-        },
-        required: ['serviceName', 'guestName', 'email'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'search_paris_addresses',
-      description: 'Search current independently verified Paris venues, museums, or restaurants',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Search term or venue category' },
-          cuisine: { type: 'string', description: 'Specific cuisine if applicable' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-];
-
-async function callLLM(env, prompt, { maxTokens = 350, router = false, tools = null } = {}) {
-  if (env.GEMINI_API_KEY) {
-    try {
-      const geminiModel = env.GEMINI_MODEL || 'gemini-1.5-flash';
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${env.GEMINI_API_KEY}`;
-      const response = await fetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: maxTokens, temperature: 0.2 },
-        }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (content) return { content, toolCalls: [], providerFailure: '' };
-      }
-    } catch {
-      /* fallback to Groq / OpenAI */
-    }
-  }
-
-  const apiKey = env.GROQ_API_KEY || env.OPENAI_API_KEY || env.OPENROUTER_API_KEY;
-  if (!apiKey) return { content: '', toolCalls: [], providerFailure: 'missing_api_key' };
-
-  const baseUrl = env.GROQ_API_KEY
-    ? 'https://api.groq.com/openai/v1/chat/completions'
-    : (env.OPENROUTER_API_KEY ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions');
-
+async function callGroq(env, prompt, { maxTokens = 350, router = false } = {}) {
   const models = [
     router ? (env.GROQ_ROUTER_MODEL || env.GROQ_MODEL || 'qwen/qwen3.6-27b') : (env.GROQ_MODEL || 'qwen/qwen3.6-27b'),
     env.GROQ_FALLBACK_MODEL || 'openai/gpt-oss-20b',
   ].filter((model, index, values) => model && values.indexOf(model) === index);
-
   let failure = '';
   for (const model of models) {
     try {
@@ -390,12 +460,12 @@ async function callLLM(env, prompt, { maxTokens = 350, router = false, tools = n
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2,
         max_tokens: maxTokens,
-        ...(tools ? { tools, tool_choice: 'auto' } : { response_format: { type: 'json_object' } }),
+        response_format: { type: 'json_object' },
         ...(model.startsWith('qwen/') ? { reasoning_effort: 'none', reasoning_format: 'hidden' } : {}),
       };
-      const result = await fetch(baseUrl, {
+      const result = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!result.ok) {
@@ -403,21 +473,18 @@ async function callLLM(env, prompt, { maxTokens = 350, router = false, tools = n
         continue;
       }
       const data = await result.json();
-      const message = data.choices?.[0]?.message;
-      const content = message?.content || '';
-      const toolCalls = message?.tool_calls || [];
-      if (content || toolCalls.length) return { content, toolCalls, providerFailure: '' };
+      const content = data.choices?.[0]?.message?.content;
+      if (content) return { content, providerFailure: '' };
       failure = 'empty_response';
     } catch {
       failure = 'request_error';
     }
   }
-  return { content: '', toolCalls: [], providerFailure: failure || 'provider_unavailable' };
+  return { content: '', providerFailure: failure || 'provider_unavailable' };
 }
-const callGroq = callLLM;
 
 const ROUTES = new Set(['greeting', 'hotel_faq', 'partner_catalog', 'partner_request', 'external_discovery', 'conversation']);
-const SERVICE_CATEGORIES = new Set(['spa', 'restaurant', 'transport', 'tour', 'experience', 'itinerary']);
+const SERVICE_CATEGORIES = new Set(['accommodation', 'spa', 'restaurant', 'transport', 'tour', 'experience', 'itinerary']);
 const BOOKABLE_SERVICE_TYPES = new Set(['spa', 'restaurant', 'transport', 'tour', 'experience']);
 
 function routerJson(raw) {
@@ -442,7 +509,7 @@ function routerPrompt(input, history) {
 Classify every message using exactly one route:
 - greeting: a simple greeting, thanks, acknowledgement, or casual small talk.
 - hotel_faq: a question that can be answered only from hotel facts supplied later, such as check-in or hotel amenities.
-- partner_catalog: asking what the hotel offers, asking if this is all the hotel provides, or asking for the list of partner services/offers.
+- partner_catalog: asking what the hotel offers or who its partners are.
 - partner_request: clearly asking to reserve or arrange a conventional hotel service.
 - external_discovery: asking for a recommendation, itinerary, venue, activity, event, shopping, transportation, food, nightlife, or any unusual/new need that requires current information beyond a known hotel catalogue.
 - conversation: only when none of the above applies.
@@ -450,7 +517,7 @@ Classify every message using exactly one route:
 Critical rule: do not require a keyword match. If the guest wants help finding, choosing, suggesting, planning, seeing, buying, celebrating, or doing something in Paris, use external_discovery even if the request is unusual or written in another language. Follow-up requests inherit the earlier guest need from history.
 
 Return exactly:
-{"route":"greeting|hotel_faq|partner_catalog|partner_request|external_discovery|conversation","category":"spa|restaurant|transport|tour|experience|itinerary|null","search_query":"a concise Paris web-search query or empty string"}
+{"route":"greeting|hotel_faq|partner_catalog|partner_request|external_discovery|conversation","category":"accommodation|spa|restaurant|transport|tour|experience|itinerary|null","search_query":"a concise Paris web-search query or empty string"}
 
 For external_discovery, search_query must describe the guest's exact need, include Paris when appropriate, and contain no instruction or commentary. Otherwise return an empty search_query.
 
@@ -481,20 +548,9 @@ async function enrichSemanticRoute(env, input, history, classification) {
 
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
-  const phone = input.userId?.replace(/^wa:/, '') || input.phone || '';
-  const isDemo = Boolean(input.isDemo || input.is_demo);
-  const guestRecordId = await getOrCreateGuestRecord(env, {
-    phone,
-    name: input.contactName || 'Guest',
-    language: input.language,
-    isDemo,
-  });
-
-  const C = AIRTABLE_SCHEMA.Conversations;
-  const R = AIRTABLE_SCHEMA.Requests;
-
   await Promise.all([
-    airtable(env, C.table, {
+    upsertGuest(env, input),
+    airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
         UserID: input.userId,
@@ -503,14 +559,10 @@ async function persistConversation(env, input, outcome) {
         Message: input.message,
         Language: input.language,
         Timestamp: input.receivedAt,
-        [C.fields.message]: input.message,
-        [C.fields.sender]: 'Guest',
-        [C.fields.timestamp]: input.receivedAt,
-        ...(guestRecordId ? { [C.fields.guest]: [guestRecordId] } : {}),
-        ...(isDemo ? { [C.fields.isDemo]: true, Is_Demo: true } : {}),
+        ...demoFlagFields(input),
       },
-    }).catch(() => undefined),
-    airtable(env, C.table, {
+    }),
+    airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
         UserID: input.userId,
@@ -519,60 +571,43 @@ async function persistConversation(env, input, outcome) {
         Message: outcome.reply,
         Language: input.language,
         Timestamp: time,
-        [C.fields.message]: outcome.reply,
-        [C.fields.sender]: 'AI',
-        [C.fields.timestamp]: time,
-        ...(guestRecordId ? { [C.fields.guest]: [guestRecordId] } : {}),
-        ...(isDemo ? { [C.fields.isDemo]: true, Is_Demo: true } : {}),
+        ...demoFlagFields(input),
       },
-    }).catch(() => undefined),
+    }),
   ]);
-
   const requests = outcome.requests.filter((item) => item.summary);
-  await Promise.all(
-    requests.map(async (item) => {
-      const targetRole = /towel|clean|linen|amenity|pillow|blanket|bed/i.test(item.summary) ? 'Housekeeping' : 'Receptionist';
-      const staffRecordId = await routeOperationalTaskToOnDutyStaff(env, {
-        taskDetails: item.summary,
-        guestName: input.contactName || 'Guest',
-        targetRole,
-      });
-
-      return airtable(env, R.table, {
-        method: 'POST',
-        fields: {
-          UserID: input.userId,
-          Channel: input.channel,
-          ServiceType: outcome.serviceType || 'other',
-          RequestSummary: item.summary,
-          Source: item.source === 'external' ? 'external' : 'partner',
-          ServiceRef: item.serviceName || '',
-          Status: 'new',
-          EstValueEUR: item.estValueEur ?? undefined,
-          IsUpsell: Boolean(item.isUpsell),
-          Language: input.language,
-          HandoverAt: time,
-          [R.fields.taskDetails]: item.summary,
-          [R.fields.status]: 'new',
-          ...(guestRecordId ? { [R.fields.guest]: [guestRecordId] } : {}),
-          ...(staffRecordId ? { [R.fields.assignedStaff]: [staffRecordId] } : {}),
-          ...(isDemo ? { [R.fields.isDemo]: true, Is_Demo: true } : {}),
-        },
-      }).catch(() => undefined);
-    })
-  );
+  await Promise.all(requests.map((item) => airtable(env, 'Requests', {
+    method: 'POST',
+    fields: {
+      UserID: input.userId,
+      Channel: input.channel,
+      GuestName: input.guestName || undefined,
+      ServiceType: outcome.serviceType || 'other',
+      RequestSummary: item.summary,
+      Source: item.source === 'external' ? 'external' : 'partner',
+      ServiceRef: item.serviceName || '',
+      Status: 'new',
+      EstValueEUR: item.estValueEur ?? undefined,
+      IsUpsell: Boolean(item.isUpsell),
+      Language: input.language,
+      HandoverAt: time,
+      ...demoFlagFields(input),
+    },
+  })));
 }
 
 const PARTNER_CARD_IMAGES = {
-  spa: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=85',
-  restaurant: 'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?auto=format&fit=crop&w=1200&q=85',
-  transport: 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=1200&q=85',
-  tour: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1200&q=85',
-  experience: 'https://images.unsplash.com/photo-1522093007474-d86e9bf7ba6f?auto=format&fit=crop&w=1200&q=85',
+  spa: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
+  restaurant: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=700&q=84',
+  transport: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=700&q=84',
+  tour: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=700&q=84',
+  experience: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?auto=format&fit=crop&w=700&q=84',
 };
 
-function partnerOffers(services) {
-  return services.filter((service) => service.isPartner).slice(0, 5).map((service) => ({
+function partnerOffers(services, { limit = 5 } = {}) {
+  const partnerServices = services.filter((service) => service.isPartner);
+  const selected = Number.isInteger(limit) ? partnerServices.slice(0, limit) : partnerServices;
+  return selected.map((service) => ({
     name: service.name,
     description: String(service.description || 'A considered experience from the hotel\u2019s preferred collection.').slice(0, 240),
     category: service.category || 'experience',
@@ -580,6 +615,7 @@ function partnerOffers(services) {
     duration_mins: Number.isFinite(Number(service.duration)) ? Number(service.duration) : null,
     location: service.location || '',
     image_url: service.imageUrl || PARTNER_CARD_IMAGES[service.category] || PARTNER_CARD_IMAGES.experience,
+    source: 'partner',
   }));
 }
 
@@ -600,6 +636,148 @@ const CURATED_DINING_INTRO = {
   ar: '\u0627\u062e\u062a\u0631\u062a \u0644\u0643\u0645 \u0628\u0639\u0636 \u0627\u0644\u0639\u0646\u0627\u0648\u064a\u0646 \u0627\u0644\u0645\u0645\u064a\u0632\u0629 \u0641\u064a \u0628\u0627\u0631\u064a\u0633 \u0645\u0646 \u062f\u0644\u064a\u0644\u0646\u0627 \u0627\u0644\u0645\u0646\u0633\u0642. \u0647\u0630\u0647 \u062a\u0648\u0635\u064a\u0627\u062a \u0645\u0633\u062a\u0642\u0644\u0629\u060c \u0648\u0633\u064a\u062a\u062d\u0642\u0642 \u0627\u0644\u0643\u0648\u0646\u0633\u064a\u0631\u062c \u0645\u0646 \u0627\u0644\u062a\u0648\u0641\u0631 \u0628\u0639\u062f \u0627\u062e\u062a\u064a\u0627\u0631\u0643\u0645.',
 };
 
+const HOTEL_COLLECTION_INTRO = {
+  en: 'Here is the full preferred collection available through the hotel. Select any experience and our concierge will record the details needed to confirm it.',
+  fr: 'Voici la collection privilegiee disponible par l\u2019intermediaire de l\u2019hotel. Selectionnez une experience et notre conciergerie recueillera les details necessaires pour la confirmer.',
+  es: 'Esta es la coleccion preferida disponible a traves del hotel. Seleccione cualquier experiencia y nuestro concierge registrara los detalles necesarios para confirmarla.',
+};
+
+const HOTEL_PARTNER_REQUEST_REPLIES = {
+  en: 'For your request, I recommend beginning with the hotel’s preferred collection below. Select the experience you prefer and the concierge will record your details for final availability confirmation.',
+  fr: 'Pour votre demande, je vous recommande de commencer par la collection privilégiée de l’hôtel ci-dessous. Sélectionnez l’expérience de votre choix et la conciergerie recueillera vos détails avant la confirmation finale de disponibilité.',
+  es: 'Para su solicitud, le recomiendo empezar por la colección preferida del hotel que aparece a continuación. Seleccione la experiencia que prefiera y el concierge registrará sus datos antes de confirmar la disponibilidad final.',
+  it: 'Per la sua richiesta, le consiglio di iniziare dalla collezione selezionata dell’hotel qui sotto. Scelga l’esperienza che preferisce e il concierge registrerà i suoi dati prima della conferma finale della disponibilità.',
+  de: 'Für Ihre Anfrage empfehle ich Ihnen, mit der ausgewählten Hotelkollektion unten zu beginnen. Wählen Sie Ihre bevorzugte Option; unser Concierge erfasst dann Ihre Angaben zur endgültigen Verfügbarkeitsbestätigung.',
+  ar: 'بالنسبة إلى طلبكم، أوصي بالبدء بمجموعة الفندق المختارة أدناه. اختاروا الخيار المفضل وسيسجل الكونسيرج تفاصيلكم قبل التأكيد النهائي للتوفر.',
+  ja: 'ご希望には、まず下記のホテル厳選コレクションからお選びいただくことをおすすめします。ご希望の選択肢を選ぶと、コンシェルジュが最終的な空き状況確認のために情報をお伺いします。',
+  zh: '针对您的需求，建议先从下方的酒店精选系列中选择。您选定后，礼宾团队将记录您的详情并进行最终可用性确认。',
+};
+const HOTEL_ALTERNATIVE_REPLIES = {
+  en: ({ cuisine, options }) => `We do not currently have a ${cuisine} option in the hotel’s preferred collection. For a considered experience through the hotel, I would recommend ${options}. You may reserve it below. If you would rather keep the ${cuisine} preference, tell me and I will look externally.`,
+  es: ({ cuisine, options }) => `Actualmente no contamos con una opción ${cuisine} en la colección preferida del hotel. Para una experiencia organizada por el hotel, le recomiendo ${options}. Puede solicitarla a continuación. Si prefiere mantener la opción ${cuisine}, dígamelo y buscaré una dirección externa.`,
+  fr: ({ cuisine, options }) => `Nous n’avons pas actuellement d’option ${cuisine} dans la collection privilégiée de l’hôtel. Pour une expérience organisée par l’hôtel, je vous recommande ${options}. Vous pouvez faire une demande ci-dessous. Si vous souhaitez conserver la préférence ${cuisine}, dites-le-moi et je chercherai une adresse extérieure.`,
+};
+
+function hotelPartnerReply(language) {
+  return HOTEL_PARTNER_REQUEST_REPLIES[language] || HOTEL_PARTNER_REQUEST_REPLIES.en;
+}
+
+function hotelAlternativeReply(language, cuisine, options) {
+  if (!HOTEL_ALTERNATIVE_REPLIES[language] || language === 'en') {
+    const article = /^[aeiou]/i.test(cuisine) ? 'an' : 'a';
+    return `We do not currently have ${article} ${cuisine} option in the hotel’s preferred collection. For a considered experience through the hotel, I would recommend ${options}. You may reserve it below. If you would rather keep the ${cuisine} preference, tell me and I will look externally.`;
+  }
+  const build = HOTEL_ALTERNATIVE_REPLIES[language] || HOTEL_ALTERNATIVE_REPLIES.en;
+  return build({ cuisine, options });
+}
+
+function isHotelCollectionQuestion(message) {
+  const text = String(message || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  // Guests frequently transpose the "i" and "v" in "services" on mobile.
+  // Treat this as the same catalogue request rather than sending it through a
+  // slow, generic model route that can return only one category.
+  const catalogueTerm = /\b(?:services?|serivces?|sevrices?|servcies?|amenities|offerings?|collection|partners?|experiences?|servicios?|servizi)\b/;
+  const catalogueQuestion = /\b(?:what|which|show|see|view|browse|open|list|can you|do you|quels?|montrez|voir|que)\b/;
+  const broadHotelOffer = /\bwhat\s+(?:do|can)\s+(?:you|the hotel)\s+(?:offer|arrange|provide)\b/;
+  return (catalogueTerm.test(text) && catalogueQuestion.test(text)) || broadHotelOffer.test(text);
+}
+
+function guestInsistsOnExternal(message) {
+  const text = String(message || '').trim().toLowerCase();
+  return /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text)
+    || /\b(not your|not the hotel|outside the hotel|external option|somewhere else)\b/i.test(text);
+}
+
+function categoryPartnerServices(services, category) {
+  return services.filter((service) => service.isPartner && String(service.category || '').toLowerCase() === category);
+}
+
+function hotelFirstResponse(input, classification, services) {
+  if (isHotelCollectionQuestion(input.message)) {
+    const collection = partnerOffers(services, { limit: null });
+    if (!collection.length) return null;
+    return {
+      reply: HOTEL_COLLECTION_INTRO[input.language] || HOTEL_COLLECTION_INTRO.en,
+      language: input.language,
+      intent: 'partner_catalog',
+      external_option_names: [],
+      recommendations: [],
+      partner_offers: [],
+      hotel_collection: collection,
+      provider_failure: '',
+      requires_human: true,
+    };
+  }
+
+  const hotelServiceCategories = new Set(['restaurant', 'spa', 'accommodation', 'transport', 'tour', 'experience']);
+  if (!hotelServiceCategories.has(classification.category)) return null;
+  const hotelOptions = categoryPartnerServices(services, classification.category);
+  if (!hotelOptions.length) return null;
+
+  if (classification.cuisine && !guestInsistsOnExternal(input.message)) {
+    const offeredNames = hotelOptions.slice(0, 2).map((service) => service.name).join(' / ');
+    return {
+      reply: hotelAlternativeReply(input.language, classification.cuisine.label, offeredNames),
+      language: input.language,
+      intent: 'hotel_alternative',
+      external_option_names: [],
+      recommendations: [],
+      partner_offers: partnerOffers(hotelOptions),
+      provider_failure: '',
+      requires_human: true,
+    };
+  }
+
+  if (classification.cuisine && guestInsistsOnExternal(input.message)) return null;
+  return {
+    reply: hotelPartnerReply(input.language),
+    language: input.language,
+    intent: 'partner_request',
+    external_option_names: [],
+    recommendations: [],
+    partner_offers: partnerOffers(hotelOptions),
+    provider_failure: '',
+    requires_human: true,
+  };
+}
+
+const ROOM_BOOKING_INTRO = {
+  en: 'I would be delighted to help with your stay. Choose your dates and preferred arrival time below, and our reservations team will return with the best available room options.',
+  fr: 'Je serais ravi de vous aider pour votre sejour. Choisissez vos dates et votre heure d\u2019arrivee ci-dessous, et notre equipe reservations reviendra vers vous avec les meilleures options de chambres disponibles.',
+  es: 'Sera un placer ayudarle con su estancia. Elija sus fechas y hora de llegada preferida a continuacion, y nuestro equipo de reservas le respondera con las mejores opciones de habitacion disponibles.',
+  de: 'Gern helfe ich Ihnen bei Ihrem Aufenthalt. Wahlen Sie unten Ihre Daten und Ihre bevorzugte Ankunftszeit; unser Reservierungsteam meldet sich mit den besten verfugbaren Zimmeroptionen bei Ihnen.',
+  it: 'Saro lieto di aiutarla con il suo soggiorno. Scelga qui sotto le date e l\u2019orario di arrivo preferito; il nostro team prenotazioni tornera da lei con le migliori opzioni di camera disponibili.',
+  ja: '\u3054\u6ede\u5728\u306e\u304a\u624b\u4f1d\u3044\u3092\u3044\u305f\u3057\u307e\u3059\u3002\u4e0b\u3067\u65e5\u4ed8\u3068\u3054\u5e0c\u671b\u306e\u5230\u7740\u6642\u9593\u3092\u304a\u9078\u3073\u304f\u3060\u3055\u3044\u3002\u4e88\u7d04\u30c1\u30fc\u30e0\u304c\u6700\u9069\u306a\u5ba2\u5ba4\u30aa\u30d7\u30b7\u30e7\u30f3\u3092\u3054\u6848\u5185\u3057\u307e\u3059\u3002',
+  zh: '\u6211\u5f88\u4e50\u610f\u534f\u52a9\u60a8\u5b89\u6392\u4f4f\u5bbf\u3002\u8bf7\u5728\u4e0b\u65b9\u9009\u62e9\u60a8\u7684\u65e5\u671f\u548c\u5e0c\u671b\u62b5\u8fbe\u65f6\u95f4\uff0c\u6211\u4eec\u7684\u9884\u8ba2\u56e2\u961f\u5c06\u4e3a\u60a8\u63d0\u4f9b\u6700\u9002\u5408\u7684\u53ef\u7528\u5ba2\u623f\u9009\u9879\u3002',
+  ar: '\u064a\u0633\u0639\u062f\u0646\u064a \u0623\u0646 \u0623\u0633\u0627\u0639\u062f\u0643\u0645 \u0641\u064a \u0625\u0642\u0627\u0645\u062a\u0643\u0645. \u0627\u062e\u062a\u0627\u0631\u0648\u0627 \u0627\u0644\u062a\u0648\u0627\u0631\u064a\u062e \u0648\u0648\u0642\u062a \u0627\u0644\u0648\u0635\u0648\u0644 \u0627\u0644\u0645\u0641\u0636\u0644 \u0623\u062f\u0646\u0627\u0647\u060c \u0648\u0633\u064a\u0639\u0648\u062f \u0641\u0631\u064a\u0642 \u0627\u0644\u062d\u062c\u0648\u0632\u0627\u062a \u0625\u0644\u064a\u0643\u0645 \u0628\u0623\u0641\u0636\u0644 \u062e\u064a\u0627\u0631\u0627\u062a \u0627\u0644\u063a\u0631\u0641 \u0627\u0644\u0645\u062a\u0627\u062d\u0629.',
+};
+
+function isRoomBookingRequest(message, classification) {
+  if (classification.category !== 'accommodation') return false;
+  const text = String(message || '').toLowerCase();
+  if (/\broom\s+service\b/i.test(text)) return false;
+  return /\b(book|reserve|want|need|looking for|stay|night|nights|room|suite|check[ -]?in)\b/i.test(text)
+    || /\b(chambre|habitacion|zimmer|camera)\b/i.test(text);
+}
+
+function roomBookingResponse(input, classification) {
+  if (!isRoomBookingRequest(input.message, classification)) return null;
+  return {
+    reply: ROOM_BOOKING_INTRO[input.language] || ROOM_BOOKING_INTRO.en,
+    language: input.language,
+    intent: 'room_enquiry',
+    external_option_names: [],
+    recommendations: [],
+    partner_offers: [],
+    room_booking: true,
+    provider_failure: '',
+    requires_human: true,
+  };
+}
+
 function isSafeWebsiteUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -610,10 +788,7 @@ function isSafeWebsiteUrl(value) {
 }
 
 function curatedDiningResponse(input, classification, services) {
-  if (classification.category !== 'restaurant' || !classification.cuisine || classification.location) return null;
-  const text = String(input.message || '').toLowerCase();
-  const hasExplicitDiningWord = /\b(restaurant|restaurants|restaurante|restaurantes|dining|food|eat|table|michelin|cena|comida|almuerzo|diner|dejeuner|bistrot|bistro|brasserie|tapas|paella|pizza)\b/i.test(text);
-  if (!hasExplicitDiningWord) return null;
+  if (classification.category !== 'restaurant' || !classification.cuisine || classification.location || !guestInsistsOnExternal(input.message)) return null;
   const eligible = services.filter((service) => !service.isPartner && isSafeWebsiteUrl(service.websiteUrl));
   if (!eligible.length) return null;
   const cards = (preferenceForOneRecommendation(input.message) ? eligible.slice(0, 1) : eligible.slice(0, 3)).map((service) => ({
@@ -621,6 +796,9 @@ function curatedDiningResponse(input, classification, services) {
     description: String(service.description || `A curated ${classification.cuisine.label} address in Paris.`).slice(0, 240),
     website_url: isSafeWebsiteUrl(service.websiteUrl),
     image_url: isSafeWebsiteUrl(service.imageUrl) || CURATED_DINING_IMAGES[classification.cuisine.id] || PARTNER_CARD_IMAGES.restaurant,
+    service_type: 'restaurant',
+    source: 'external',
+    booking_enabled: true,
   }));
   if (!cards.length) return null;
   return {
@@ -642,6 +820,55 @@ function compactText(value, field, { required = false, max = 500 } = {}) {
   return text;
 }
 
+const DEMO_LANGUAGES = new Map([
+  ['english', 'en'], ['en', 'en'],
+  ['french', 'fr'], ['français', 'fr'], ['francais', 'fr'], ['fr', 'fr'],
+  ['spanish', 'es'], ['español', 'es'], ['espanol', 'es'], ['es', 'es'],
+  ['japanese', 'ja'], ['日本語', 'ja'], ['ja', 'ja'],
+]);
+const DEMO_SCENARIOS = new Set(['pre-arrival', 'in-stay', 'checkout']);
+
+function parseDemoChatPayload(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid demo chat payload.');
+  if (body.is_demo !== true) throw new Error('The demo endpoint requires is_demo to be true.');
+
+  const guestName = compactText(body.guestName, 'Guest name', { required: true, max: 100 });
+  const languageInput = compactText(body.language, 'Language', { required: true, max: 32 }).toLocaleLowerCase();
+  const language = DEMO_LANGUAGES.get(languageInput);
+  if (!language) throw new Error('Invalid demo language.');
+
+  const scenario = compactText(body.scenario, 'Scenario', { required: true, max: 48 });
+  if (!DEMO_SCENARIOS.has(scenario)) throw new Error('Invalid demo scenario.');
+
+  if (!Array.isArray(body.chatHistory) || body.chatHistory.length < 1 || body.chatHistory.length > 24) {
+    throw new Error('chatHistory must contain between 1 and 24 messages.');
+  }
+  const chatHistory = body.chatHistory.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`Invalid chatHistory item at position ${index + 1}.`);
+    const role = item.role === 'assistant' ? 'assistant' : item.role === 'user' ? 'user' : '';
+    if (!role) throw new Error(`Invalid chatHistory role at position ${index + 1}.`);
+    const message = compactText(item.content ?? item.message, `chatHistory item ${index + 1}`, { required: true, max: 1200 });
+    return { role, message };
+  });
+  const latestMessage = [...chatHistory].reverse().find((item) => item.role === 'user')?.message;
+  if (!latestMessage) throw new Error('chatHistory must include a guest message.');
+
+  const suppliedSessionId = compactText(body.sessionId, 'Demo session', { max: 110 });
+  const sessionId = suppliedSessionId || `demo_${crypto.randomUUID()}`;
+  if (!/^[A-Za-z0-9:_-]{4,120}$/.test(sessionId)) throw new Error('Invalid demo session identifier.');
+
+  return {
+    message: latestMessage,
+    sessionId,
+    channel: 'web',
+    preferredLanguage: language,
+    guestName,
+    scenario,
+    is_demo: true,
+    chatHistory,
+  };
+}
+
 function parseBookingEnquiry(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid booking enquiry.');
   const guestName = compactText(body.guestName, 'Guest name', { required: true, max: 100 });
@@ -651,6 +878,7 @@ function parseBookingEnquiry(body) {
   const serviceType = BOOKABLE_SERVICE_TYPES.has(String(body.serviceType || '').toLowerCase())
     ? String(body.serviceType).toLowerCase()
     : 'other';
+  const source = String(body.source || '').toLowerCase() === 'external' ? 'external' : 'partner';
   const sessionId = compactText(body.sessionId, 'Session', { max: 110 });
   if (sessionId && !/^[a-zA-Z0-9_-]{4,110}$/.test(sessionId)) throw new Error('Invalid session identifier.');
   const partySize = Number(body.partySize);
@@ -665,6 +893,7 @@ function parseBookingEnquiry(body) {
     email,
     serviceName,
     serviceType,
+    source,
     userId: `web:${sessionId || `enquiry_${crypto.randomUUID()}`}`,
     partySize: safePartySize,
     preferredDate,
@@ -672,43 +901,11 @@ function parseBookingEnquiry(body) {
     phone,
     notes,
     language: compactText(body.language, 'Language', { max: 12 }) || 'en',
+    isDemo: body.is_demo === true,
   };
 }
 
 async function persistBookingEnquiry(env, enquiry) {
-  const guestRecordId = await getOrCreateGuestRecord(env, {
-    phone: enquiry.phone || enquiry.email,
-    name: enquiry.guestName,
-    language: enquiry.language,
-  }).catch(() => null);
-
-  const Res = AIRTABLE_SCHEMA.Reservations;
-  const Req = AIRTABLE_SCHEMA.Requests;
-
-  try {
-    await airtable(env, 'Reservations', {
-      method: 'POST',
-      fields: {
-        GuestName: enquiry.guestName,
-        Email: enquiry.email,
-        Phone: enquiry.phone || '',
-        ServiceName: enquiry.serviceName,
-        ServiceType: enquiry.serviceType,
-        PreferredDate: enquiry.preferredDate || null,
-        PreferredTime: enquiry.preferredTime || '',
-        PartySize: enquiry.partySize || null,
-        Notes: enquiry.notes || '',
-        Status: 'new',
-        SessionID: enquiry.userId,
-        Language: enquiry.language || 'en',
-        [Res.fields.checkIn]: enquiry.preferredDate || undefined,
-        [Res.fields.status]: 'new',
-        ...(guestRecordId ? { [Res.fields.guest]: [guestRecordId] } : {}),
-      },
-    });
-  } catch (err) {
-    console.warn('Writing to Reservations table failed; proceeding with Requests fallback:', err);
-  }
   const details = [
     `Booking enquiry for ${enquiry.serviceName}.`,
     `Email: ${enquiry.email}.`,
@@ -726,15 +923,94 @@ async function persistBookingEnquiry(env, enquiry) {
       GuestName: enquiry.guestName,
       ServiceType: enquiry.serviceType,
       RequestSummary: details,
-      Source: 'partner',
+      Source: enquiry.source,
       ServiceRef: enquiry.serviceName,
       Status: 'new',
       IsUpsell: true,
       Language: enquiry.language,
       HandoverAt: new Date().toISOString(),
-      [Req.fields.taskDetails]: details,
-      [Req.fields.status]: 'new',
-      ...(guestRecordId ? { [Req.fields.guest]: [guestRecordId] } : {}),
+      ...(enquiry.isDemo ? { Is_Demo: true } : {}),
+    },
+  });
+}
+
+function parseRoomEnquiry(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid room enquiry.');
+  const firstName = compactText(body.firstName, 'First name', { required: true, max: 60 });
+  const lastName = compactText(body.lastName, 'Last name', { required: true, max: 60 });
+  const email = compactText(body.email, 'Email address', { required: true, max: 160 }).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please provide a valid email address.');
+  const phone = compactText(body.phone, 'Phone number', { required: true, max: 60 });
+  const checkIn = compactText(body.checkIn, 'Check-in date', { required: true, max: 10 });
+  const checkOut = compactText(body.checkOut, 'Check-out date', { required: true, max: 10 });
+  const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+  if (!validDate(checkIn) || !validDate(checkOut)) throw new Error('Please provide valid check-in and check-out dates.');
+  if (checkOut <= checkIn) throw new Error('Check-out must be after check-in.');
+  const arrivalTime = compactText(body.arrivalTime, 'Arrival time', { max: 5 });
+  if (arrivalTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(arrivalTime)) throw new Error('Please provide a valid arrival time.');
+  const parseCount = (value, field, { min, max, fallback }) => {
+    const text = compactText(value, field, { max: 3 });
+    if (!text) return fallback;
+    const count = Number(text);
+    if (!Number.isInteger(count) || count < min || count > max) throw new Error(`${field} must be between ${min} and ${max}.`);
+    return count;
+  };
+  const adults = parseCount(body.adults, 'Adults', { min: 1, max: 12, fallback: 1 });
+  const children = parseCount(body.children, 'Children', { min: 0, max: 10, fallback: 0 });
+  const rooms = parseCount(body.rooms, 'Rooms', { min: 1, max: 5, fallback: 1 });
+  const serviceName = compactText(body.serviceName, 'Selected room', { max: 160 }) || 'Hotel room stay';
+  const preference = compactText(body.preference, 'Room preference', { max: 80 });
+  const notes = compactText(body.notes, 'Notes', { max: 600 });
+  const sessionId = compactText(body.sessionId, 'Session', { max: 110 });
+  if (sessionId && !/^[a-zA-Z0-9_-]{4,110}$/.test(sessionId)) throw new Error('Invalid session identifier.');
+  if (body.consent !== true) throw new Error('Consent is required to send a room enquiry.');
+  return {
+    firstName,
+    lastName,
+    email,
+    phone,
+    checkIn,
+    checkOut,
+    arrivalTime,
+    adults,
+    children,
+    rooms,
+    serviceName,
+    preference,
+    notes,
+    userId: `web:${sessionId || `room_${crypto.randomUUID()}`}`,
+    language: compactText(body.language, 'Language', { max: 12 }) || 'en',
+    isDemo: body.is_demo === true,
+  };
+}
+
+async function persistRoomEnquiry(env, enquiry) {
+  const details = [
+    `Room stay enquiry for ${enquiry.serviceName}: ${enquiry.checkIn} to ${enquiry.checkOut}.`,
+    `Email: ${enquiry.email}.`,
+    `Phone: ${enquiry.phone}.`,
+    enquiry.arrivalTime && `Preferred arrival time: ${enquiry.arrivalTime}.`,
+    `Adults: ${enquiry.adults}.`,
+    `Children: ${enquiry.children}.`,
+    `Rooms requested: ${enquiry.rooms}.`,
+    enquiry.preference && `Room preference: ${enquiry.preference}.`,
+    enquiry.notes && `Notes: ${enquiry.notes}`,
+  ].filter(Boolean).join(' ');
+  return airtable(env, 'Requests', {
+    method: 'POST',
+    fields: {
+      UserID: enquiry.userId,
+      Channel: 'web',
+      GuestName: `${enquiry.firstName} ${enquiry.lastName}`,
+      ServiceType: 'other',
+      RequestSummary: details,
+      Source: 'hotel_room_enquiry',
+      ServiceRef: enquiry.serviceName,
+      Status: 'new',
+      IsUpsell: false,
+      Language: enquiry.language,
+      HandoverAt: new Date().toISOString(),
+      ...(enquiry.isDemo ? { Is_Demo: true } : {}),
     },
   });
 }
@@ -794,98 +1070,87 @@ async function persistDiscoveryLead(env, lead) {
   });
 }
 
-async function upsertGuestProfile(env, profile) {
-  if (!profile || typeof profile !== 'object') return null;
-  const phoneKey = String(profile.phone || profile.userId || '').trim();
-  if (!phoneKey && !profile.guestName && !profile.dietaryRestrictions && !profile.purposeOfStay && !profile.generalPreferences) {
-    return null;
-  }
-  const key = phoneKey || `web:${profile.sessionId || 'guest'}`;
-
-  // Check if existing profile exists in 'Guest Profiles' table
-  try {
-    const existing = await airtable(env, 'Guest Profiles', {
-      params: {
-        filterByFormula: `{Phone} = '${key}'`,
-        maxRecords: 1,
-      },
-    });
-    const record = existing.records?.[0];
-    if (record) {
-      // Merge preferences (no duplicate overwrite)
-      const prevDiet = record.fields?.DietaryRestrictions || '';
-      const newDiet = [prevDiet, profile.dietaryRestrictions].filter(Boolean).filter((item, pos, self) => self.indexOf(item) === pos).join(', ');
-
-      const prevPurpose = record.fields?.PurposeOfStay || '';
-      const newPurpose = profile.purposeOfStay || prevPurpose;
-
-      const prevPref = record.fields?.GeneralPreferences || '';
-      const newPref = [prevPref, profile.generalPreferences].filter(Boolean).filter((item, pos, self) => self.indexOf(item) === pos).join('; ');
-
-      return await airtable(env, `Guest Profiles/${record.id}`, {
-        method: 'PATCH',
-        fields: {
-          GuestName: profile.guestName || record.fields?.GuestName || undefined,
-          Language: profile.language || record.fields?.Language || 'en',
-          DietaryRestrictions: newDiet || undefined,
-          PurposeOfStay: newPurpose || undefined,
-          GeneralPreferences: newPref || undefined,
-        },
-      });
-    }
-  } catch {
-    /* proceed to create if search fails */
-  }
-
-  // Create new Guest Profile record
-  return airtable(env, 'Guest Profiles', {
-    method: 'POST',
-    fields: {
-      Phone: key,
-      GuestName: profile.guestName || undefined,
-      Language: profile.language || 'en',
-      DietaryRestrictions: profile.dietaryRestrictions || undefined,
-      PurposeOfStay: profile.purposeOfStay || undefined,
-      GeneralPreferences: profile.generalPreferences || undefined,
-    },
-  });
+function staffRoleFor(serviceType) {
+  return {
+    accommodation: 'Reservations',
+    restaurant: 'Restaurant reservations',
+    spa: 'Spa team',
+    transport: 'Guest relations',
+    tour: 'Concierge desk',
+    experience: 'Concierge desk',
+  }[serviceType] || 'Reception team';
 }
 
-async function extractAndPersistGuestProfile(env, input, history) {
-  try {
-    const extractPrompt = buildMemoryExtractionPrompt({ message: input.message, history, language: input.language });
-    const extractResult = await callLLM(env, extractPrompt, { maxTokens: 250, router: true });
-    const profile = parseModelJson(extractResult.content);
-    if (profile) {
-      profile.userId = input.userId;
-      profile.sessionId = input.sessionId;
-      await upsertGuestProfile(env, profile);
-    }
-  } catch {
-    /* background task fail-safe */
-  }
+function staffAlertsFromOutcome(outcome) {
+  return (outcome.requests || []).filter((item) => item.summary).slice(0, 3).map((item) => ({
+    role: staffRoleFor(outcome.serviceType),
+    summary: item.summary,
+    service_name: item.serviceName || '',
+    service_type: outcome.serviceType || 'other',
+  }));
+}
+
+function chatResponseFromOutcome(outcome, classification, language, partnerOfferList = [], providerFailure = '') {
+  return {
+    reply: outcome.reply,
+    language,
+    intent: outcome.intent,
+    external_option_names: outcome.externalOptionNames,
+    recommendations: outcome.recommendations.map((item) => ({
+      name: item.name,
+      description: item.description,
+      website_url: item.websiteUrl,
+      image_url: item.imageUrl,
+      service_type: classification.category || 'other',
+      source: 'external',
+      booking_enabled: true,
+    })),
+    partner_offers: partnerOfferList,
+    provider_failure: providerFailure,
+    requires_human: outcome.requiresHuman,
+    staff_alerts: staffAlertsFromOutcome(outcome),
+  };
 }
 
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
-  requireSecrets(env);
   const input = parseGuestInput(body);
   let classification = classifyRequest(input.message);
   reportStatus('Reviewing the details of your request\u2026');
-  const serviceRecords = await fetchServices(env);
+  const instantGreeting = simpleGreetingResponse(input);
+  if (instantGreeting) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, { reply: instantGreeting.reply, requests: [] }).catch(() => undefined));
+    }
+    return instantGreeting;
+  }
+  const languagePreference = languagePreferenceResponse(input);
+  if (languagePreference) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, { reply: languagePreference.reply, requests: [] }).catch(() => undefined));
+    }
+    return languagePreference;
+  }
+  requireSecrets(env);
+  const serviceRecords = await fetchServices(env, { bypassCache: Boolean(input.testMode) });
   const initialServiceSet = matchingServices(serviceRecords, classification);
+  const instantHotelFirst = hotelFirstResponse(input, classification, initialServiceSet.all);
+  if (instantHotelFirst) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, { reply: instantHotelFirst.reply, requests: [] }).catch(() => undefined));
+    }
+    return instantHotelFirst;
+  }
   const instantDining = curatedDiningResponse(input, classification, initialServiceSet.matching);
   if (instantDining) {
     if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(
-        Promise.all([
-          persistConversation(env, input, { reply: instantDining.reply, requests: [] }),
-          extractAndPersistGuestProfile(env, input, []),
-        ]).catch(() => undefined)
-      );
+      ctx.waitUntil(persistConversation(env, input, { reply: instantDining.reply, requests: [] }).catch(() => undefined));
     }
     return instantDining;
   }
-  const [history, facts] = await Promise.all([fetchHistory(env, input.userId), fetchFacts(env)]);
+  const [history, facts] = await Promise.all([
+    input.chatHistory ? Promise.resolve(input.chatHistory) : fetchHistory(env, input.userId),
+    fetchFacts(env),
+  ]);
   classification = inheritConversationContext(classification, history, input.message);
   reportStatus('Considering the most suitable next step\u2026');
   classification = await enrichSemanticRoute(env, input, history, classification);
@@ -903,6 +1168,16 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   } else {
     reportStatus('Reviewing the hotel\u2019s preferred collection\u2026');
   }
+  if (classification.externalDiscovery && externalOptions.length) {
+    const outcome = enforceContract(
+      { reply: '', intent: 'service_request', serviceType: classification.category, requiresHuman: true, requests: [] },
+      { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions },
+    );
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
+    }
+    return chatResponseFromOutcome(outcome, classification, input.language);
+  }
   reportStatus('Preparing a considered recommendation\u2026');
   const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts });
   const provider = await callGroq(env, prompt);
@@ -915,44 +1190,10 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     externalOptions,
   });
 
-  // Phase 2: Reflection & Evaluator Loop
-  if (outcome.reply && outcome.intent !== 'smalltalk' && classification.route !== 'greeting') {
-    reportStatus('Evaluating luxury service alignment & tone\u2026');
-    try {
-      const evalPrompt = buildEvaluatorPrompt({ input, draftReply: outcome.reply, classification, facts });
-      const evalResult = await callLLM(env, evalPrompt, { maxTokens: 220, router: true });
-      const evalJson = parseModelJson(evalResult.content);
-      if (evalJson && evalJson.passed === false && evalJson.improved_reply && typeof evalJson.improved_reply === 'string') {
-        outcome.reply = evalJson.improved_reply.trim();
-      }
-    } catch {
-      /* fallback gracefully if evaluator loop encounters network error or timeout */
-    }
-  }
-
   if (!input.testMode || input.testMode === 'write_verified') {
-    ctx.waitUntil(
-      Promise.all([
-        persistConversation(env, input, outcome),
-        extractAndPersistGuestProfile(env, input, history),
-      ]).catch(() => undefined)
-    );
+    ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
   }
-  return {
-    reply: outcome.reply,
-    language: input.language,
-    intent: outcome.intent,
-    external_option_names: outcome.externalOptionNames,
-    recommendations: outcome.recommendations.map((item) => ({
-      name: item.name,
-      description: item.description,
-      website_url: item.websiteUrl,
-      image_url: item.imageUrl,
-    })),
-    partner_offers: partnerOffers(promptServices),
-    provider_failure: provider.providerFailure,
-    requires_human: outcome.requiresHuman,
-  };
+  return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure);
 }
 
 async function handleJsonChat(request, env, ctx) {
@@ -961,75 +1202,10 @@ async function handleJsonChat(request, env, ctx) {
 }
 
 async function handleDemoChat(request, env, ctx) {
-  requireSecrets(env);
-  const body = await request.json();
-
-  const guestName = compactText(body.guestName || body.contactName, 'Guest Name', { max: 100 }) || 'Demo Guest';
-  const language = compactText(body.language, 'Language', { max: 12 }) || 'en';
-  const scenario = compactText(body.scenario, 'Scenario', { max: 50 }) || 'pre_arrival';
-  const isDemo = body.is_demo !== false;
-
-  let messageText = '';
-  if (body.message && typeof body.message === 'string') {
-    messageText = body.message.trim();
-  } else if (Array.isArray(body.chatHistory) && body.chatHistory.length > 0) {
-    const last = body.chatHistory[body.chatHistory.length - 1];
-    messageText = String(last.content || last.message || '').trim();
-  }
-
-  if (!messageText) {
-    if (scenario === 'in_stay') {
-      messageText = 'Hello, could we please have additional towels delivered to our room?';
-    } else if (scenario === 'checkout_review') {
-      messageText = 'We are checking out today. Thank you for the stay!';
-    } else {
-      messageText = 'Hello, I have an upcoming reservation at Hôtel Lumière Paris.';
-    }
-  }
-
-  const input = {
-    userId: `demo:${encodeURIComponent(guestName).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`,
-    contactName: guestName,
-    channel: 'whatsapp',
-    language,
-    message: messageText,
-    receivedAt: new Date().toISOString(),
-    isDemo: true,
-  };
-
-  const outcome = await resolveChat(input, env, ctx);
-
-  let staffAlert = null;
-  const actionable = (outcome.requests || []).find((r) => r.summary);
-  if (actionable) {
-    const role = /towel|clean|linen|amenity|pillow|blanket|bed/i.test(actionable.summary) ? 'Housekeeping' : 'Receptionist';
-    staffAlert = {
-      role,
-      task: actionable.summary,
-      status: 'Dispatched to On-Duty Staff',
-    };
-  }
-
-  let quickReplies = [];
-  if (scenario === 'pre_arrival') {
-    quickReplies = ['Book Airport Transfer', 'Dining Reservations', 'No, thank you'];
-  } else if (scenario === 'in_stay') {
-    quickReplies = ['Thank you', 'Request Room Cleaning', 'Speak with Reception'];
-  } else if (scenario === 'checkout_review') {
-    quickReplies = ['Excellent — 5 Stars', 'Good', 'Leave Private Feedback'];
-  }
-
-  return response({
-    reply: outcome.reply,
-    language: outcome.language || language,
-    intent: outcome.intent,
-    quickReplies,
-    recommendations: outcome.recommendations || [],
-    partner_offers: outcome.partner_offers || [],
-    requests: outcome.requests || [],
-    requires_human: outcome.requires_human || false,
-    staffAlert,
-  }, 200, request, env);
+  if (!demoAllowedOrigin(request, env)) return demoResponse({ error: 'Origin is not allowed.' }, 403, request, env);
+  const input = parseDemoChatPayload(await request.json());
+  const result = await resolveChat(input, env, ctx);
+  return demoResponse({ ...result, staff_alerts: result.staff_alerts || [], demo: true, is_demo: true }, 200, request, env);
 }
 
 async function handleBookingEnquiry(request, env) {
@@ -1039,6 +1215,16 @@ async function handleBookingEnquiry(request, env) {
   return response({
     ok: true,
     message: 'Your enquiry has been recorded for the concierge team.',
+  }, 201, request, env);
+}
+
+async function handleRoomEnquiry(request, env) {
+  requireAirtable(env);
+  const enquiry = parseRoomEnquiry(await request.json());
+  await persistRoomEnquiry(env, enquiry);
+  return response({
+    ok: true,
+    message: 'Your room enquiry has been recorded for the reservations team.',
   }, 201, request, env);
 }
 
@@ -1084,144 +1270,98 @@ async function streamChat(request, env, ctx) {
   });
 }
 
-export async function sendWhatsAppMessage(env, { phone, text }) {
-  const token = env.WHATSAPP_API_TOKEN;
-  const phoneId = env.WHATSAPP_PHONE_ID;
-  if (!token || !phoneId) {
-    console.log(`[WhatsApp Simulation] Outbound message to ${phone}: "${text}"`);
-    return { success: true, simulated: true, to: phone, text };
-  }
-  const url = `https://graph.facebook.com/v18.0/${phoneId}/messages`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: phone,
-      type: 'text',
-      text: { body: text },
-    }),
-  });
-  return { success: res.ok, status: res.status, to: phone, text };
-}
-
-export async function runScheduledOutreach(env) {
-  const results = { preArrivalSent: 0, postCheckoutSent: 0, messages: [] };
-  const hotelName = env.HOTEL_NAME || 'Hôtel Lumière Paris';
-
-  try {
-    const profileRes = await airtable(env, 'Guest Profiles', {
-      params: { maxRecords: 25 },
-    });
-    const records = profileRes.records || [];
-
-    for (const record of records) {
-      const profile = record.fields || {};
-      const phone = profile.Phone;
-      if (!phone) continue;
-
-      // Pre-Arrival Campaign
-      if (profile.PurposeOfStay || profile.GeneralPreferences || profile.DietaryRestrictions) {
-        const prePrompt = buildPreArrivalOutreachPrompt({ profile, hotelName });
-        const llmRes = await callLLM(env, prePrompt, { maxTokens: 200, router: true });
-        const messageText = (llmRes.content || '').replace(/^["']|["']$/g, '').trim();
-
-        if (messageText) {
-          const sent = await sendWhatsAppMessage(env, { phone, text: messageText });
-          results.preArrivalSent++;
-          results.messages.push({ campaign: 'pre_arrival', phone, text: messageText, simulated: Boolean(sent.simulated) });
-        }
-      }
-    }
-  } catch (err) {
-    results.error = err instanceof Error ? err.message : String(err);
-  }
-
-  return results;
+async function handleWhatsAppMessage(message, env, ctx) {
+  const result = await resolveChat({
+    message: message.text,
+    sessionId: message.from,
+    channel: 'whatsapp',
+  }, env, ctx);
+  await sendWhatsAppText(env, message.from, whatsappReplyText(result));
 }
 
 async function handleWhatsAppWebhook(request, env, ctx) {
-  const url = new URL(request.url);
+  const missing = missingWhatsAppSecrets(env, { inbound: true });
+  if (missing.length) return webhookResponse('WhatsApp connector is not configured.', 503);
 
-  // Meta Verification Challenge (GET)
-  if (request.method === 'GET') {
-    const mode = url.searchParams.get('hub.mode');
-    const token = url.searchParams.get('hub.verify_token');
-    const challenge = url.searchParams.get('hub.challenge');
+  const rawBody = await request.text();
+  const validSignature = await verifyWhatsAppSignature(
+    rawBody,
+    request.headers.get('X-Hub-Signature-256'),
+    env.WA_APP_SECRET,
+  );
+  if (!validSignature) return webhookResponse('Invalid webhook signature.', 401);
 
-    const expectedToken = env.WHATSAPP_VERIFY_TOKEN || 'lumiere_concierge_secret_token_2026';
-    if (mode === 'subscribe' && token === expectedToken) {
-      return new Response(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } });
-    }
-    return new Response('Verification failed', { status: 403 });
+  let payload;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return webhookResponse('Invalid webhook payload.', 400);
   }
 
-  // Inbound Message from Meta (POST)
-  if (request.method === 'POST') {
-    const payload = await request.json();
-    const entry = payload?.entry?.[0];
-    const change = entry?.changes?.[0]?.value;
-    const message = change?.messages?.[0];
-
-    if (message && message.type === 'text') {
-      const fromPhone = message.from;
-      const textBody = message.text?.body;
-      const contactName = change?.contacts?.[0]?.profile?.name || 'Guest';
-
-      if (fromPhone && textBody) {
-        ctx.waitUntil(
-          (async () => {
-            try {
-              const outcome = await resolveChat(
-                {
-                  message: textBody,
-                  userId: `wa:${fromPhone}`,
-                  sessionId: `wa:${fromPhone}`,
-                  contactName,
-                },
-                env,
-                ctx
-              );
-              if (outcome?.reply) {
-                await sendWhatsAppMessage(env, { phone: fromPhone, text: outcome.reply });
-              }
-            } catch (err) {
-              console.error('Error handling WhatsApp message:', err);
-            }
-          })()
-        );
-      }
-    }
-    return new Response('EVENT_RECEIVED', { status: 200 });
+  for (const message of inboundWhatsAppTexts(payload)) {
+    if (!rememberWhatsAppMessage(message.id)) continue;
+    ctx.waitUntil(handleWhatsAppMessage(message, env, ctx).catch((error) => {
+      console.error('WhatsApp concierge reply failed:', error instanceof Error ? error.message : error);
+    }));
   }
+  // Meta expects a fast acknowledgement. The actual concierge work and reply
+  // continue through waitUntil so guests do not see duplicate responses when
+  // Meta retries a slow webhook delivery.
+  return webhookResponse('EVENT_RECEIVED');
+}
 
-  return new Response('Method not allowed', { status: 405 });
+async function handleTwilioWebhook(request, env, ctx) {
+  if (missingTwilioSecrets(env).length) return webhookResponse('Twilio connector is not configured.', 503);
+
+  const formData = await request.formData();
+  const entries = [...formData.entries()].filter(([, value]) => typeof value === 'string');
+  const validSignature = await verifyTwilioSignature(
+    request.url,
+    entries,
+    request.headers.get('X-Twilio-Signature'),
+    env.TWILIO_AUTH_TOKEN,
+  );
+  if (!validSignature) return webhookResponse('Invalid webhook signature.', 401);
+
+  const from = String(formData.get('From') || '').replace(/\D/g, '');
+  const message = String(formData.get('Body') || '').trim();
+  const messageId = String(formData.get('MessageSid') || '');
+  if (!from || !message || message.length > 1200 || !rememberWhatsAppMessage(messageId, 'twilio')) return twimlResponse();
+
+  try {
+    const result = await resolveChat({
+      message,
+      sessionId: from,
+      channel: 'whatsapp',
+    }, env, ctx);
+    return twimlResponse(whatsappReplyText(result));
+  } catch {
+    return twimlResponse('I’m sorry, I could not complete that request just now. Please try again in a moment.');
+  }
+}
+
+function verifyWhatsAppWebhook(url, env) {
+  if (missingWhatsAppSecrets(env).length) return webhookResponse('WhatsApp connector is not configured.', 503);
+  const mode = url.searchParams.get('hub.mode');
+  const token = url.searchParams.get('hub.verify_token');
+  const challenge = url.searchParams.get('hub.challenge');
+  if (mode === 'subscribe' && challenge && constantTimeEqual(token, env.WA_WEBHOOK_VERIFY_TOKEN)) {
+    return webhookResponse(challenge);
+  }
+  return webhookResponse('Webhook verification failed.', 403);
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (request.method === 'OPTIONS' && url.pathname === '/api/demo-chat') {
+      return new Response(null, { status: demoAllowedOrigin(request, env) ? 204 : 403, headers: demoCors(request, env) });
+    }
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request, env) });
     if (request.method === 'GET' && url.pathname === '/health') return response({ ok: true, service: 'conciergeflow-api' }, 200, request, env);
-    if (['/webhook', '/api/whatsapp-webhook'].includes(url.pathname)) {
-      return await handleWhatsAppWebhook(request, env, ctx);
-    }
-    if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/test-cron') {
-      const result = await runScheduledOutreach(env);
-      return response(result, 200, request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/demo-chat') {
-      if (rateLimited(request)) return response({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
-      try {
-        return await handleDemoChat(request, env, ctx);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, 502, request, env);
-      }
-    }
+    if (url.pathname === '/webhooks/whatsapp' && request.method === 'GET') return verifyWhatsAppWebhook(url, env);
+    if (url.pathname === '/webhooks/whatsapp' && request.method === 'POST') return handleWhatsAppWebhook(request, env, ctx);
+    if (url.pathname === '/webhooks/twilio' && request.method === 'POST') return handleTwilioWebhook(request, env, ctx);
     if (request.method === 'POST' && ['/api/chat', '/concierge/inbound'].includes(url.pathname)) {
       if (rateLimited(request)) return response({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
       try {
@@ -1232,6 +1372,15 @@ export default {
         return response({ error: message }, /required|Invalid|message/i.test(message) ? 400 : 502, request, env);
       }
     }
+    if (request.method === 'POST' && url.pathname === '/api/demo-chat') {
+      if (rateLimited(request)) return demoResponse({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
+      try {
+        return await handleDemoChat(request, env, ctx);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unexpected service error.';
+        return demoResponse({ error: message }, /required|Invalid|chatHistory|demo|Guest|Language|Scenario/i.test(message) ? 400 : 502, request, env);
+      }
+    }
     if (request.method === 'POST' && url.pathname === '/api/booking-enquiry') {
       if (rateLimited(request)) return response({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
       try {
@@ -1239,6 +1388,15 @@ export default {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
         return response({ error: message }, /required|Invalid|valid|long|Consent/i.test(message) ? 400 : 502, request, env);
+      }
+    }
+    if (request.method === 'POST' && url.pathname === '/api/room-enquiry') {
+      if (rateLimited(request)) return response({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
+      try {
+        return await handleRoomEnquiry(request, env);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unexpected service error.';
+        return response({ error: message }, /required|Invalid|valid|after|between|long|Consent/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/discovery-lead') {
@@ -1251,8 +1409,5 @@ export default {
       }
     }
     return response({ error: 'Not found.' }, 404, request, env);
-  },
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(runScheduledOutreach(env));
   },
 };

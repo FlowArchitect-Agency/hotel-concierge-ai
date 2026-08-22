@@ -26,10 +26,12 @@ try {
     & npx --yes wrangler deploy
     if ($LASTEXITCODE -ne 0) { throw 'Worker deployment failed.' }
 
-    foreach ($secretName in @('GROQ_API_KEY', 'AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'SCRAPINGBEE_API_KEY')) {
+    $requiredSecrets = @('GROQ_API_KEY', 'AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID')
+    $optionalSecrets = @('SCRAPINGBEE_API_KEY', 'WA_ACCESS_TOKEN', 'WA_PHONE_NUMBER_ID', 'WA_APP_SECRET', 'WA_WEBHOOK_VERIFY_TOKEN', 'WA_GRAPH_API_VERSION', 'TWILIO_AUTH_TOKEN')
+    foreach ($secretName in @($requiredSecrets + $optionalSecrets)) {
         $secretValue = [Environment]::GetEnvironmentVariable($secretName, 'Process')
         if (-not $secretValue) {
-            if ($secretName -eq 'SCRAPINGBEE_API_KEY') { continue }
+            if ($secretName -notin $requiredSecrets) { continue }
             throw "$secretName is required in the private .env file."
         }
         $secretValue | & npx --yes wrangler secret put $secretName --name conciergeflow-api

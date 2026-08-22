@@ -7,6 +7,7 @@ import {
   matchingServices,
   parseExternalResults,
   parseGuestInput,
+  inferLanguage,
   shouldSearchExternal,
 } from '../src/concierge.js';
 import worker from '../src/index.js';
@@ -53,6 +54,39 @@ test('Any named cuisine becomes a hard external-search constraint and carries th
   );
   assert.equal(photoFollowUp.cuisine.label, 'Spanish');
   assert.equal(photoFollowUp.location, 'Eiffel Tower');
+});
+
+test('Natural plural room and hotel-reservation language is routed to the hotel inventory', () => {
+  assert.equal(classifyRequest('I would like to reserve two rooms for three nights for two people.').category, 'accommodation');
+  assert.equal(classifyRequest('I want to reserve in your hotel.').category, 'accommodation');
+});
+
+test('Language switching recognises Spanish requests, including the common espangol spelling', () => {
+  assert.equal(inferLanguage('habla espangol ?'), 'es');
+  assert.equal(inferLanguage('can you answer in Spanish?'), 'es');
+  assert.equal(parseGuestInput({ message: 'can you answer in Spanish?', sessionId: 'qa_language_switch' }).languageRequested, true);
+  assert.equal(parseGuestInput({ message: 'I need a taxi', sessionId: 'qa_spanish_preference', preferredLanguage: 'es' }).language, 'en');
+  assert.equal(parseGuestInput({ message: 'hello', sessionId: 'qa_english_greeting', preferredLanguage: 'fr' }).language, 'en');
+  assert.equal(parseGuestInput({ message: 'spa tomorrow', sessionId: 'qa_ambiguous_preference', preferredLanguage: 'es' }).language, 'es');
+  assert.equal(inferLanguage('I need a Spanish restaurant in Paris'), 'en');
+});
+
+test('A Spanish switch request receives a Spanish answer without requiring a model call', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('Language switching should not make a network request.'); };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'habla espangol ?', sessionId: 'qa_es_switch', testMode: 'read_only' }),
+    }), {}, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.language, 'es');
+    assert.match(body.reply, /responder\u00e9 en espa\u00f1ol/i);
+    assert.doesNotMatch(body.reply, /how may i assist/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('A final-day request is a web-search itinerary intent, including a terse follow-up', () => {
@@ -128,6 +162,246 @@ test('Direct file previews receive the explicit null-origin CORS response', asyn
   assert.equal(response.headers.get('access-control-allow-origin'), 'null');
 });
 
+test('Demo chat accepts only the GitHub Pages origin and marks every demo record in Airtable', async () => {
+  const origin = 'https://flowarchitect-agency.github.io';
+  const preflight = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+    method: 'OPTIONS',
+    headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' },
+  }), { DEMO_ALLOWED_ORIGIN: origin }, { waitUntil() {} });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+  assert.equal(preflight.headers.get('access-control-allow-methods'), 'POST, OPTIONS');
+
+  const blocked = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://untrusted.example', 'Access-Control-Request-Method': 'POST' },
+  }), { DEMO_ALLOWED_ORIGIN: origin }, { waitUntil() {} });
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.headers.get('access-control-allow-origin'), null);
+
+  const originalFetch = globalThis.fetch;
+  const scheduled = [];
+  const guestWrites = [];
+  const conversationWrites = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    const fields = options.body ? JSON.parse(options.body).fields : null;
+    if (target.includes('/Guests') && (options.method || 'GET') === 'GET') return Response.json({ records: [] });
+    if (target.includes('/Guests') && options.method === 'POST') {
+      guestWrites.push(fields);
+      return Response.json({ id: 'rec_demo_guest', fields });
+    }
+    if (target.includes('/Conversations') && options.method === 'POST') {
+      conversationWrites.push(fields);
+      return Response.json({ id: `rec_demo_${conversationWrites.length}`, fields });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: origin, 'CF-Connecting-IP': '203.0.113.25' },
+      body: JSON.stringify({
+        guestName: 'Demo Guest',
+        language: 'English',
+        scenario: 'pre-arrival',
+        is_demo: true,
+        sessionId: 'demo_unit_test',
+        chatHistory: [{ role: 'user', content: 'hello' }],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: origin }, {
+      waitUntil(promise) { scheduled.push(promise); },
+    });
+    const body = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-origin'), origin);
+    assert.equal(body.demo, true);
+    assert.equal(body.is_demo, true);
+    assert.match(body.reply, /welcome/i);
+    assert.deepEqual(body.staff_alerts, []);
+    assert.equal(guestWrites[0].Is_Demo, true);
+    assert.equal(guestWrites[0].Name, 'Demo Guest');
+    assert.equal(conversationWrites.length, 2);
+    assert.ok(conversationWrites.every((fields) => fields.Is_Demo === true));
+
+    const unsafeDemo = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: origin, 'CF-Connecting-IP': '203.0.113.26' },
+      body: JSON.stringify({ guestName: 'Demo Guest', language: 'English', scenario: 'pre-arrival', is_demo: false, chatHistory: [{ role: 'user', content: 'hello' }] }),
+    }), { DEMO_ALLOWED_ORIGIN: origin }, { waitUntil() {} });
+    assert.equal(unsafeDemo.status, 400);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+async function signWhatsAppPayload(payload, secret) {
+  const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
+  return `sha256=${[...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+async function signTwilioPayload(url, entries, secret) {
+  const grouped = new Map();
+  for (const [key, value] of entries) {
+    const values = grouped.get(key) || [];
+    values.push(value);
+    grouped.set(key, values);
+  }
+  let payload = url;
+  for (const key of [...grouped.keys()].sort()) {
+    for (const value of grouped.get(key).sort()) payload += `${key}${value}`;
+  }
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(payload));
+  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+
+async function settleWaitUntil(queue) {
+  while (queue.length) await Promise.all(queue.splice(0));
+}
+
+test('WhatsApp webhook verifies only the configured Meta handshake token', async () => {
+  const env = { WA_WEBHOOK_VERIFY_TOKEN: 'qa-whatsapp-verify-token' };
+  const success = await worker.fetch(new Request('https://worker.example/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=qa-whatsapp-verify-token&hub.challenge=challenge-123'), env, { waitUntil() {} });
+  const rejected = await worker.fetch(new Request('https://worker.example/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=challenge-123'), env, { waitUntil() {} });
+  assert.equal(success.status, 200);
+  assert.equal(await success.text(), 'challenge-123');
+  assert.equal(rejected.status, 403);
+});
+
+test('WhatsApp text messages use the concierge, preserve WhatsApp history, and reply once', async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = 'qa-whatsapp-app-secret';
+  const outbound = [];
+  const writes = [];
+  const pending = [];
+  const payload = {
+    object: 'whatsapp_business_account',
+    entry: [{ changes: [{ field: 'messages', value: { messages: [{
+      from: '33612345678', id: 'wamid.qa-hello-1', type: 'text', text: { body: 'hola' },
+    }] } }] }],
+  };
+  const rawBody = JSON.stringify(payload);
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.startsWith('https://api.airtable.com/')) {
+      writes.push(JSON.parse(options.body));
+      return Response.json({ id: 'rec_qa' });
+    }
+    if (target.startsWith('https://graph.facebook.com/')) {
+      outbound.push(JSON.parse(options.body));
+      return Response.json({ messages: [{ id: 'wamid.qa-reply-1' }] });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const env = {
+      WA_WEBHOOK_VERIFY_TOKEN: 'qa-whatsapp-verify-token',
+      WA_APP_SECRET: secret,
+      WA_ACCESS_TOKEN: 'qa-access-token',
+      WA_PHONE_NUMBER_ID: '123456789',
+      AIRTABLE_API_KEY: 'qa-airtable-token',
+      AIRTABLE_BASE_ID: 'app_qa',
+    };
+    const request = new Request('https://worker.example/webhooks/whatsapp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': await signWhatsAppPayload(rawBody, secret),
+      },
+      body: rawBody,
+    });
+    const context = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+    const response = await worker.fetch(request, env, context);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), 'EVENT_RECEIVED');
+    await settleWaitUntil(pending);
+    assert.equal(outbound.length, 1);
+    assert.equal(outbound[0].to, '33612345678');
+    assert.match(outbound[0].text.body, /bienvenido/i);
+    assert.equal(writes.length, 2);
+    assert.ok(writes.every((write) => write.fields.UserID === 'whatsapp:33612345678'));
+    assert.ok(writes.every((write) => write.fields.Channel === 'whatsapp'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('WhatsApp webhook refuses a payload with an invalid Meta signature', async () => {
+  const request = new Request('https://worker.example/webhooks/whatsapp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': 'sha256:not-a-valid-signature' },
+    body: JSON.stringify({ object: 'whatsapp_business_account' }),
+  });
+  const response = await worker.fetch(request, {
+    WA_APP_SECRET: 'qa-whatsapp-app-secret', WA_ACCESS_TOKEN: 'qa-access-token', WA_PHONE_NUMBER_ID: '123456789',
+  }, { waitUntil() {} });
+  assert.equal(response.status, 401);
+});
+
+test('Twilio WhatsApp Sandbox messages use the concierge and return signed TwiML', async () => {
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  const secret = 'qa-twilio-auth-token';
+  const url = 'https://worker.example/webhooks/twilio';
+  const entries = [
+    ['Body', 'hola'], ['From', 'whatsapp:+33612345678'], ['MessageSid', 'SMqa-twilio-hello-1'],
+  ];
+  globalThis.fetch = async (target, options = {}) => {
+    if (String(target).startsWith('https://api.airtable.com/')) {
+      writes.push(JSON.parse(options.body));
+      return Response.json({ id: 'rec_qa' });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const request = new Request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Twilio-Signature': await signTwilioPayload(url, entries, secret),
+      },
+      body: new URLSearchParams(entries),
+    });
+    const response = await worker.fetch(request, {
+      TWILIO_AUTH_TOKEN: secret,
+      AIRTABLE_API_KEY: 'qa-airtable-token',
+      AIRTABLE_BASE_ID: 'app_qa',
+    }, { waitUntil() {} });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'text/xml; charset=utf-8');
+    assert.match(await response.text(), /<Response><Message>.*bienvenido/i);
+    assert.equal(writes.length, 2);
+    assert.ok(writes.every((write) => write.fields.UserID === 'whatsapp:33612345678'));
+    assert.ok(writes.every((write) => write.fields.Channel === 'whatsapp'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Twilio webhook refuses an invalid signature', async () => {
+  const response = await worker.fetch(new Request('https://worker.example/webhooks/twilio', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Twilio-Signature': 'invalid',
+    },
+    body: new URLSearchParams({ Body: 'hello', From: 'whatsapp:+33612345678', MessageSid: 'SMqa-invalid' }),
+  }), { TWILIO_AUTH_TOKEN: 'qa-twilio-auth-token' }, { waitUntil() {} });
+  assert.equal(response.status, 401);
+});
+
 test('Read-only endpoint test never writes Airtable and rejects a stale cuisine violation', async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
@@ -188,6 +462,7 @@ test('Booking enquiry writes a contactable guest request to Airtable before ackn
         serviceType: 'restaurant',
         sessionId: 'web_booking-test',
         language: 'en',
+        is_demo: true,
         consent: true,
       }),
     }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
@@ -199,6 +474,7 @@ test('Booking enquiry writes a contactable guest request to Airtable before ackn
     assert.match(writtenFields.RequestSummary, /Email: ada@example\.com/);
     assert.match(writtenFields.RequestSummary, /Guests: 2/);
     assert.equal(writtenFields.Source, 'partner');
+    assert.equal(writtenFields.Is_Demo, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -316,7 +592,7 @@ test('A common curated Italian request returns cards without model or web-search
     const response = await worker.fetch(new Request('https://worker.example/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
-      body: JSON.stringify({ message: 'I would like one excellent Italian restaurant in Paris.', sessionId: 'qa_curated_italian', testMode: 'read_only' }),
+      body: JSON.stringify({ message: 'No, I would rather keep the Italian preference and want one excellent Italian restaurant in Paris.', sessionId: 'qa_curated_italian', testMode: 'read_only' }),
     }), {
       GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
     }, { waitUntil() {} });
@@ -327,6 +603,209 @@ test('A common curated Italian request returns cards without model or web-search
     assert.equal(body.recommendations[0].website_url, 'https://example.com/il-carpaccio');
     assert.match(body.reply, /curated dining guide/i);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('A reservation for the hotel restaurant stays within the preferred collection', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    calls.push(target);
+    if (target.includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'I want to reserve a table at your restaurant for four people at 10 PM.', sessionId: 'qa_hotel_restaurant', testMode: 'read_only' }),
+    }), {
+      GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', SCRAPINGBEE_API_KEY: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
+    }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.intent, 'partner_request');
+    assert.equal(body.recommendations.length, 0);
+    assert.equal(body.partner_offers.length, 1);
+    assert.equal(body.partner_offers[0].name, 'Le Jardin \u2014 Chef\u2019s Table');
+    assert.equal(body.partner_offers[0].source, 'partner');
+    assert.match(body.reply, /preferred collection/i);
+    assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('An unmatched cuisine is offered a hotel alternative before any external search', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    calls.push(target);
+    if (target.includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'I would like an Italian restaurant.', sessionId: 'qa_hotel_alternative', testMode: 'read_only' }),
+    }), {
+      GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', SCRAPINGBEE_API_KEY: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
+    }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.intent, 'hotel_alternative');
+    assert.equal(body.partner_offers[0].name, 'Le Jardin \u2014 Chef\u2019s Table');
+    assert.match(body.reply, /do not currently have an Italian option/i);
+    assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('A services question returns every hotel partner in a dedicated collection without model latency', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    calls.push(target);
+    if (target.includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'What services does your hotel offer?', sessionId: 'qa_hotel_collection', testMode: 'read_only' }),
+    }), {
+      GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', SCRAPINGBEE_API_KEY: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
+    }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.intent, 'partner_catalog');
+    assert.equal(body.hotel_collection.length, 2);
+    assert.deepEqual(body.hotel_collection.map((offer) => offer.name), ['Le Jardin \u2014 Chef\u2019s Table', 'Lumi\u00e8re Spa \u2014 Couples Massage']);
+    assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('An English catalogue question with a mobile spelling mistake overrides an older French preference', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    calls.push(target);
+    if (target.includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'what serivces do you have ?', sessionId: 'qa_catalogue_typo', preferredLanguage: 'fr', testMode: 'read_only' }),
+    }), {
+      GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', SCRAPINGBEE_API_KEY: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
+    }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.language, 'en');
+    assert.equal(body.intent, 'partner_catalog');
+    assert.equal(body.partner_offers.length, 0);
+    assert.deepEqual(body.hotel_collection.map((offer) => offer.name), ['Le Jardin — Chef’s Table', 'Lumière Spa — Couples Massage']);
+    assert.match(body.reply, /full preferred collection/i);
+    assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('A room booking request opens Airtable-backed room offers without model or web-search latency', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const roomRecords = [
+    { fields: { Name: 'Lumière Classic King', Category: 'accommodation', Description: 'A quiet king room', Active: true, IsPartner: true, PriceEUR: 420 } },
+    { fields: { Name: 'Lumière Eiffel View Deluxe', Category: 'accommodation', Description: 'A view of the Eiffel Tower', Active: true, IsPartner: true, PriceEUR: 680 } },
+  ];
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    calls.push(target);
+    if (target.includes('/Services')) return Response.json({ records: roomRecords });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'I want to book a hotel room for five nights.', sessionId: 'qa_room_fast', testMode: 'read_only' }),
+    }), {
+      GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
+    }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.intent, 'partner_request');
+    assert.deepEqual(body.partner_offers.map((offer) => offer.name), ['Lumière Classic King', 'Lumière Eiffel View Deluxe']);
+    assert.match(body.reply, /preferred collection/i);
+    assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Room enquiry writes dates, arrival time, and contact details to Airtable', async () => {
+  const originalFetch = globalThis.fetch;
+  let writtenFields;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('/Requests') && options.method === 'POST') {
+      writtenFields = JSON.parse(options.body).fields;
+      return Response.json({ id: 'rec_room_enquiry', fields: writtenFields });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/room-enquiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        firstName: 'Adele', lastName: 'Guest', email: 'adele@example.com', phone: '+33 6 12 34 56 78',
+        checkIn: '2026-09-12', checkOut: '2026-09-17', arrivalTime: '18:30', adults: 2, children: 0, rooms: 1,
+        serviceName: 'Lumière Eiffel View Deluxe', preference: 'Quiet king room', notes: 'QA room enquiry - delete after verification.', sessionId: 'web_room-test', language: 'en', is_demo: true, consent: true,
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 201);
+    assert.equal(body.ok, true);
+    assert.equal(writtenFields.GuestName, 'Adele Guest');
+    assert.equal(writtenFields.ServiceType, 'other');
+    assert.equal(writtenFields.Source, 'hotel_room_enquiry');
+    assert.equal(writtenFields.Is_Demo, true);
+    assert.equal(writtenFields.ServiceRef, 'Lumière Eiffel View Deluxe');
+    assert.match(writtenFields.RequestSummary, /for Lumière Eiffel View Deluxe/);
+    assert.match(writtenFields.RequestSummary, /2026-09-12 to 2026-09-17/);
+    assert.match(writtenFields.RequestSummary, /Preferred arrival time: 18:30/);
+    assert.match(writtenFields.RequestSummary, /Rooms requested: 1/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Room enquiry rejects a checkout date that does not follow check-in', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; return Response.json({}); };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/room-enquiry', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        firstName: 'Ada', lastName: 'Guest', email: 'ada@example.com', phone: '+33 6 00 00 00 00',
+        checkIn: '2026-09-17', checkOut: '2026-09-17', consent: true,
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.match(body.error, /after check-in/i);
+    assert.equal(called, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -358,7 +837,7 @@ test('A non-partner Spanish request searches the web and cannot fall back to a F
     const response = await worker.fetch(new Request('https://worker.example/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
-      body: JSON.stringify({ message: 'I am looking for fancy Spanish restaurants near the Eiffel Tower', sessionId: 'qa_spanish', testMode: 'read_only' }),
+      body: JSON.stringify({ message: 'No, I want to keep the Spanish restaurant request near the Eiffel Tower.', sessionId: 'qa_spanish', testMode: 'read_only' }),
     }), {
       GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', SCRAPINGBEE_API_KEY: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
     }, { waitUntil() {} });
@@ -490,10 +969,9 @@ test('Semantic routing answers the actual partner catalogue without an external 
     }, { waitUntil() {} });
     const body = await response.json();
     assert.equal(scraped, false);
-    assert.match(body.reply, /Le Jardin/);
-    assert.match(body.reply, /Lumi.re Spa/);
-    assert.equal(body.partner_offers.length, 2);
-    assert.match(body.partner_offers[0].name, /Le Jardin/);
+    assert.equal(body.hotel_collection[0].name, 'Le Jardin \u2014 Chef\u2019s Table');
+    assert.equal(body.hotel_collection[1].name, 'Lumi\u00e8re Spa \u2014 Couples Massage');
+    assert.equal(body.partner_offers.length, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }

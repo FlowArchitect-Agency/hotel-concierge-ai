@@ -35,101 +35,66 @@ const field = (name, type, options) => ({
 
 const tables = [
   {
-    name: 'Guests',
-    fields: [
-      field('WhatsApp Number', 'singleLineText'),
-      field('Full Name', 'singleLineText'),
-      field('Language', 'singleLineText'),
-      { name: 'VIP Status', ...select(['Standard', 'VIP', 'Celebrity']) },
-      field('Known Preferences', 'multilineText'),
-      field('Room Number', 'singleLineText'),
-      field('Notes', 'multilineText'),
-      field('UserID', 'singleLineText'),
-      field('Name', 'singleLineText'),
-      field('PreferredLanguage', 'singleLineText'),
-      field('FirstSeen', 'createdTime'),
-    ],
-  },
-  {
-    name: 'Reservations',
-    fields: [
-      field('Reservation ID', 'singleLineText'),
-      field('Linked Guest', 'singleLineText'),
-      field('Check-In Date', 'date', { dateFormat: { name: 'iso', format: 'YYYY-MM-DD' } }),
-      field('Check-Out Date', 'date', { dateFormat: { name: 'iso', format: 'YYYY-MM-DD' } }),
-      field('Room Number', 'singleLineText'),
-      field('Guest Name', 'singleLineText'),
-      field('Email', 'email'),
-      field('Phone', 'phoneNumber'),
-      field('Service Name', 'singleLineText'),
-      { name: 'Status', ...select(['new', 'confirmed', 'cancelled', 'completed']) },
-      field('PartySize', 'number', { precision: 0 }),
-      field('Notes', 'multilineText'),
-      field('SessionID', 'singleLineText'),
-      field('Language', 'singleLineText'),
-      field('CreatedAt', 'createdTime'),
-    ],
-  },
-  {
-    name: 'Staff',
-    fields: [
-      field('Staff Name', 'singleLineText'),
-      { name: 'Role', ...select(['Receptionist', 'Housekeeping', 'Concierge', 'Manager', 'Maintenance']) },
-      field('WhatsApp Number', 'phoneNumber'),
-      field('On-Duty', 'checkbox'),
-    ],
-  },
-  {
-    name: 'Requests',
-    fields: [
-      field('Request ID', 'singleLineText'),
-      field('Linked Guest', 'singleLineText'),
-      field('Linked Staff', 'singleLineText'),
-      field('Task Details', 'multilineText'),
-      { name: 'Status', ...select(['new', 'in_progress', 'completed', 'cancelled']) },
-      field('Guest Name', 'singleLineText'),
-      field('Is Upsell', 'checkbox'),
-      field('UserID', 'singleLineText'),
-      { name: 'Channel', ...select(['whatsapp', 'instagram', 'sms', 'web']) },
-      { name: 'ServiceType', ...select(['spa', 'restaurant', 'tour', 'transport', 'experience', 'other']) },
-      field('RequestSummary', 'multilineText'),
-      { name: 'Source', ...select(['partner', 'external']) },
-      field('EstValueEUR', 'currency', EURO_CURRENCY),
-      field('CreatedAt', 'createdTime'),
-    ],
-  },
-  {
-    name: 'Services',
-    fields: [
-      field('Service Name', 'singleLineText'),
-      field('Description', 'multilineText'),
-      field('Price', 'singleLineText'),
-      field('Operating Hours', 'singleLineText'),
-      field('URL Attachment', 'url'),
-      { name: 'Category', ...select(['spa', 'restaurant', 'tour', 'transport', 'experience']) },
-      field('Active', 'checkbox'),
-      field('Name', 'singleLineText'),
-      field('PriceEUR', 'currency', EURO_CURRENCY),
-      field('DurationMins', 'number', { precision: 0 }),
-      field('Location', 'singleLineText'),
-      field('PhoneNumber', 'phoneNumber'),
-      field('IsPartner', 'checkbox'),
-    ],
-  },
-  {
     name: 'Conversations',
     fields: [
-      field('Message ID', 'singleLineText'),
-      field('Linked Guest', 'singleLineText'),
-      { name: 'Sender', ...select(['Guest', 'AI', 'Human']) },
-      field('Message Content', 'multilineText'),
-      field('Timestamp', 'singleLineText'),
+      field('MessageID', 'autoNumber'),
       field('UserID', 'singleLineText'),
       { name: 'Channel', ...select(['whatsapp', 'instagram', 'sms', 'web']) },
       { name: 'Role', ...select(['user', 'assistant']) },
       field('Message', 'multilineText'),
       field('Language', 'singleLineText'),
+      field('Timestamp', 'dateTime', PARIS_DATE_TIME),
+      field('Is_Demo', 'checkbox'),
       field('Created', 'createdTime'),
+    ],
+  },
+  {
+    name: 'Requests',
+    fields: [
+      field('RequestID', 'autoNumber'),
+      field('UserID', 'singleLineText'),
+      { name: 'Channel', ...select(['whatsapp', 'instagram', 'sms', 'web']) },
+      field('GuestName', 'singleLineText'),
+      { name: 'ServiceType', ...select(['spa', 'restaurant', 'tour', 'transport', 'experience', 'other']) },
+      field('RequestSummary', 'multilineText'),
+      { name: 'Source', ...select(['partner', 'external']) },
+      field('ServiceRef', 'singleLineText'),
+      { name: 'Status', ...select(['new', 'in_progress', 'confirmed', 'cancelled']) },
+      field('EstValueEUR', 'currency', EURO_CURRENCY),
+      field('IsUpsell', 'checkbox'),
+      field('Language', 'singleLineText'),
+      field('Is_Demo', 'checkbox'),
+      field('CreatedAt', 'createdTime'),
+      field('HandoverAt', 'dateTime', PARIS_DATE_TIME),
+    ],
+  },
+  {
+    name: 'Services',
+    fields: [
+      field('Name', 'singleLineText'),
+      { name: 'Category', ...select(['spa', 'restaurant', 'tour', 'transport', 'experience']) },
+      field('SubType', 'singleLineText'),
+      field('Description', 'multilineText'),
+      field('PriceEUR', 'currency', EURO_CURRENCY),
+      field('DurationMins', 'number', { precision: 0 }),
+      field('Location', 'singleLineText'),
+      field('PhoneNumber', 'phoneNumber'),
+      field('Availability', 'singleLineText'),
+      { name: 'Tags', ...multiSelect(['couples', 'vegan', 'view', 'luxury', 'family', 'arrival']) },
+      field('IsPartner', 'checkbox'),
+      field('Active', 'checkbox'),
+    ],
+  },
+  {
+    name: 'Guests',
+    fields: [
+      field('UserID', 'singleLineText'),
+      field('Name', 'singleLineText'),
+      field('PreferredLanguage', 'singleLineText'),
+      field('RoomNumber', 'singleLineText'),
+      field('Notes', 'multilineText'),
+      field('Is_Demo', 'checkbox'),
+      field('FirstSeen', 'createdTime'),
     ],
   },
   {
@@ -174,8 +139,20 @@ async function airtable(path, options = {}, attempt = 0) {
 function compareFields(table, expectedFields) {
   const actual = new Map((table.fields || []).map((item) => [item.name, item.type]));
   return expectedFields
-    .filter((expected) => actual.get(expected.name) !== expected.type)
-    .map((expected) => `${expected.name} (expected ${expected.type}; found ${actual.get(expected.name) || 'missing'})`);
+    .filter((expected) => actual.has(expected.name) && actual.get(expected.name) !== expected.type)
+    .map((expected) => `${expected.name} (expected ${expected.type}; found ${actual.get(expected.name)})`);
+}
+
+async function addMissingFields(table, expectedFields) {
+  const actualNames = new Set((table.fields || []).map((item) => item.name));
+  const missing = expectedFields.filter((expected) => !actualNames.has(expected.name));
+  for (const fieldDefinition of missing) {
+    const created = await airtable(`/tables/${table.id}/fields`, {
+      method: 'POST',
+      body: JSON.stringify(fieldDefinition),
+    });
+    console.log(`✓ Added ${created.name} to ${table.name}.`);
+  }
 }
 
 async function main() {
@@ -186,6 +163,7 @@ async function main() {
   for (const table of tables) {
     const prior = existing.get(table.name);
     if (prior) {
+      await addMissingFields(prior, table.fields);
       const mismatches = compareFields(prior, table.fields);
       if (mismatches.length) {
         console.warn(`⚠ ${table.name} already exists but differs: ${mismatches.join(', ')}`);

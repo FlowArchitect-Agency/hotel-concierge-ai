@@ -1,4 +1,5 @@
 const CATEGORY_RULES = [
+  { category: 'accommodation', words: ['hotel room', 'hotel rooms', 'room booking', 'book a room', 'reserve a room', 'reserve in your hotel', 'book your hotel', 'hotel stay', 'stay at your hotel', 'overnight stay', 'accommodation', 'suite', 'suites', 'guest room', 'guest rooms', 'rooms', 'room', 'nights', 'night', 'chambre', 'chambres', 'habitacion', 'habitaciones', 'habitation', 'camera', 'zimmer', 'check-in', 'check in', 'check-out', 'check out'] },
   { category: 'spa', words: ['spa', 'massage', 'masaje', 'sauna', 'hammam', 'wellness', 'treatment', 'soin', 'facial', '\u6309\u6469', '\u30de\u30c3\u30b5\u30fc\u30b8'] },
   { category: 'restaurant', words: ['restaurant', 'dinner', 'lunch', 'breakfast', 'table', 'reservation', 'resto', 'd\u00eener', 'd\u00e9jeuner', 'manger', 'food', 'eat', 'cuisine', 'michelin', '\u0645\u0637\u0639\u0645', '\u30ec\u30b9\u30c8\u30e9\u30f3', '\u9910\u5385'] },
   { category: 'transport', words: ['taxi', 'uber', 'chauffeur', 'car', 'driver', 'transfer', 'airport', 'cdg', 'orly', 'pick up', 'pickup', 'navette', 'shuttle'] },
@@ -33,7 +34,7 @@ const CUISINES = [
 
 const REQUEST_WORDS = ['book', 'reserve', 'need', 'want', 'arrange', 'organize', 'find', 'looking for', 'can you', 'je voudrais', 'r\u00e9server', 'je cherche'];
 const GREETINGS = new Set(['hi', 'hello', 'hey', 'salut', 'bonjour', 'bonsoir', 'hola', 'ok', 'okay', 'yes', 'no', 'oui', 'non', 'merci', 'thanks', 'thank you', '\u3053\u3093\u306b\u3061\u306f', '\u306f\u3044', '\u3044\u3044\u3048']);
-const CUISINE_FILLER_WORDS = new Set(['i', 'im', 'am', 'looking', 'for', 'a', 'an', 'the', 'some', 'any', 'find', 'need', 'want', 'would', 'like', 'to', 'fancy', 'best', 'top', 'good', 'great', 'nice', 'authentic', 'excellent', 'restaurant', 'restaurants', 'restaurante', 'restaurantes', 'ristorante', 'ristoranti', 'cuisine', 'food', 'dining', 'place', 'places', 'near', 'close', 'around', 'by', 'in', 'at', 'please', 'show', 'me', 'one', 'only', 'just', 'of', 'is', 'that', 'this', 'with', 'and', 'or']);
+const CUISINE_FILLER_WORDS = new Set(['i', 'im', 'am', 'looking', 'for', 'a', 'an', 'the', 'some', 'any', 'find', 'need', 'want', 'would', 'like', 'to', 'book', 'reserve', 'reservation', 'fancy', 'best', 'top', 'good', 'great', 'nice', 'authentic', 'excellent', 'your', 'our', 'hotel', 'table', 'restaurant', 'restaurants', 'restaurante', 'restaurantes', 'ristorante', 'ristoranti', 'cuisine', 'food', 'dining', 'place', 'places', 'near', 'close', 'around', 'by', 'in', 'at', 'please', 'show', 'me', 'one', 'only', 'just', 'of', 'is', 'that', 'this', 'with', 'and', 'or']);
 
 export function normalized(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -78,46 +79,89 @@ function inferLocation(message) {
   return location || null;
 }
 
+const SUPPORTED_REPLY_LANGUAGES = new Set(['en', 'fr', 'es', 'it', 'de', 'ar', 'ja', 'zh']);
+const REPLY_LANGUAGE_ALIASES = {
+  es: ['spanish', 'espanol', 'espangol', 'espagnol'],
+  fr: ['french', 'francais', 'francese'],
+  it: ['italian', 'italiano', 'italien'],
+  de: ['german', 'deutsch', 'allemand'],
+  ar: ['arabic', 'arabe', 'arab'],
+  ja: ['japanese', 'japonais', 'giapponese'],
+  zh: ['chinese', 'chinois', 'chino', 'mandarin'],
+  en: ['english', 'anglais', 'ingles'],
+};
+const LANGUAGE_REQUEST_WORDS = /\b(speak|answer|reply|respond|write|language|habla|hablas|responde|contesta|escribe|parla|parli|parlez|repond|repondez|sprechen|sprichst|antworten)\b/i;
+
+export function requestedResponseLanguage(message) {
+  const text = normalized(message);
+  const asksForLanguage = LANGUAGE_REQUEST_WORDS.test(text);
+  for (const [language, aliases] of Object.entries(REPLY_LANGUAGE_ALIASES)) {
+    const mentionsLanguage = aliases.some((alias) => new RegExp(`\\b${alias}\\b`, 'i').test(text));
+    const bareLanguageRequest = aliases.some((alias) => new RegExp(`\\b${alias}\\s*(?:please|por favor)?[!?.,]*$`, 'i').test(text));
+    if (mentionsLanguage && (asksForLanguage || bareLanguageRequest)) return language;
+  }
+  return '';
+}
+
 export function inferLanguage(message) {
-  const text = String(message ?? '').toLowerCase();
+  const requested = requestedResponseLanguage(message);
+  if (requested) return requested;
+  const text = normalized(message);
   if (/[\u0600-\u06ff]/.test(text)) return 'ar';
   if (/[\u3040-\u30ff]/.test(text)) return 'ja';
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
-  if (/\b(hallo|wie geht|ihnen|bitte|danke|guten|morgen|abend)\b/i.test(text)) return 'de';
-  if (/\b(avete|disponibilita|cena|stasera|vorrei|ciao|buongiorno|buonasera|grazie|per favore|parla|parlate)\b/i.test(text)) return 'it';
-  if (/\b(necesito|aeropuerto|manana|mañana|quiero|reserva|hola|habla|hablas|espagnol|español|espanol|gracias|buenas|dias|días|tardes|noches|por favor|cuanto|cuánto|servicio|hotel|restaurante|tienes|tienen)\b/i.test(text)) return 'es';
-  if (/\b(quel|prix|demain|bonjour|bonsoir|salut|merci|parlez|parle|voudrais|reserver|réserver|combien|svp)\b/i.test(text)) return 'fr';
+  if (/\b(hallo|wie geht|ihnen|bitte|danke|guten tag)\b/.test(text)) return 'de';
+  if (/\b(ciao|avete|disponibilita|cena|stasera|vorrei|prenotare)\b/.test(text)) return 'it';
+  if (/\b(hola|necesito|aeropuerto|manana|quiero|reserva|gracias|por favor)\b/.test(text)) return 'es';
+  if (/\b(quel|prix|demain|bonjour|voudrais|reserver)\b/.test(text)) return 'fr';
   return 'en';
+}
+
+// A saved language is useful for short, ambiguous follow-ups ("spa tomorrow"),
+// but it must never override a clearly written new message.  In particular,
+// an English guest should not keep receiving French merely because their
+// previous message was French.
+function hasExplicitEnglishSignal(message) {
+  const text = normalized(message);
+  return /\b(?:hello|hi|hey|what|which|where|when|why|how|can|could|would|should|do|does|did|is|are|am|i|we|you|my|your|please|thanks|thank)\b/.test(text);
 }
 
 export function parseGuestInput(body) {
   const raw = body && typeof body === 'object' ? body : {};
   const message = String(raw.message ?? raw.text ?? '').trim();
   const sessionId = String(raw.sessionId ?? raw.userId ?? raw.user_id ?? 'anon').trim();
+  const channel = String(raw.channel ?? 'web').trim().toLowerCase() === 'whatsapp' ? 'whatsapp' : 'web';
   if (!message || message.length > 1200) throw new Error('A message between 1 and 1200 characters is required.');
   if (!/^[A-Za-z0-9:_-]{1,120}$/.test(sessionId)) throw new Error('Invalid conversation identifier.');
   const testMode = ['read_only', 'write_verified'].includes(String(raw.testMode)) ? String(raw.testMode) : null;
-  const channel = raw.channel || 'web';
-  const contactName = raw.contactName || raw.guestName || '';
-  const language = raw.language || inferLanguage(message);
-  const isDemo = Boolean(raw.isDemo || raw.is_demo);
+  const requestedLanguage = requestedResponseLanguage(message);
+  const detectedLanguage = inferLanguage(message);
+  const preferredLanguage = String(raw.preferredLanguage ?? '').trim().toLowerCase();
+  const language = requestedLanguage || (detectedLanguage !== 'en' || hasExplicitEnglishSignal(message)
+    ? detectedLanguage
+    : (SUPPORTED_REPLY_LANGUAGES.has(preferredLanguage) ? preferredLanguage : detectedLanguage));
   return {
     message,
-    userId: raw.userId?.startsWith('demo:') || raw.userId?.startsWith('wa:') ? raw.userId : `web:${sessionId}`,
+    // Keep one, clearly namespaced history per guest and channel. WhatsApp
+    // provides a stable wa_id, so its conversation can continue naturally
+    // without being mixed with an unrelated browser session.
+    userId: `${channel}:${sessionId}`,
     sessionId,
     channel,
-    contactName,
     language,
-    isDemo,
+    languageRequested: Boolean(requestedLanguage),
     testMode,
     testRunId: String(raw.testRunId ?? '').slice(0, 80),
-    receivedAt: raw.receivedAt || new Date().toISOString(),
+    guestName: String(raw.guestName ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 100),
+    isDemo: raw.is_demo === true,
+    chatHistory: Array.isArray(raw.chatHistory) ? raw.chatHistory : null,
+    scenario: String(raw.scenario ?? '').trim().slice(0, 48),
+    receivedAt: new Date().toISOString(),
   };
 }
 
 export function classifyRequest(message) {
   const text = normalized(message);
-  const isLanguageQuery = /\b(hablas?|hablan|hables?|parles?|parlez|speak|speaks|speaking|parla|parlano)\b/i.test(text);
   const scores = new Map();
   for (const rule of CATEGORY_RULES) {
     for (const word of rule.words) {
@@ -126,17 +170,13 @@ export function classifyRequest(message) {
   }
   if (ITINERARY_WORDS.some((word) => hasTerm(text, word))) scores.set('itinerary', 1);
   let category = [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-  let cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
-  
-  if (isLanguageQuery) {
-    cuisine = null;
-    category = null;
-  } else if (cuisine) {
-    category = 'restaurant';
-  }
-  
+  const cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
+  // A named cuisine is always a dining request. This also prevents nearby
+  // landmarks (for example, "Spanish restaurant near the Eiffel Tower")
+  // from incorrectly changing the category to a tour.
+  if (cuisine) category = 'restaurant';
   const trimmed = text.replace(/[!.?\u00a1\u00bf]+$/g, '');
-  const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2 || isLanguageQuery;
+  const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2;
   const hasIntent = !isGreeting && Boolean(category || cuisine || REQUEST_WORDS.some((word) => hasTerm(text, word)));
   return { category, cuisine, location: inferLocation(message), hasIntent };
 }
@@ -149,7 +189,7 @@ export function inheritConversationContext(classification, history, latestMessag
   const previousGuestMessage = [...(history || [])].reverse().find((item) => item?.role === 'user' && item?.message);
   if (!previousGuestMessage) return classification;
   const prior = classifyRequest(previousGuestMessage.message);
-  if (!prior.cuisine && prior.category !== 'itinerary') return classification;
+  if (!prior.cuisine && !['itinerary', 'accommodation'].includes(prior.category)) return classification;
   return {
     ...classification,
     category: classification.category || prior.category,
@@ -180,9 +220,6 @@ export function toService(record) {
 
 export function matchingServices(records, classification) {
   const all = records.map(toService).filter((service) => service.name && service.active);
-  if (classification.route === 'partner_catalog') {
-    return { all, matching: all, excluded: [] };
-  }
   const scoped = classification.category ? all.filter((service) => normalized(service.category) === classification.category) : [];
   if (!classification.cuisine) return { all, matching: scoped, excluded: [] };
   const terms = classification.cuisine.words.map(normalized);
@@ -443,28 +480,29 @@ export function enforceContract(model, { language, classification, matching, exc
     finalReply = REFINEMENT[language] ?? REFINEMENT.en;
     requests = [];
   } else if (externalOptions.length) {
-    if (!mentionsExternal || !finalReply) {
-      finalReply = classification.category === 'itinerary'
-        ? itineraryReply(language, externalOptions)
-        : externalIntro(language, externalOptions.length);
-    }
+    // Recommendation names, descriptions and links are supplied in the
+    // structured array below. Never let the model invent an unverified venue
+    // in the short conversational introduction.
+    finalReply = classification.category === 'itinerary'
+      ? itineraryReply(language, externalOptions)
+      : externalIntro(language, externalOptions.length);
     requests = requests.filter((item) => optionNames.some((name) => normalized(item.serviceName).includes(normalized(name))));
   }
 
   if (classification.route !== 'partner_catalog' && classification.hasIntent && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
     const service = matching[0];
     const details = [service.price === null || service.price === '' ? '' : `EUR ${Number(service.price).toFixed(0)}`, service.duration ? `${service.duration} min` : ''].filter(Boolean).join(', ');
-    const partnerSuffixes = {
-      es: `Opción de socio: ${service.name}${details ? ` (${details})` : ''}. Nuestro equipo verificará la disponibilidad antes de confirmar cualquier solicitud.`,
-      fr: `Option partenaire : ${service.name}${details ? ` (${details})` : ''}. Notre équipe vérifiera la disponibilité avant toute confirmation.`,
-      de: `Partner-Option: ${service.name}${details ? ` (${details})` : ''}. Unser Team prüft die Verfügbarkeit vor Bestätigung.`,
-      it: `Opzione partner: ${service.name}${details ? ` (${details})` : ''}. Il nostro team verificherà la disponibilità prima di confermare.`,
-      ja: `提携サービス: ${service.name}${details ? ` (${details})` : ''}。スタッフが空き状況を確認いたします。`,
-      zh: `合作方项目：${service.name}${details ? ` (${details})` : ''}。我们的团队将在确认前核实可订情况。`,
-      ar: `خيار الشريك: ${service.name}${details ? ` (${details})` : ''}. سيتحقق فريقنا من التوافر قبل التأكيد.`,
-      en: `Partner option: ${service.name}${details ? ` (${details})` : ''}. Our team will verify availability before confirming any request.`
+    const partnerSuffix = {
+      en: `Partner option: ${service.name}${details ? ` (${details})` : ''}. Our team will verify availability before confirming any request.`,
+      fr: `Option partenaire : ${service.name}${details ? ` (${details})` : ''}. Notre \u00e9quipe v\u00e9rifiera la disponibilit\u00e9 avant toute confirmation.`,
+      es: `Opci\u00f3n asociada: ${service.name}${details ? ` (${details})` : ''}. Nuestro equipo verificar\u00e1 la disponibilidad antes de cualquier confirmaci\u00f3n.`,
+      it: `Opzione partner: ${service.name}${details ? ` (${details})` : ''}. Il nostro team verificher\u00e0 la disponibilit\u00e0 prima di qualsiasi conferma.`,
+      de: `Partneroption: ${service.name}${details ? ` (${details})` : ''}. Unser Team pr\u00fcft die Verf\u00fcgbarkeit vor jeder Best\u00e4tigung.`,
+      ar: `\u062e\u064a\u0627\u0631 \u0634\u0631\u064a\u0643: ${service.name}${details ? ` (${details})` : ''}. \u0633\u064a\u062a\u062d\u0642\u0642 \u0641\u0631\u064a\u0642\u0646\u0627 \u0645\u0646 \u0627\u0644\u062a\u0648\u0641\u0631 \u0642\u0628\u0644 \u0623\u064a \u062a\u0623\u0643\u064a\u062f.`,
+      ja: `\u30d1\u30fc\u30c8\u30ca\u30fc\u30aa\u30d7\u30b7\u30e7\u30f3: ${service.name}${details ? ` (${details})` : ''}\u3002\u78ba\u5b9a\u524d\u306b\u5f53\u30c1\u30fc\u30e0\u304c\u7a7a\u304d\u72b6\u6cc1\u3092\u78ba\u8a8d\u3057\u307e\u3059\u3002`,
+      zh: `\u5408\u4f5c\u65b9\u9009\u9879\uff1a${service.name}${details ? ` (${details})` : ''}\u3002\u6211\u4eec\u7684\u56e2\u961f\u5c06\u5728\u786e\u8ba4\u524d\u6838\u5b9e\u53ef\u7528\u6027\u3002`,
     };
-    const suffix = partnerSuffixes[language] || partnerSuffixes.en;
+    const suffix = partnerSuffix[language] || partnerSuffix.en;
     finalReply = finalReply ? `${finalReply}\n\n${suffix}` : suffix;
   }
 
@@ -486,7 +524,7 @@ export function buildPrompt({ input, classification, history, services, external
   return `You are the concierge for ${facts.hotelName}. Return JSON only, never Markdown.
 
 Hard rules:
-- Reply naturally and fluently in whatever language the guest writes in. Automatically detect the guest's language (Spanish, Japanese, French, German, Italian, Arabic, Chinese, English, etc.) and compose your response entirely in that same language.
+- Reply entirely in the guest's latest-message language (${input.language}).
 - Use only the facts, partner services, and external search results below.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
 - Partner services are preferred. State a catalog price only when it is supplied below.
@@ -496,7 +534,7 @@ Hard rules:
 - Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request.
 
 Return exactly this JSON shape:
-{"reply_text":"string","language_detected":"string","intent":"faq|service_request|smalltalk|other","service_type":"spa|restaurant|tour|transport|experience|other|null","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
+{"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"spa|restaurant|tour|transport|experience|other|null","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
 
 GUEST MESSAGE:
 ${input.message}
@@ -515,94 +553,4 @@ ${formatExternalOptions(externalOptions, classification)}
 
 HOTEL FACTS:
 ${facts.text || '(no additional hotel facts configured)'}`;
-}
-
-export function buildEvaluatorPrompt({ input, draftReply, classification, facts }) {
-  const hotel = facts?.hotelName || 'Hôtel Lumière Paris';
-  return `You are the Head Concierge Evaluator at ${hotel}. Your job is to evaluate and polish the assistant's draft response before it is shown to the guest. Return a valid json object only.
-
-CRITICAL EVALUATION CRITERIA:
-1. Luxury 5-Star Tone: Must sound like an elite Paris hotel concierge — polite, warm, discreet, and refined.
-2. Anti-Salesy Guardrail: The response must NEVER sound pushy, robotic, or transactional. Building guest trust is paramount.
-3. Natural Upsell Opportunities:
-   - Check if there is a natural, effortless opportunity to mention one of our core premium hotel services:
-     * The Private Chauffeur (Mercedes-Benz S-Class transfer for airport/tours/shopping)
-     * The Hotel Spa (Lumière Spa facial or couples massage for wellness)
-     * The Rooftop Restaurant (Terrasse Lumière Eiffel Tower view dining & cocktails)
-   - IMPORTANT: Only include an upsell if it fits the guest context seamlessly. If forcing an upsell feels unnatural or pushy, APPROVE the draft as-is (passed=true).
-4. Language Match: The final text MUST be in the exact same language as the guest's message (${input.language || 'auto'}).
-
-You MUST respond with a raw json object matching this structure:
-{
-  "passed": true,
-  "score": 9,
-  "critique": "Draft is warm and naturally offers private chauffeur.",
-  "improved_reply": null
-}
-
-If passed is false, set improved_reply to a refined luxury concierge text string. If passed is true, set improved_reply to null.
-
-GUEST MESSAGE:
-"${input.message}"
-
-DRAFT RESPONSE:
-"${draftReply}"`;
-}
-
-export function buildMemoryExtractionPrompt({ message, history, language }) {
-  const historyText = Array.isArray(history) && history.length
-    ? history.map((item) => `${item.role}: ${item.message}`).join('\n')
-    : `user: ${message}`;
-  return `You are a Data Extraction Assistant for Hôtel Lumière Paris.
-Analyze the guest conversation transcript below. Extract permanent guest profile facts. Return a valid json object only.
-
-Schema to return:
-{
-  "phone": "string|null (phone number or WhatsApp ID if mentioned, e.g. +33612345678)",
-  "guestName": "string|null (guest name if mentioned)",
-  "language": "${language || 'en'}",
-  "dietaryRestrictions": "string|null (e.g. Gluten-free, Vegan, Nut allergy, Halal, Kosher)",
-  "purposeOfStay": "string|null (e.g. 10th Anniversary, Birthday, Business, Honeymoon)",
-  "generalPreferences": "string|null (e.g. Loves seafood, prefers Eiffel Tower views, asked about museum tours)"
-}
-
-CONVERSATION TRANSCRIPT:
-${historyText}
-user: ${message}`;
-}
-
-export function buildPreArrivalOutreachPrompt({ profile, hotelName = 'Hôtel Lumière Paris' }) {
-  return `You are the Head Concierge at ${hotelName}.
-Write a personalized, warm pre-arrival welcome message to be sent via WhatsApp to a guest arriving in 48 hours.
-
-GUEST PROFILE:
-- Name: ${profile.GuestName || 'Valued Guest'}
-- Language: ${profile.Language || 'en'}
-- Purpose of Stay: ${profile.PurposeOfStay || 'Paris Getaway'}
-- Dietary Restrictions: ${profile.DietaryRestrictions || 'None specified'}
-- Preferences: ${profile.GeneralPreferences || 'Luxury experience'}
-
-RULES:
-- Compose the message in the guest's language (${profile.Language || 'en'}).
-- Warm, personal, 5-star Paris luxury concierge tone.
-- Naturally offer a relevant premium hotel service (e.g., Private Mercedes Chauffeur airport transfer, Lumière Spa reservation, or Eiffel View rooftop dinner table).
-- Keep it concise, friendly, and under 4 sentences.
-- Return raw text string only (no JSON, no markdown formatting).`;
-}
-
-export function buildPostCheckoutOutreachPrompt({ profile, hotelName = 'Hôtel Lumière Paris' }) {
-  return `You are the Head Concierge at ${hotelName}.
-Write a polite, personal post-checkout thank you message to be sent via WhatsApp to a guest who checked out earlier today.
-
-GUEST PROFILE:
-- Name: ${profile.GuestName || 'Valued Guest'}
-- Language: ${profile.Language || 'en'}
-- Purpose of Stay: ${profile.PurposeOfStay || 'Stay'}
-
-RULES:
-- Compose the message in the guest's language (${profile.Language || 'en'}).
-- Express sincere gratitude for staying at ${hotelName}.
-- Politely ask how their stay was and invite them to leave a review or share any private feedback directly with the team.
-- Warm, discreet, and refined tone. Keep under 4 sentences.
-- Return raw text string only (no JSON, no markdown formatting).`;
 }

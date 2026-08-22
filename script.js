@@ -3,7 +3,7 @@
 const configuredApiUrl = String(window.CONCIERGE_WEBHOOK_URL || '').trim();
 const isLocalDevelopmentHost = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(window.location.hostname);
 const CONCIERGE_API_URL = configuredApiUrl || (isLocalDevelopmentHost ? 'http://localhost:5678/webhook/concierge/inbound' : '');
-const CHAT_STORAGE_KEY = 'conciergeflow-ai-chat-v4';
+const CHAT_STORAGE_KEY = 'conciergeflow-ai-chat-v6';
 const MAX_STORED_MESSAGES = 24;
 const FALLBACK_CARD_IMAGE = 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=1200&q=84';
 const FALLBACK_PARTNER_IMAGE = 'assets/hotel-lumiere-salon.jpg';
@@ -24,13 +24,25 @@ const bookingServiceName = document.getElementById('booking-service-name');
 const bookingServiceMeta = document.getElementById('booking-service-meta');
 const bookingError = document.getElementById('booking-error');
 const bookingSubmit = document.getElementById('booking-submit');
+const roomBookingModal = document.getElementById('room-booking-modal');
+const roomBookingForm = document.getElementById('room-booking-form');
+const roomBookingError = document.getElementById('room-booking-error');
+const roomBookingSubmit = document.getElementById('room-booking-submit');
+const roomBookingServiceSummary = document.getElementById('room-booking-service-summary');
+const roomBookingServiceName = document.getElementById('room-booking-service-name');
+const roomBookingServiceMeta = document.getElementById('room-booking-service-meta');
 const discoveryModal = document.getElementById('discovery-modal');
 const discoveryForm = document.getElementById('discovery-form');
 const discoveryError = document.getElementById('discovery-error');
 const discoverySubmit = document.getElementById('discovery-submit');
+const hotelCollectionModal = document.getElementById('hotel-collection-modal');
+const hotelCollectionDialogGrid = document.getElementById('hotel-collection-dialog-grid');
+const hotelCollectionBack = document.getElementById('hotel-collection-back');
 
 let toastTimer;
 let isSending = false;
+let hotelCollectionRoot = { offers: [], context: {} };
+let knownRoomOffers = [];
 
 function createSessionId() {
   return `web_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -150,6 +162,18 @@ function renderRecommendations(recommendations, animate = true) {
     details.textContent = 'View details';
     details.setAttribute('aria-label', `View details for ${recommendation.name}`);
     content.append(name, description, details);
+    if (recommendation.booking_enabled === true) {
+      const reserve = document.createElement('button');
+      reserve.className = 'recommendation-book';
+      reserve.type = 'button';
+      reserve.textContent = 'Ask concierge to reserve';
+      reserve.addEventListener('click', () => openBookingForm({
+        name: recommendation.name,
+        category: recommendation.service_type || 'other',
+        source: recommendation.source || 'external',
+      }));
+      content.appendChild(reserve);
+    }
     card.appendChild(content);
     rail.appendChild(card);
   });
@@ -158,64 +182,192 @@ function renderRecommendations(recommendations, animate = true) {
   return panel;
 }
 
-function renderPartnerOffers(offers, animate = true) {
+function uniqueOffers(offers) {
+  const seen = new Set();
+  return (Array.isArray(offers) ? offers : []).filter((offer) => {
+    const key = String(offer?.name || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function rememberRoomOffers(offers) {
+  knownRoomOffers = uniqueOffers([
+    ...knownRoomOffers,
+    ...(Array.isArray(offers) ? offers : []).filter((offer) => String(offer?.category || '').toLowerCase() === 'accommodation'),
+  ]);
+}
+
+function createHotelCollectionCard(offer, { roomPicker = false } = {}) {
+  const card = document.createElement('article');
+  card.className = 'hotel-collection-card';
+  card.setAttribute('role', 'listitem');
+  const image = document.createElement('img');
+  image.className = 'hotel-collection-image';
+  image.src = validExternalUrl(offer.image_url) || FALLBACK_PARTNER_IMAGE;
+  image.alt = '';
+  image.loading = 'lazy';
+  image.addEventListener('error', () => { image.src = FALLBACK_PARTNER_IMAGE; }, { once: true });
+  const content = document.createElement('div');
+  content.className = 'hotel-collection-content';
+  const category = document.createElement('p');
+  category.className = 'hotel-collection-category';
+  category.textContent = String(offer.category || 'Private experience').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const name = document.createElement('h3');
+  name.textContent = String(offer.name).slice(0, 120);
+  const description = document.createElement('p');
+  description.textContent = String(offer.description || 'A considered experience from the hotel collection.').slice(0, 180);
+  const meta = document.createElement('p');
+  meta.className = 'hotel-collection-meta';
+  const isAccommodation = String(offer.category || '').toLowerCase() === 'accommodation';
+  const price = Number.isFinite(Number(offer.price_eur)) ? `${isAccommodation ? 'From ' : ''}EUR ${Number(offer.price_eur).toFixed(0)}${isAccommodation ? ' / night' : ''}` : 'On request';
+  const duration = !isAccommodation && Number.isFinite(Number(offer.duration_mins)) && Number(offer.duration_mins) > 0 ? ` \u00b7 ${Number(offer.duration_mins)} min` : '';
+  meta.textContent = `${price}${duration}`;
+  const reserve = document.createElement('button');
+  reserve.className = 'hotel-collection-book';
+  reserve.type = 'button';
+  reserve.textContent = isAccommodation
+    ? (roomPicker ? 'Select this room' : 'Explore rooms & suites')
+    : 'Make an enquiry';
+  reserve.addEventListener('click', () => {
+    if (isAccommodation && !roomPicker) {
+      openRoomTypeChooser(offer);
+      return;
+    }
+    openOfferBookingForm(offer);
+  });
+  content.append(category, name, description, meta, reserve);
+  card.append(image, content);
+  return card;
+}
+
+function openHotelCollection(offers, context = {}) {
+  const verified = uniqueOffers(offers);
+  if (!hotelCollectionModal || !hotelCollectionDialogGrid || !verified.length) return;
+  const roomPicker = context.mode === 'room-picker';
+  if (!roomPicker) {
+    hotelCollectionRoot = { offers: verified, context: { title: context.title, intro: context.intro } };
+  }
+  rememberRoomOffers(verified);
+  const title = document.getElementById('hotel-collection-title');
+  const intro = document.getElementById('hotel-collection-dialog-intro');
+  if (title) title.textContent = context.title || (roomPicker ? 'Rooms & suites' : 'The hotel collection');
+  if (intro) intro.textContent = context.intro || (roomPicker
+    ? 'Choose the room style that feels right for your stay. Your final selection is recorded with your enquiry.'
+    : 'Every experience below is part of the hotel’s preferred collection. Select one to leave a real enquiry for the concierge team.');
+  if (hotelCollectionBack) hotelCollectionBack.hidden = !roomPicker || !hotelCollectionRoot.offers.length;
+  hotelCollectionDialogGrid.replaceChildren(...verified.map((offer) => createHotelCollectionCard(offer, { roomPicker })));
+  hotelCollectionModal.hidden = false;
+  document.body.classList.add('collection-open');
+  window.setTimeout(() => hotelCollectionModal.querySelector('[data-close-hotel-collection]')?.focus(), 60);
+}
+
+function openRoomTypeChooser(originOffer = {}) {
+  const rooms = uniqueOffers([
+    ...hotelCollectionRoot.offers,
+    ...knownRoomOffers,
+    originOffer,
+  ]).filter((offer) => String(offer?.category || '').toLowerCase() === 'accommodation');
+  if (rooms.length < 2) {
+    openRoomBookingForm(originOffer);
+    return;
+  }
+  openHotelCollection(rooms, {
+    mode: 'room-picker',
+    title: 'Choose your room or suite',
+    intro: 'Compare the hotel’s room styles, then select one to continue to your private stay enquiry.',
+  });
+}
+
+function returnToHotelCollection() {
+  if (!hotelCollectionRoot.offers.length) return;
+  openHotelCollection(hotelCollectionRoot.offers, hotelCollectionRoot.context);
+}
+
+function closeHotelCollection() {
+  if (!hotelCollectionModal) return;
+  hotelCollectionModal.hidden = true;
+  document.body.classList.remove('collection-open');
+}
+
+function renderHotelCollection(offers, animate = true) {
   const verified = Array.isArray(offers) ? offers.filter((item) => item && item.name) : [];
   if (!verified.length) return null;
 
   const panel = document.createElement('section');
-  panel.className = `partner-offer-panel${animate ? ' message-arrival' : ''}`;
-  panel.setAttribute('aria-label', 'Hotel partner services');
+  panel.className = `hotel-collection-launcher${animate ? ' message-arrival' : ''}`;
+  panel.setAttribute('aria-label', 'Open the full preferred hotel collection');
+  const eyebrow = document.createElement('p');
+  eyebrow.className = 'hotel-collection-eyebrow';
+  eyebrow.textContent = 'Preferred hotel collection';
+  const title = document.createElement('h3');
+  title.textContent = `${verified.length} experiences, ready to explore`;
+  const intro = document.createElement('p');
+  intro.textContent = 'Open the private collection to browse every hotel experience in a focused, full-screen view.';
+  const open = document.createElement('button');
+  open.className = 'hotel-collection-open';
+  open.type = 'button';
+  open.textContent = 'Explore the collection';
+  open.addEventListener('click', () => openHotelCollection(verified));
+  panel.append(eyebrow, title, intro, open);
+  return panel;
+}
 
-  const heading = document.createElement('p');
-  heading.className = 'partner-offer-eyebrow';
-  heading.textContent = 'Preferred hotel collection';
-  panel.appendChild(heading);
+function renderPartnerOffers(offers, animate = true) {
+  const verified = Array.isArray(offers) ? offers.filter((item) => item && item.name) : [];
+  if (!verified.length) return null;
+  rememberRoomOffers(verified);
 
-  const rail = document.createElement('div');
-  rail.className = 'partner-offer-rail';
-  rail.setAttribute('role', 'list');
+  const panel = document.createElement('section');
+  panel.className = `hotel-collection-launcher partner-offer-launcher${animate ? ' message-arrival' : ''}`;
+  panel.setAttribute('aria-label', 'Open matching hotel offers');
+  const category = String(verified[0].category || 'experience').toLowerCase();
+  const labels = { accommodation: 'rooms and suites', restaurant: 'dining options', spa: 'spa rituals', transport: 'chauffeur options', tour: 'private tours', experience: 'private experiences' };
+  const label = labels[category] || 'hotel offers';
+  const eyebrow = document.createElement('p');
+  eyebrow.className = 'hotel-collection-eyebrow';
+  eyebrow.textContent = 'Preferred hotel collection';
+  const title = document.createElement('h3');
+  title.textContent = `${verified.length} ${label}, selected for you`;
+  const intro = document.createElement('p');
+  intro.textContent = 'View the hotel options and prices, then choose one to leave your reservation details.';
+  const open = document.createElement('button');
+  open.className = 'hotel-collection-open';
+  open.type = 'button';
+  open.textContent = category === 'accommodation' ? 'See rooms and suites' : 'See hotel offers';
+  open.addEventListener('click', () => openHotelCollection(verified, {
+    title: category === 'accommodation' ? 'Rooms and suites' : `Your ${label}`,
+    intro: category === 'accommodation'
+      ? 'Select a room to continue to your private stay request. The reservations team confirms final availability.'
+      : 'These are the hotel’s preferred options for your request. Select one to leave a real concierge enquiry.',
+  }));
+  panel.append(eyebrow, title, intro, open);
+  return panel;
+}
 
-  verified.forEach((offer) => {
-    const card = document.createElement('article');
-    card.className = 'partner-offer-card';
-    card.setAttribute('role', 'listitem');
+function renderRoomBookingAction(enabled, animate = true) {
+  if (!enabled) return null;
+  const panel = document.createElement('section');
+  panel.className = `room-booking-action${animate ? ' message-arrival' : ''}`;
+  panel.setAttribute('aria-label', 'Hotel room enquiry');
 
-    const image = document.createElement('img');
-    image.className = 'partner-offer-image';
-    image.src = validExternalUrl(offer.image_url) || FALLBACK_PARTNER_IMAGE;
-    image.alt = '';
-    image.loading = 'lazy';
-    image.addEventListener('error', () => { image.src = FALLBACK_PARTNER_IMAGE; }, { once: true });
-
-    const content = document.createElement('div');
-    content.className = 'partner-offer-content';
-    const category = document.createElement('p');
-    category.className = 'partner-offer-category';
-    category.textContent = String(offer.category || 'Private experience').replace(/\b\w/g, (letter) => letter.toUpperCase());
-    const name = document.createElement('h3');
-    name.textContent = String(offer.name).slice(0, 110);
-    const details = document.createElement('p');
-    details.className = 'partner-offer-details';
-    const price = Number.isFinite(Number(offer.price_eur)) ? `EUR ${Number(offer.price_eur).toFixed(0)}` : 'On request';
-    const duration = Number.isFinite(Number(offer.duration_mins)) && Number(offer.duration_mins) > 0 ? ` \u00b7 ${Number(offer.duration_mins)} min` : '';
-    details.textContent = `${price}${duration}`;
-    const reserve = document.createElement('button');
-    reserve.className = 'partner-offer-book';
-    reserve.type = 'button';
-    reserve.textContent = 'Enquire';
-    const triggerBooking = (event) => {
-      event.stopPropagation();
-      openBookingForm(offer);
-    };
-    reserve.addEventListener('click', triggerBooking);
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', () => openBookingForm(offer));
-    content.append(category, name, details, reserve);
-    card.append(image, content);
-    rail.appendChild(card);
+  const eyebrow = document.createElement('p');
+  eyebrow.className = 'room-booking-eyebrow';
+  eyebrow.textContent = 'Private stay request';
+  const title = document.createElement('h3');
+  title.textContent = 'Choose your room or suite';
+  const description = document.createElement('p');
+  description.textContent = 'Start by choosing a room style, then share the stay details needed to prepare your enquiry.';
+  const button = document.createElement('button');
+  button.className = 'room-booking-action-button';
+  button.type = 'button';
+  button.textContent = 'Explore rooms & suites';
+  button.addEventListener('click', () => {
+    if (knownRoomOffers.length > 1) openRoomTypeChooser(knownRoomOffers[0]);
+    else openRoomBookingForm();
   });
-
-  panel.appendChild(rail);
+  panel.append(eyebrow, title, description, button);
   return panel;
 }
 
@@ -226,10 +378,14 @@ function renderMessage(message, animate = true) {
   if (cards) chatMessages.appendChild(cards);
   const partnerCards = renderPartnerOffers(message.partnerOffers, animate);
   if (partnerCards) chatMessages.appendChild(partnerCards);
+  const hotelCollection = renderHotelCollection(message.hotelCollection, animate);
+  if (hotelCollection) chatMessages.appendChild(hotelCollection);
+  const roomBookingAction = renderRoomBookingAction(message.roomBooking, animate);
+  if (roomBookingAction) chatMessages.appendChild(roomBookingAction);
 }
 
-function appendMessage(text, sender, recommendations = [], partnerOffers = [], persist = true) {
-  const message = { text: String(text || ''), sender, recommendations, partnerOffers, time: getCurrentTime() };
+function appendMessage(text, sender, recommendations = [], partnerOffers = [], roomBooking = false, hotelCollection = [], persist = true) {
+  const message = { text: String(text || ''), sender, recommendations, partnerOffers, roomBooking: Boolean(roomBooking), hotelCollection, time: getCurrentTime() };
   renderMessage(message);
   if (persist) {
     chatState.messages.push(message);
@@ -289,6 +445,10 @@ function bookingApiUrl() {
   return conciergeApiUrl('/api/booking-enquiry');
 }
 
+function roomEnquiryApiUrl() {
+  return conciergeApiUrl('/api/room-enquiry');
+}
+
 async function parseEventStream(stream, onStatus) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -329,6 +489,7 @@ async function requestConciergeReply(text) {
       body: JSON.stringify({
         message: text,
         sessionId: chatState.sessionId,
+        preferredLanguage: chatState.preferredLanguage || '',
         hotel: 'H\u00f4tel Lumi\u00e8re Paris',
         timestamp: new Date().toISOString(),
       }),
@@ -349,7 +510,6 @@ function setChatBusy(busy) {
   isSending = busy;
   chatInput.disabled = busy;
   chatSend.disabled = busy;
-  document.querySelectorAll('.quick-reply').forEach((button) => { button.disabled = busy; });
 }
 
 async function sendMessage() {
@@ -362,17 +522,12 @@ async function sendMessage() {
   try {
     const result = await requestConciergeReply(text);
     removeStatus();
-    appendMessage(result.reply || 'Our concierge will return with a considered answer shortly.', 'ai', result.recommendations || [], result.partner_offers || []);
-    
-    const isCatalogQuery = /\b(partners?|offers?|services?|catalogue?|catalog?|todos los servicios|servicios|offres|partenaires)\b/i.test(text)
-      || result.intent === 'partner_catalog'
-      || (Array.isArray(result.partner_offers) && result.partner_offers.length >= 3);
-      
-    if (isCatalogQuery) {
-      window.setTimeout(() => {
-        openPartnerCatalog();
-      }, 500);
+    if (['en', 'fr', 'es', 'it', 'de', 'ar', 'ja', 'zh'].includes(String(result.language || ''))) {
+      chatState.preferredLanguage = result.language;
+      saveChatState();
     }
+    const roomBooking = result.room_booking === true || result.intent === 'room_enquiry';
+    appendMessage(result.reply || 'Our concierge will return with a considered answer shortly.', 'ai', result.recommendations || [], result.partner_offers || [], roomBooking, result.hotel_collection || []);
   } catch (error) {
     console.error('Concierge request error:', error);
     removeStatus();
@@ -385,6 +540,7 @@ async function sendMessage() {
 
 function openBookingForm(offer) {
   if (!bookingModal || !bookingForm) return;
+  closeHotelCollection();
   bookingForm.reset();
   bookingError.textContent = '';
   bookingServiceName.textContent = offer.name || 'Selected experience';
@@ -393,9 +549,20 @@ function openBookingForm(offer) {
   bookingServiceMeta.textContent = `${price}${duration}`;
   bookingForm.elements.serviceName.value = offer.name || '';
   bookingForm.elements.serviceType.value = offer.category || 'other';
+  bookingForm.elements.source.value = offer.source === 'external' ? 'external' : 'partner';
   bookingModal.hidden = false;
   document.body.classList.add('modal-open');
   window.setTimeout(() => bookingForm.elements.guestName?.focus(), 80);
+}
+
+function openOfferBookingForm(offer) {
+  if (String(offer?.category || '').toLowerCase() === 'accommodation') {
+    closeHotelCollection();
+    openRoomBookingForm(offer);
+    return;
+  }
+  closeHotelCollection();
+  openBookingForm(offer);
 }
 
 function closeBookingForm() {
@@ -422,6 +589,7 @@ async function submitBookingForm(event) {
     notes: form.get('notes'),
     serviceName: form.get('serviceName'),
     serviceType: form.get('serviceType'),
+    source: form.get('source'),
     consent: form.get('consent') === 'yes',
     sessionId: chatState.sessionId,
     language: document.documentElement.lang || 'en',
@@ -444,6 +612,90 @@ async function submitBookingForm(event) {
   } finally {
     bookingSubmit.disabled = false;
     bookingSubmit.textContent = 'Send concierge enquiry';
+  }
+}
+
+function openRoomBookingForm(offer = {}) {
+  if (!roomBookingModal || !roomBookingForm) return;
+  roomBookingForm.reset();
+  roomBookingError.textContent = '';
+  const selectedRoom = String(offer?.name || '').trim();
+  const isSelectedRoom = Boolean(selectedRoom);
+  if (roomBookingServiceSummary) roomBookingServiceSummary.hidden = !isSelectedRoom;
+  if (isSelectedRoom) {
+    roomBookingServiceName.textContent = selectedRoom;
+    const roomPrice = Number.isFinite(Number(offer.price_eur)) ? `From EUR ${Number(offer.price_eur).toFixed(0)} / night` : 'Price on request';
+    roomBookingServiceMeta.textContent = roomPrice;
+  }
+  roomBookingForm.elements.serviceName.value = selectedRoom;
+  const today = new Date().toISOString().slice(0, 10);
+  roomBookingForm.elements.checkIn.min = today;
+  roomBookingForm.elements.checkOut.min = today;
+  roomBookingForm.elements.adults.value = '2';
+  roomBookingForm.elements.children.value = '0';
+  roomBookingForm.elements.rooms.value = '1';
+  roomBookingModal.hidden = false;
+  document.body.classList.add('modal-open');
+  window.setTimeout(() => roomBookingForm.elements.firstName?.focus(), 80);
+}
+
+function closeRoomBookingForm() {
+  if (!roomBookingModal) return;
+  roomBookingModal.hidden = true;
+  document.body.classList.remove('modal-open');
+}
+
+async function submitRoomBookingForm(event) {
+  event.preventDefault();
+  const endpoint = roomEnquiryApiUrl();
+  if (!endpoint || !roomBookingForm) {
+    roomBookingError.textContent = 'The room enquiry service is not configured yet.';
+    return;
+  }
+  if (!roomBookingForm.reportValidity()) return;
+  const form = new FormData(roomBookingForm);
+  const checkIn = String(form.get('checkIn') || '');
+  const checkOut = String(form.get('checkOut') || '');
+  if (checkOut <= checkIn) {
+    roomBookingError.textContent = 'Check-out must be after check-in.';
+    return;
+  }
+  const payload = {
+    firstName: form.get('firstName'),
+    lastName: form.get('lastName'),
+    email: form.get('email'),
+    phone: form.get('phone'),
+    checkIn,
+    checkOut,
+    arrivalTime: form.get('arrivalTime'),
+    adults: form.get('adults'),
+    children: form.get('children'),
+    rooms: form.get('rooms'),
+    serviceName: form.get('serviceName'),
+    preference: form.get('preference'),
+    notes: form.get('notes'),
+    consent: form.get('consent') === 'yes',
+    sessionId: chatState.sessionId,
+    language: document.documentElement.lang || 'en',
+  };
+  roomBookingError.textContent = '';
+  roomBookingSubmit.disabled = true;
+  roomBookingSubmit.textContent = 'Sending room enquiry\u2026';
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.ok) throw new Error(result.error || 'We could not record your room enquiry.');
+    closeRoomBookingForm();
+    showToast('Room enquiry received. The reservations team can now prepare available options.');
+  } catch (error) {
+    roomBookingError.textContent = error instanceof Error ? error.message : 'We could not record your room enquiry.';
+  } finally {
+    roomBookingSubmit.disabled = false;
+    roomBookingSubmit.textContent = 'Send room enquiry';
   }
 }
 
@@ -549,18 +801,36 @@ function restoreConversation() {
   scrollToLatest();
 }
 
-function setFullscreen(isFullscreen) {
+async function setFullscreen(isFullscreen, { requestBrowserFullscreen = true } = {}) {
+  const alreadyFullscreen = chatWidget.classList.contains('fullscreen');
+  if (alreadyFullscreen === isFullscreen && (!isFullscreen || !requestBrowserFullscreen || document.fullscreenElement)) return;
   chatWidget.classList.toggle('fullscreen', isFullscreen);
   if (isFullscreen) {
     document.body.appendChild(chatWidget);
     fullscreenIcon.classList.replace('fa-expand', 'fa-compress');
     document.body.style.overflow = 'hidden';
-    if (fullscreenBtn) fullscreenBtn.title = 'Minimize Demo';
+    fullscreenBtn?.setAttribute('aria-label', 'Exit full presentation mode');
+    fullscreenBtn?.setAttribute('title', 'Exit full presentation mode');
+    if (requestBrowserFullscreen && document.fullscreenEnabled && !document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch {
+        // The edge-to-edge presentation view remains available when browser fullscreen is declined.
+      }
+    }
   } else {
     chatWrapper.prepend(chatWidget);
     fullscreenIcon.classList.replace('fa-compress', 'fa-expand');
     document.body.style.overflow = '';
-    if (fullscreenBtn) fullscreenBtn.title = 'Expand Demo';
+    fullscreenBtn?.setAttribute('aria-label', 'Enter full presentation mode');
+    fullscreenBtn?.setAttribute('title', 'Enter full presentation mode');
+    if (requestBrowserFullscreen && document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // The visual mode has already been returned to the page.
+      }
+    }
   }
   window.requestAnimationFrame(scrollToLatest);
 }
@@ -576,81 +846,6 @@ const revealObserver = new IntersectionObserver((entries) => {
 }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
 document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
 
-const partnerCatalogModal = document.getElementById('partner-catalog-modal');
-const partnerCatalogGrid = document.getElementById('partner-catalog-grid');
-const openCatalogBtn = document.getElementById('open-catalog-btn');
-const quickCatalogBtn = document.getElementById('quick-catalog-btn');
-
-const ALL_PARTNER_SERVICES = [
-  { name: 'Lumière Spa — Couples Massage', category: 'spa', price_eur: 420, duration_mins: 75, description: 'Private spa suite for two, side-by-side bespoke body treatment & Champagne toast.', image_url: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Lumière Spa — Signature Facial', category: 'spa', price_eur: 260, duration_mins: 60, description: 'Custom anti-aging facial treatment using premium French organic botanical skincare.', image_url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Le Jardin — Chef’s Table (2 Persons)', category: 'restaurant', price_eur: 580, duration_mins: 180, description: '7-course Michelin-starred gastronomy experience with private sommelier wine pairing.', image_url: 'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Terrasse Lumière — Rooftop Cocktail Tasting', category: 'restaurant', price_eur: 190, duration_mins: 90, description: 'Reserved front-row Eiffel Tower view table with 4 craft cocktails & caviar pairings.', image_url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Private Chauffeur — CDG / Orly Airport Transfer', category: 'transport', price_eur: 180, duration_mins: 60, description: 'Luxury Mercedes-Benz S-Class transfer with personal flight tracking and meet & greet.', image_url: 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Private Chauffeur — Half-Day Paris Grand Tour', category: 'transport', price_eur: 450, duration_mins: 240, description: 'Bespoke 4-hour Paris city tour with private chauffeur & dedicated English concierge guide.', image_url: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Private Seine Sunset Cruise with Champagne', category: 'tour', price_eur: 650, duration_mins: 120, description: 'Exclusive private mahogany boat tour down the Seine with personal skipper & Laurent-Perrier.', image_url: 'https://images.unsplash.com/photo-1522093007474-d86e9bf7ba6f?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'VIP Louvre After-Hours Private Access', category: 'tour', price_eur: 2800, duration_mins: 120, description: 'Private after-hours entry to the Louvre museum led by a senior art historian.', image_url: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Montmartre Walking Food & Wine Tour', category: 'tour', price_eur: 280, duration_mins: 180, description: 'Guided artisanal food walk stopping at top bakeries, cheese affineurs & wine cellars.', image_url: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Versailles Private Day Trip & Palace Access', category: 'tour', price_eur: 950, duration_mins: 480, description: 'Skip-the-line private estate tour of Versailles Palace & Gardens with luxury transfer.', image_url: 'https://images.unsplash.com/photo-1584003564911-a7a321c84e1c?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'In-Suite Private Chef & Sommelier Dinner', category: 'experience', price_eur: 850, duration_mins: 150, description: 'Private culinary team prepares a 5-course gourmet dinner directly inside your suite.', image_url: 'https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=1200&q=85' },
-  { name: 'Atelier Parfum — Custom Fragrance Workshop', category: 'experience', price_eur: 320, duration_mins: 90, description: 'Master perfumer session creating your personalized 100ml Paris signature fragrance.', image_url: 'https://images.unsplash.com/photo-1615397349754-cfa2066a298e?auto=format&fit=crop&w=1200&q=85' }
-];
-
-function renderCatalogGrid(filter = 'all') {
-  if (!partnerCatalogGrid) return;
-  partnerCatalogGrid.replaceChildren();
-  const items = filter === 'all' ? ALL_PARTNER_SERVICES : ALL_PARTNER_SERVICES.filter((item) => item.category === filter);
-  items.forEach((item) => {
-    const card = document.createElement('article');
-    card.className = 'partner-catalog-card';
-    const tag = String(item.category || 'experience').toUpperCase();
-    const durationText = Number.isFinite(Number(item.duration_mins)) && Number(item.duration_mins) > 0 ? ` · ${item.duration_mins} min` : '';
-    card.innerHTML = `
-      <img class="partner-catalog-img" src="${item.image_url}" alt="${item.name}" loading="lazy" />
-      <div class="partner-catalog-body">
-        <span class="partner-catalog-tag">${tag}</span>
-        <h3>${item.name}</h3>
-        <p class="partner-catalog-desc">${item.description}</p>
-        <div class="partner-catalog-footer">
-          <span class="partner-catalog-price">EUR ${item.price_eur}${durationText}</span>
-          <button class="partner-catalog-action" type="button">Enquire</button>
-        </div>
-      </div>
-    `;
-    card.addEventListener('click', () => {
-      closePartnerCatalog();
-      openBookingForm(item);
-    });
-    partnerCatalogGrid.appendChild(card);
-  });
-}
-
-function openPartnerCatalog() {
-  if (!partnerCatalogModal) return;
-  renderCatalogGrid('all');
-  partnerCatalogModal.hidden = false;
-  document.body.classList.add('modal-open');
-}
-
-function closePartnerCatalog() {
-  if (!partnerCatalogModal) return;
-  partnerCatalogModal.hidden = true;
-  document.body.classList.remove('modal-open');
-}
-
-document.querySelectorAll('.partner-filter-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.partner-filter-btn').forEach((b) => b.classList.remove('is-active'));
-    btn.classList.add('is-active');
-    renderCatalogGrid(btn.dataset.filter || 'all');
-  });
-});
-
-openCatalogBtn?.addEventListener('click', openPartnerCatalog);
-quickCatalogBtn?.addEventListener('click', openPartnerCatalog);
-document.querySelectorAll('[data-close-partner-catalog]').forEach((button) => button.addEventListener('click', closePartnerCatalog));
-partnerCatalogModal?.addEventListener('click', (event) => { if (event.target === partnerCatalogModal) closePartnerCatalog(); });
-
 chatSend.addEventListener('click', sendMessage);
 chatInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -658,27 +853,38 @@ chatInput.addEventListener('keydown', (event) => {
     sendMessage();
   }
 });
-document.querySelectorAll('.quick-reply').forEach((button) => {
-  if (button === quickCatalogBtn) return;
-  button.addEventListener('click', () => {
-    chatInput.value = button.dataset.message || button.textContent.trim();
-    sendMessage();
-  });
-});
 fullscreenBtn?.addEventListener('click', () => setFullscreen(!chatWidget.classList.contains('fullscreen')));
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && chatWidget.classList.contains('fullscreen')) {
+    setFullscreen(false, { requestBrowserFullscreen: false });
+  }
+});
+chatInput?.addEventListener('focus', () => {
+  if (window.matchMedia('(max-width: 620px)').matches && !chatWidget.classList.contains('fullscreen')) setFullscreen(true);
+});
 bookingForm?.addEventListener('submit', submitBookingForm);
 document.querySelectorAll('[data-close-booking]').forEach((button) => button.addEventListener('click', closeBookingForm));
 bookingModal?.addEventListener('click', (event) => { if (event.target === bookingModal) closeBookingForm(); });
+roomBookingForm?.addEventListener('submit', submitRoomBookingForm);
+document.querySelectorAll('[data-close-room-booking]').forEach((button) => button.addEventListener('click', closeRoomBookingForm));
+roomBookingModal?.addEventListener('click', (event) => { if (event.target === roomBookingModal) closeRoomBookingForm(); });
 discoveryForm?.addEventListener('submit', submitDiscoveryForm);
 document.querySelectorAll('.discovery-trigger').forEach((button) => button.addEventListener('click', (event) => { event.preventDefault(); openDiscoveryForm(); }));
 document.querySelectorAll('[data-close-discovery]').forEach((button) => button.addEventListener('click', closeDiscoveryForm));
 discoveryModal?.addEventListener('click', (event) => { if (event.target === discoveryModal) closeDiscoveryForm(); });
+document.querySelectorAll('[data-close-hotel-collection]').forEach((button) => button.addEventListener('click', closeHotelCollection));
+hotelCollectionBack?.addEventListener('click', returnToHotelCollection);
+hotelCollectionModal?.addEventListener('click', (event) => { if (event.target === hotelCollectionModal) closeHotelCollection(); });
 document.querySelectorAll('.showcase-trigger').forEach((button) => button.addEventListener('click', () => setShowcaseScene(button.dataset.scene)));
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && chatWidget.classList.contains('fullscreen')) setFullscreen(false);
-  if (event.key === 'Escape' && !bookingModal?.hidden) closeBookingForm();
-  if (event.key === 'Escape' && !discoveryModal?.hidden) closeDiscoveryForm();
-  if (event.key === 'Escape' && !partnerCatalogModal?.hidden) closePartnerCatalog();
+  if (event.key !== 'Escape') return;
+  // Dialogs belong to the presentation layer. Escape closes the visible
+  // dialog first, never the entire presentation underneath it.
+  if (!hotelCollectionModal?.hidden) { closeHotelCollection(); return; }
+  if (!bookingModal?.hidden) { closeBookingForm(); return; }
+  if (!roomBookingModal?.hidden) { closeRoomBookingForm(); return; }
+  if (!discoveryModal?.hidden) { closeDiscoveryForm(); return; }
+  if (chatWidget.classList.contains('fullscreen')) setFullscreen(false);
 });
 
 restoreConversation();

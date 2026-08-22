@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=room-picker-v10">
 </head>
 <body>
 
@@ -20,10 +20,7 @@
       <img src="logo-icon.svg" alt="ConciergeFlow AI Logo" style="height: 100px; width: auto;" />
       <span>ConciergeFlow <span class="gold-accent">AI</span></span>
     </div>
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <a href="demo.html" class="nav-cta" style="background: rgba(197, 168, 128, 0.15); border: 1px solid #c5a880; color: #c5a880;">📱 Launch Simulator</a>
-      <a href="#discovery" class="nav-cta discovery-trigger">Book a Discovery Call</a>
-    </div>
+    <a href="#discovery" class="nav-cta discovery-trigger">Book a Discovery Call</a>
   </div>
 </nav>
 
@@ -216,28 +213,18 @@
     <div class="chat-wrapper reveal">
       <div class="chat-widget" aria-label="ConciergeFlow AI live concierge chat">
         <div class="chat-header">
-          <div class="chat-avatar" aria-hidden="true" title="Hôtel Lumière Paris">
-            <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="50" cy="50" r="46" stroke="#D9C29B" stroke-width="4" fill="#0D1D2D"/>
-              <path d="M50 14 L53 22 L61 22 L55 27 L57 35 L50 30 L43 35 L45 27 L39 22 L47 22 Z" fill="#D9C29B"/>
-              <text x="50" y="68" font-family="'Playfair Display', Georgia, serif" font-size="34" font-weight="700" fill="#D9C29B" text-anchor="middle" letter-spacing="1">HL</text>
-            </svg>
-          </div>
+          <img class="chat-avatar chat-avatar-logo" src="logo-icon.svg" alt="ConciergeFlow AI" />
           <div class="chat-header-info">
             <h4>H&#xF4;tel Lumi&#xE8;re Paris</h4>
             <span><i class="fas fa-circle" aria-hidden="true"></i> Private service, in real time</span>
           </div>
-          <button class="chat-catalog-btn" id="open-catalog-btn" type="button" title="Explore Hotel Collection">
-            <i class="fas fa-gem" aria-hidden="true"></i>
-            <span>Collection</span>
-          </button>
           <div class="chat-header-assurance" aria-label="Private and secure">
             <i class="fas fa-lock" aria-hidden="true"></i>
             <span>Private</span>
           </div>
-          <div class="chat-header-action" id="fullscreen-btn" style="cursor: pointer;" title="Expand Demo">
+          <button class="chat-header-action" id="fullscreen-btn" type="button" aria-label="Enter full presentation mode" title="Enter full presentation mode">
             <i class="fas fa-expand" id="fullscreen-icon"></i>
-          </div>
+          </button>
         </div>
 
         <div class="chat-messages" id="chat-messages" aria-live="polite" aria-label="Concierge conversation">
@@ -247,14 +234,6 @@
             <div class="chat-msg-time">03:00</div>
           </div>
         </div>
-
-        <div class="quick-replies" aria-label="Quick replies">
-          <button class="quick-reply gold-pill" id="quick-catalog-btn" type="button"><i class="fas fa-sparkles" aria-hidden="true"></i> Explore All Partner Offers</button>
-          <button class="quick-reply" type="button" data-message="I would like to book a spa treatment for two people.">Book a Spa</button>
-          <button class="quick-reply" type="button" data-message="I would like one excellent Italian restaurant in Paris.">Find Italian Dining</button>
-          <button class="quick-reply" type="button" data-message="I would like one excellent Spanish restaurant in Paris.">Spanish Dining</button>
-          <button class="quick-reply" type="button" data-message="Please suggest an excellent Paris bakery for breakfast.">Paris Bakery</button>
-          <button class="quick-reply" type="button" data-message="Please arrange a private transfer to CDG airport.">Airport Transfer</button>
 
         <div class="chat-input-area">
           <input
@@ -381,6 +360,28 @@
 </div>
 
 <!-- Concierge enquiry: saved directly to the hotel Requests table. -->
+<div class="hotel-collection-modal" id="hotel-collection-modal" hidden role="dialog" aria-modal="true" aria-labelledby="hotel-collection-title">
+  <section class="hotel-collection-dialog">
+    <header class="hotel-collection-dialog-header">
+      <div class="hotel-collection-brand">
+        <img src="logo-icon.svg" alt="ConciergeFlow AI" class="hotel-collection-logo" />
+        <div>
+          <p>H&#xF4;tel Lumi&#xE8;re Paris</p>
+          <h2 id="hotel-collection-title">The hotel collection</h2>
+        </div>
+      </div>
+      <div class="hotel-collection-dialog-actions">
+        <button class="hotel-collection-back" id="hotel-collection-back" type="button" data-back-hotel-collection hidden><i class="fas fa-arrow-left" aria-hidden="true"></i> All services</button>
+        <button class="hotel-collection-close" type="button" data-close-hotel-collection aria-label="Close hotel collection"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+      </div>
+    </header>
+    <div class="hotel-collection-dialog-body">
+      <p class="hotel-collection-dialog-intro" id="hotel-collection-dialog-intro">Every experience below is part of the hotel&rsquo;s preferred collection. Select one to leave a real enquiry for the concierge team.</p>
+      <div class="hotel-collection-dialog-grid" id="hotel-collection-dialog-grid" role="list"></div>
+    </div>
+  </section>
+</div>
+
 <div class="booking-modal" id="booking-modal" hidden role="dialog" aria-modal="true" aria-labelledby="booking-title">
   <div class="booking-dialog">
     <button class="booking-close" type="button" data-close-booking aria-label="Close enquiry form"><i class="fas fa-xmark" aria-hidden="true"></i></button>
@@ -397,6 +398,7 @@
     <form id="booking-form" novalidate>
       <input type="hidden" name="serviceName" value="" />
       <input type="hidden" name="serviceType" value="other" />
+      <input type="hidden" name="source" value="partner" />
       <div class="booking-fields booking-fields-two">
         <label>Full name<input name="guestName" autocomplete="name" maxlength="100" required placeholder="Your name" /></label>
         <label>Email address<input name="email" type="email" autocomplete="email" maxlength="160" required placeholder="you@example.com" /></label>
@@ -413,6 +415,51 @@
       <label class="booking-consent"><input type="checkbox" name="consent" value="yes" required /> <span>I agree that H&#xF4;tel Lumi&#xE8;re may use these details to respond to this enquiry.</span></label>
       <p class="booking-error" id="booking-error" role="alert"></p>
       <button class="btn-primary booking-submit" id="booking-submit" type="submit"><i class="fas fa-paper-plane" aria-hidden="true"></i> Send concierge enquiry</button>
+    </form>
+  </div>
+</div>
+
+<!-- Hotel room enquiries use a separate, date-first form so availability is never implied before the reservations team confirms it. -->
+<div class="booking-modal room-booking-modal" id="room-booking-modal" hidden role="dialog" aria-modal="true" aria-labelledby="room-booking-title">
+  <div class="booking-dialog room-booking-dialog">
+    <button class="booking-close" type="button" data-close-room-booking aria-label="Close room enquiry form"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+    <p class="booking-kicker">H&#xF4;tel Lumi&#xE8;re reservations</p>
+    <h2 id="room-booking-title">Request your stay.</h2>
+    <div class="booking-service-summary" id="room-booking-service-summary" hidden>
+      <div>
+        <span>Selected room</span>
+        <strong id="room-booking-service-name">Selected room</strong>
+      </div>
+      <small id="room-booking-service-meta">Price on request</small>
+    </div>
+    <p class="booking-intro">Tell us the essentials and our reservations team will return with the best available room options. Your stay is only confirmed after their reply.</p>
+    <form id="room-booking-form" novalidate>
+      <input type="hidden" name="serviceName" value="" />
+      <div class="booking-fields booking-fields-two">
+        <label>First name<input name="firstName" autocomplete="given-name" maxlength="60" required placeholder="First name" /></label>
+        <label>Last name<input name="lastName" autocomplete="family-name" maxlength="60" required placeholder="Last name" /></label>
+      </div>
+      <div class="booking-fields booking-fields-two">
+        <label>Email address<input name="email" type="email" autocomplete="email" maxlength="160" required placeholder="you@example.com" /></label>
+        <label>Phone number<input name="phone" type="tel" autocomplete="tel" maxlength="60" required placeholder="+33 ..." /></label>
+      </div>
+      <div class="booking-fields booking-fields-two">
+        <label>Check-in date<input name="checkIn" type="date" required /></label>
+        <label>Check-out date<input name="checkOut" type="date" required /></label>
+      </div>
+      <div class="booking-fields booking-fields-three room-booking-counts">
+        <label>Arrival time <span>(optional)</span><input name="arrivalTime" type="time" /></label>
+        <label>Adults<input name="adults" type="number" min="1" max="12" value="2" inputmode="numeric" required /></label>
+        <label>Children<input name="children" type="number" min="0" max="10" value="0" inputmode="numeric" required /></label>
+      </div>
+      <div class="booking-fields booking-fields-two">
+        <label>Rooms<input name="rooms" type="number" min="1" max="5" value="1" inputmode="numeric" required /></label>
+        <label>Room preference <span>(optional)</span><input name="preference" maxlength="80" placeholder="King bed, quiet room..." /></label>
+      </div>
+      <label class="discovery-message">Anything else to note? <span>(optional)</span><textarea name="notes" maxlength="600" placeholder="Accessibility needs, celebration, early arrival..."></textarea></label>
+      <label class="booking-consent"><input type="checkbox" name="consent" value="yes" required /> <span>I agree that H&#xF4;tel Lumi&#xE8;re may use these details to respond to this room enquiry.</span></label>
+      <p class="booking-error" id="room-booking-error" role="alert"></p>
+      <button class="btn-primary booking-submit" id="room-booking-submit" type="submit"><i class="fas fa-paper-plane" aria-hidden="true"></i> Send room enquiry</button>
     </form>
   </div>
 </div>
@@ -446,35 +493,8 @@
   </div>
 </div>
 
-<!-- Partner Collection Explorer Modal -->
-<div class="partner-catalog-modal" id="partner-catalog-modal" hidden role="dialog" aria-modal="true" aria-labelledby="partner-catalog-title">
-  <div class="partner-catalog-dialog">
-    <button class="booking-close" type="button" data-close-partner-catalog aria-label="Close catalog"><i class="fas fa-xmark" aria-hidden="true"></i></button>
-    <div class="partner-catalog-header">
-      <span class="booking-kicker"><i class="fas fa-gem" aria-hidden="true"></i> H&#xF4;tel Lumi&#xE8;re Paris</span>
-      <h2 id="partner-catalog-title">Preferred Hotel Collection</h2>
-      <p class="partner-catalog-intro">Explore our exclusive partner experiences, spa packages, fine dining, and private transfers. Select any item to enquire or reserve directly.</p>
-    </div>
-
-    <!-- Category Filters -->
-    <div class="partner-catalog-filters">
-      <button class="partner-filter-btn is-active" type="button" data-filter="all">All Offers</button>
-      <button class="partner-filter-btn" type="button" data-filter="spa">Spa &amp; Wellness</button>
-      <button class="partner-filter-btn" type="button" data-filter="restaurant">Fine Dining</button>
-      <button class="partner-filter-btn" type="button" data-filter="transport">Transfers</button>
-      <button class="partner-filter-btn" type="button" data-filter="tour">Private Tours</button>
-      <button class="partner-filter-btn" type="button" data-filter="experience">Experiences</button>
-    </div>
-
-    <!-- Grid of partner offers -->
-    <div class="partner-catalog-grid" id="partner-catalog-grid">
-      <!-- Populated dynamically via JS -->
-    </div>
-  </div>
-</div>
-
 <!-- Browser-safe Cloudflare Worker endpoint configuration. Never place a secret in config.js. -->
 <script src="config.js"></script>
-<script src="script.js"></script>
+    <script src="script.js?v=room-picker-v10"></script>
 </body>
 </html>
