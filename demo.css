@@ -474,6 +474,37 @@ body {
   font-size: 12px;
 }
 
+/* Typing Loading State */
+.wa-typing-bubble {
+  align-self: flex-start;
+  background-color: var(--wa-bubble-in);
+  border-radius: 8px;
+  border-top-left-radius: 0;
+  padding: 10px 14px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  margin-bottom: 4px;
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  background-color: #8696a0;
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
 /* Interactive Quick Reply Buttons */
 .wa-quick-replies {
   display: flex;

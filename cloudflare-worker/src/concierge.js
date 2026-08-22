@@ -97,15 +97,21 @@ export function parseGuestInput(body) {
   if (!message || message.length > 1200) throw new Error('A message between 1 and 1200 characters is required.');
   if (!/^[A-Za-z0-9:_-]{1,120}$/.test(sessionId)) throw new Error('Invalid conversation identifier.');
   const testMode = ['read_only', 'write_verified'].includes(String(raw.testMode)) ? String(raw.testMode) : null;
+  const channel = raw.channel || 'web';
+  const contactName = raw.contactName || raw.guestName || '';
+  const language = raw.language || inferLanguage(message);
+  const isDemo = Boolean(raw.isDemo || raw.is_demo);
   return {
     message,
-    userId: `web:${sessionId}`,
+    userId: raw.userId?.startsWith('demo:') || raw.userId?.startsWith('wa:') ? raw.userId : `web:${sessionId}`,
     sessionId,
-    channel: 'web',
-    language: inferLanguage(message),
+    channel,
+    contactName,
+    language,
+    isDemo,
     testMode,
     testRunId: String(raw.testRunId ?? '').slice(0, 80),
-    receivedAt: new Date().toISOString(),
+    receivedAt: raw.receivedAt || new Date().toISOString(),
   };
 }
 

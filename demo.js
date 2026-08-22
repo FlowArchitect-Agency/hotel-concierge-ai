@@ -1,9 +1,12 @@
 /**
- * Hotel AI Operations Simulator — Client Engine
- * Strict 3-panel synchronization, accessible UI components, and coexistence handoff.
+ * Hotel AI Operations Simulator — Client Engine (Backend Connected)
+ * Real-time connection to Cloudflare Worker /api/demo-chat with Is_Demo safety lock.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // --- Configuration ---
+  const API_ENDPOINT = 'https://conciergeflow-api.conciergeflow-worker.workers.dev/api/demo-chat';
+
   // --- DOM Elements ---
   const form = document.getElementById('simulator-form');
   const guestNameInput = document.getElementById('guest-name');
@@ -34,46 +37,48 @@ document.addEventListener('DOMContentLoaded', () => {
   // System State
   let isHumanHandoff = false;
   let activeTimers = [];
+  let conversationHistory = [];
+  let typingBubbleEl = null;
 
-  // Multilingual Scenario Templates
+  // Multilingual Scenario Fallback Templates (for initial prompt and offline safety)
   const SCENARIO_TEMPLATES = {
     pre_arrival: {
       label: '48h Pre-Arrival',
       en: {
         greeting: (name) => `Bonjour ${name}, we look forward to welcoming you to Hôtel Lumière Paris in 48 hours. May we arrange your airport transfer or assist with dining reservations?`,
         quickReplies: ['Book Airport Transfer', 'Dining Reservations', 'No, thank you'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       fr: {
         greeting: (name) => `Bonjour ${name}, nous avons le plaisir de vous accueillir à l'Hôtel Lumière Paris dans 48h. Souhaitez-vous réserver un transfert privé ou une table au restaurant ?`,
         quickReplies: ['Réserver un transfert', 'Table au restaurant', 'Non, merci'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       es: {
         greeting: (name) => `Hola ${name}, esperamos darle la bienvenida a Hôtel Lumière Paris en 48 horas. ¿Desea reservar su traslado privado o mesa en nuestro restaurante?`,
         quickReplies: ['Reservar traslado', 'Reservar restaurante', 'No, gracias'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       de: {
         greeting: (name) => `Guten Tag ${name}, wir freuen uns, Sie in 48 Stunden im Hôtel Lumière Paris begrüßen zu dürfen. Dürfen wir Ihren Flughafentransfer oder ein Abendessen arrangieren?`,
         quickReplies: ['Flughafentransfer', 'Tisch reservieren', 'Nein, danke'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       it: {
         greeting: (name) => `Buongiorno ${name}, siamo lieti di accoglierla all'Hôtel Lumière Paris tra 48 ore. Desidera prenotare un transfer o una cena al ristorante?`,
         quickReplies: ['Prenota transfer', 'Tavolo al ristorante', 'No, grazie'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       ja: {
         greeting: (name) => `${name}様、オテル・リュミエール・パリへのお越しを心よりお待ち申し上げております（ご到着まで48時間）。空港送迎やディナーの手配を承りましょうか？`,
         quickReplies: ['空港送迎を予約', 'レストラン予約', '手配不要'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       ar: {
         greeting: (name) => `مرحباً ${name}، نتطلع لاستقبالكم في فندق لوميير باريس بعد 48 ساعة. هل ترغبون في حجز خدمة التوصيل الخاصة أو حجز طاولة عشاء؟`,
         quickReplies: ['حجز توصيل خاص', 'حجز طاولة عشاء', 'شكراً، لا داعي'],
-        hasServicesBtn: true
-      }
+        hasServicesBtn: true,
+      },
     },
     in_stay: {
       label: 'In-Stay Request',
@@ -81,83 +86,83 @@ document.addEventListener('DOMContentLoaded', () => {
         initialGuestMessage: 'Hello, could we please have additional towels delivered to our room?',
         greeting: (name) => `Certainly, ${name}. I have notified housekeeping, and fresh towels will be brought to your room shortly. May I assist with anything else?`,
         quickReplies: ['Thank you', 'Request Room Cleaning', 'Speak with Reception'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       fr: {
         initialGuestMessage: 'Bonjour, pourriez-vous nous apporter des serviettes supplémentaires dans la chambre s\'il vous plaît ?',
         greeting: (name) => `Certainement, ${name}. Notre équipe d'étage vient d'être prévenue et vous apporte des serviettes propres sans délai. Puis-je vous aider pour autre chose ?`,
         quickReplies: ['Merci beaucoup', 'Ménage de la chambre', 'Parler à la réception'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       es: {
         initialGuestMessage: 'Hola, ¿podrían traernos toallas adicionales a la habitación por favor?',
         greeting: (name) => `Con gusto, ${name}. He avisado a gobernanta y le llevarán toallas limpias enseguida. ¿Necesita algo más?`,
         quickReplies: ['Muchas gracias', 'Limpieza de habitación', 'Hablar con recepción'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       de: {
         initialGuestMessage: 'Hallo, könnten wir bitte zusätzliche Handtücher auf unser Zimmer bekommen?',
         greeting: (name) => `Sehr gerne, ${name}. Der Zimmerservice wurde benachrichtigt und bringt Ihnen umgehend frische Handtücher. Kann ich noch etwas für Sie tun?`,
         quickReplies: ['Vielen Dank', 'Zimmerreinigung', 'Rezeption sprechen'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       it: {
         initialGuestMessage: 'Buongiorno, potremmo avere degli asciugamani extra in camera per favore?',
         greeting: (name) => `Certamente, ${name}. Il personale di servizio è stato avvisato e le porterà gli asciugamani a breve. Posso aiutarla in altro?`,
         quickReplies: ['Grazie mille', 'Pulizia camera', 'Parla con la reception'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       ja: {
         initialGuestMessage: 'こんにちは、お部屋に追加のタオルを持ってきていただけますか？',
         greeting: (name) => `かしこまりました、${name}様。客室係に連絡いたしましたので、まもなく新しいタオルをお届けいたします。他にご要望はございますか？`,
         quickReplies: ['ありがとうございます', '客室清掃の依頼', 'フロントと話す'],
-        hasServicesBtn: true
+        hasServicesBtn: true,
       },
       ar: {
         initialGuestMessage: 'مرحباً، هل يمكنكم تزويدنا بمناشف إضافية في الغرفة من فضلكم؟',
         greeting: (name) => `بكل سرور ${name}. تم إبلاغ خدمة الغرف وسيتم إحضار المناشف إلى غرفتكم حالاً. هل تحتاجون لأي خدمة أخرى؟`,
         quickReplies: ['شكراً جزيلاً', 'طلب تنظيف الغرفة', 'التحدث مع الاستقبال'],
-        hasServicesBtn: true
-      }
+        hasServicesBtn: true,
+      },
     },
     checkout_review: {
       label: 'Checkout Review',
       en: {
         greeting: (name) => `Dear ${name}, thank you for staying with us at Hôtel Lumière Paris. We hope you had a pleasant journey. How would you rate your stay with us?`,
         quickReplies: ['Excellent — 5 Stars', 'Good', 'Leave Private Feedback'],
-        hasServicesBtn: false
+        hasServicesBtn: false,
       },
       fr: {
         greeting: (name) => `Cher ${name}, merci d'avoir séjourné à l'Hôtel Lumière Paris. Nous espérons que votre séjour fut remarquable. Comment évaluez-vous votre expérience ?`,
         quickReplies: ['Excellent — 5 Étoiles', 'Bien', 'Remarque pour la direction'],
-        hasServicesBtn: false
+        hasServicesBtn: false,
       },
       es: {
         greeting: (name) => `Estimado/a ${name}, gracias por su estancia en Hôtel Lumière Paris. ¿Cómo calificaría su experiencia con nosotros?`,
         quickReplies: ['Excelente — 5 Estrellas', 'Buena', 'Comentario privado'],
-        hasServicesBtn: false
+        hasServicesBtn: false,
       },
       de: {
         greeting: (name) => `Sehr geehrte/r ${name}, vielen Dank für Ihren Aufenthalt im Hôtel Lumière Paris. Wie bewerten Sie Ihren Besuch bei uns?`,
         quickReplies: ['Ausgezeichnet — 5 Sterne', 'Gut', 'Feedback für Direktion'],
-        hasServicesBtn: false
+        hasServicesBtn: false,
       },
       it: {
         greeting: (name) => `Gentile ${name}, grazie per aver soggiornato all'Hôtel Lumière Paris. Come valuterebbe il suo soggiorno con noi?`,
         quickReplies: ['Eccellente — 5 Stelle', 'Buono', 'Commento alla direzione'],
-        hasServicesBtn: false
+        hasServicesBtn: false,
       },
       ja: {
         greeting: (name) => `${name}様、オテル・リュミエール・パリにご宿泊いただき誠にありがとうございました。ご滞在はいかがでしたでしょうか？`,
         quickReplies: ['素晴らしい — 5つ星', '満足', '支配人へのご意見'],
-        hasServicesBtn: false
+        hasServicesBtn: false,
       },
       ar: {
         greeting: (name) => `عزيزنا ${name}، شكراً لإقامتكم في فندق لوميير باريس. نتمنى أنكم قضيتم وقتاً ممتعاً. كيف تقيّمون تجربتكم معنا؟`,
         quickReplies: ['ممتاز — 5 نجوم', 'جيد', 'ملاحظة خاصة للإدارة'],
-        hasServicesBtn: false
-      }
-    }
+        hasServicesBtn: false,
+      },
+    },
   };
 
   // Helper: Format Time string HH:MM
@@ -175,10 +180,34 @@ document.addEventListener('DOMContentLoaded', () => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
-  // Helper: Clear scheduled timeouts when re-launching
+  // Helper: Clear scheduled timers
   function clearAllTimers() {
-    activeTimers.forEach(id => clearTimeout(id));
+    activeTimers.forEach((id) => clearTimeout(id));
     activeTimers = [];
+  }
+
+  // Typing Loading State
+  function showTypingIndicator() {
+    if (typingBubbleEl) return;
+    presenceText.textContent = 'typing...';
+
+    typingBubbleEl = document.createElement('div');
+    typingBubbleEl.className = 'wa-typing-bubble';
+    typingBubbleEl.innerHTML = `
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+    `;
+    chatCanvas.appendChild(typingBubbleEl);
+    chatCanvas.scrollTop = chatCanvas.scrollHeight;
+  }
+
+  function hideTypingIndicator() {
+    presenceText.textContent = isHumanHandoff ? 'Human Staff Active' : 'online';
+    if (typingBubbleEl && typingBubbleEl.parentNode) {
+      typingBubbleEl.parentNode.removeChild(typingBubbleEl);
+    }
+    typingBubbleEl = null;
   }
 
   // Append entry to Receptionist Audit Log
@@ -228,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bubble.appendChild(meta);
     container.appendChild(bubble);
 
-    // Render "View Services" list message button if requested
+    // Render "View Services" list message button
     if (hasServicesBtn) {
       const listBtn = document.createElement('button');
       listBtn.type = 'button';
@@ -246,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
       qrWrapper.setAttribute('role', 'group');
       qrWrapper.setAttribute('aria-label', 'Quick reply options');
 
-      quickReplies.slice(0, 3).forEach(qrText => {
+      quickReplies.slice(0, 3).forEach((qrText) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'wa-quick-reply-btn';
@@ -261,6 +290,12 @@ document.addEventListener('DOMContentLoaded', () => {
     chatCanvas.appendChild(container);
     chatCanvas.scrollTop = chatCanvas.scrollHeight;
 
+    // Track in conversation history
+    conversationHistory.push({
+      role: sender === 'guest' ? 'user' : 'assistant',
+      content: text,
+    });
+
     // Synchronize to Receptionist Log
     logTranscript(
       sender === 'guest' ? 'Guest' : (isHumanHandoff ? 'Human Staff' : 'AI Concierge'),
@@ -269,8 +304,8 @@ document.addEventListener('DOMContentLoaded', () => {
     );
   }
 
-  // Handle Guest Reply (either from text input, quick reply, or bottom sheet)
-  function handleGuestReply(text) {
+  // Handle Guest Reply with Live Backend Fetch
+  async function handleGuestReply(text) {
     if (!text || !text.trim()) return;
     const cleanText = text.trim();
 
@@ -282,29 +317,82 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Simulated Context-Aware AI Follow-up
-    const timerId = setTimeout(() => {
-      if (isHumanHandoff) return;
+    showTypingIndicator();
 
-      const lower = cleanText.toLowerCase();
-      let replyText = '';
+    const guestName = guestNameInput.value.trim() || 'Guest';
+    const lang = languageSelect.value || 'en';
+    const scenarioKey = scenarioSelect.value || 'pre_arrival';
 
-      if (lower.includes('transfer') || lower.includes('chauffeur') || lower.includes('mercedes')) {
-        replyText = 'Splendid choice. I have recorded your private Mercedes S-Class transfer request. Our concierge will coordinate flight details with you shortly.';
-      } else if (lower.includes('dining') || lower.includes('table') || lower.includes('restaurant') || lower.includes('rooftop')) {
-        replyText = 'A table request for our Eiffel View Rooftop has been created. Our maître d’ will ensure a prime table for your evening.';
-      } else if (lower.includes('5 star') || lower.includes('5 stars') || lower.includes('5 étoiles') || lower.includes('excellent')) {
-        replyText = 'We are delighted to hear you had a magnificent stay! We would be deeply honored if you could share your kind words on Google Reviews or TripAdvisor.';
-      } else if (lower.includes('feedback') || lower.includes('direction') || lower.includes('private')) {
-        replyText = 'Thank you for your valuable insight. Your feedback has been routed directly to our General Manager for personal attention.';
-      } else {
-        replyText = `Thank you. I have noted your response regarding "${cleanText}". Please let us know if there is anything further we can prepare for you.`;
+    try {
+      const response = await fetch(API_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          guestName,
+          language: lang,
+          scenario: scenarioKey,
+          is_demo: true,
+          message: cleanText,
+          chatHistory: conversationHistory,
+        }),
+      });
+
+      hideTypingIndicator();
+
+      if (!response.ok) {
+        throw new Error(`Worker responded with ${response.status}`);
       }
 
-      appendMessage({ sender: 'ai', text: replyText, quickReplies: ['Confirm details', 'Contact front desk'] });
-    }, 750);
+      const data = await response.json();
+      const reply = data.reply || 'Thank you. Your request has been noted by our concierge team.';
+      const quickReplies = Array.isArray(data.quickReplies) ? data.quickReplies : [];
+      const hasServicesBtn = scenarioKey !== 'checkout_review';
 
-    activeTimers.push(timerId);
+      appendMessage({
+        sender: 'ai',
+        text: reply,
+        quickReplies,
+        hasServicesBtn,
+      });
+
+      // If backend tool triggered an operational staff alert, print it to Receptionist Inbox
+      if (data.staffAlert) {
+        logTranscript(
+          'Staff Router',
+          `🛎️ Actionable Task Dispatched: [${data.staffAlert.role}] "${data.staffAlert.task}" (${data.staffAlert.status})`,
+          'handoff'
+        );
+      }
+    } catch (err) {
+      console.warn('Backend fetch failed, using fallback engine:', err);
+      hideTypingIndicator();
+
+      // Graceful fallback response if worker is temporarily unreachable
+      const lower = cleanText.toLowerCase();
+      let fallbackText = '';
+      if (lower.includes('transfer') || lower.includes('chauffeur') || lower.includes('mercedes')) {
+        fallbackText = 'Splendid choice. I have recorded your private Mercedes S-Class transfer request. Our concierge will coordinate flight details with you shortly.';
+      } else if (lower.includes('towel') || lower.includes('linen') || lower.includes('clean')) {
+        fallbackText = 'Certainly. Housekeeping has been alerted directly and is delivering fresh amenities to your room.';
+        logTranscript('Staff Router', '🛎️ Task Routed: [Housekeeping] Extra amenities to guest room (Dispatched)', 'handoff');
+      } else if (lower.includes('dining') || lower.includes('table') || lower.includes('restaurant') || lower.includes('rooftop')) {
+        fallbackText = 'A table request for our Eiffel View Rooftop has been created. Our maître d’ will ensure a prime table for your evening.';
+      } else if (lower.includes('5 star') || lower.includes('5 stars') || lower.includes('excellent')) {
+        fallbackText = 'We are delighted to hear you had a magnificent stay! We would be deeply honored if you could share your kind words on Google Reviews or TripAdvisor.';
+      } else {
+        fallbackText = `Thank you, ${guestName}. I have noted your request regarding "${cleanText}". Please let us know if there is anything further we can prepare for you.`;
+      }
+
+      appendMessage({
+        sender: 'ai',
+        text: fallbackText,
+        quickReplies: ['Confirm details', 'Contact front desk'],
+        hasServicesBtn: scenarioKey !== 'checkout_review',
+      });
+    }
   }
 
   // Bottom Sheet Open / Close Handlers
@@ -329,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  sheetItemButtons.forEach(btn => {
+  sheetItemButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const name = btn.getAttribute('data-service-name');
       const price = btn.getAttribute('data-service-price');
@@ -379,10 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Launch Simulation Logic
-  function launchSimulation() {
+  async function launchSimulation() {
     clearAllTimers();
+    conversationHistory = [];
 
-    // Read current form input values strictly (NEVER overwrite with hardcoded defaults)
+    // Read current form input values strictly
     const guestName = guestNameInput.value.trim() || 'Guest';
     const lang = languageSelect.value || 'en';
     const scenarioKey = scenarioSelect.value || 'pre_arrival';
@@ -411,35 +500,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const localized = scenarioDef[lang] || scenarioDef.en;
 
-    // If scenario has an initial guest message (e.g. In-Stay Request)
+    // In-Stay Request Scenario
     if (localized.initialGuestMessage) {
-      const t1 = setTimeout(() => {
-        appendMessage({ sender: 'guest', text: localized.initialGuestMessage });
-      }, 200);
-      activeTimers.push(t1);
+      appendMessage({ sender: 'guest', text: localized.initialGuestMessage });
+      showTypingIndicator();
 
-      const t2 = setTimeout(() => {
-        if (isHumanHandoff) return;
+      try {
+        const response = await fetch(API_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            guestName,
+            language: lang,
+            scenario: scenarioKey,
+            is_demo: true,
+            message: localized.initialGuestMessage,
+            chatHistory: conversationHistory,
+          }),
+        });
+
+        hideTypingIndicator();
+        if (!response.ok) throw new Error(`Worker status: ${response.status}`);
+        const data = await response.json();
+
+        appendMessage({
+          sender: 'ai',
+          text: data.reply || localized.greeting(guestName),
+          quickReplies: data.quickReplies?.length ? data.quickReplies : localized.quickReplies,
+          hasServicesBtn: localized.hasServicesBtn,
+        });
+
+        if (data.staffAlert) {
+          logTranscript(
+            'Staff Router',
+            `🛎️ Actionable Task Dispatched: [${data.staffAlert.role}] "${data.staffAlert.task}" (${data.staffAlert.status})`,
+            'handoff'
+          );
+        }
+      } catch {
+        hideTypingIndicator();
         appendMessage({
           sender: 'ai',
           text: localized.greeting(guestName),
           quickReplies: localized.quickReplies,
-          hasServicesBtn: localized.hasServicesBtn
+          hasServicesBtn: localized.hasServicesBtn,
         });
-      }, 900);
-      activeTimers.push(t2);
+      }
     } else {
-      // Direct AI outreach (e.g. 48h Pre-Arrival or Checkout Review)
-      const t1 = setTimeout(() => {
-        if (isHumanHandoff) return;
-        appendMessage({
-          sender: 'ai',
-          text: localized.greeting(guestName),
-          quickReplies: localized.quickReplies,
-          hasServicesBtn: localized.hasServicesBtn
-        });
-      }, 300);
-      activeTimers.push(t1);
+      // Direct outreach (48h Pre-Arrival or Checkout Review)
+      appendMessage({
+        sender: 'ai',
+        text: localized.greeting(guestName),
+        quickReplies: localized.quickReplies,
+        hasServicesBtn: localized.hasServicesBtn,
+      });
     }
   }
 

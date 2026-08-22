@@ -88,6 +88,7 @@ const AIRTABLE_SCHEMA = {
       language: 'fldRhFTWTRO7rGpQf',
       vipStatus: 'fldoYRZA6ig0YGTUm',
       knownPreferences: 'fldCftrTVWTx8wl8e',
+      isDemo: 'fldZmbdJKDtwAyOL5',
     },
   },
   Reservations: {
@@ -99,6 +100,7 @@ const AIRTABLE_SCHEMA = {
       checkOut: 'fld81RW6bDR7shQWR',
       roomNumber: 'fldF0Y1LwianGcX0r',
       status: 'fldGek8a7krKkLv66',
+      isDemo: 'fldnlrFREhOWSQ8Yt',
     },
   },
   Staff: {
@@ -118,6 +120,7 @@ const AIRTABLE_SCHEMA = {
       assignedStaff: 'fldCawPPdYoCRfDKZ',
       taskDetails: 'fldpNRN1vOUTTL87s',
       status: 'fldS3LtiRsRa4yMC8',
+      isDemo: 'fld3ZT2AozREWd3DS',
     },
   },
   Conversations: {
@@ -128,6 +131,7 @@ const AIRTABLE_SCHEMA = {
       sender: 'fldbLaHSnQJGpXiPQ',
       message: 'fldNRantEIy4DYeXy',
       timestamp: 'fldSjp107JhjVYQPY',
+      isDemo: 'fldwn2jA6eNyLaSjN',
     },
   },
   Services: {
@@ -142,7 +146,7 @@ const AIRTABLE_SCHEMA = {
   },
 };
 
-async function getOrCreateGuestRecord(env, { phone, name, language, preferences }) {
+async function getOrCreateGuestRecord(env, { phone, name, language, preferences, isDemo = false }) {
   const phoneKey = String(phone || '').trim();
   if (!phoneKey) return null;
   const G = AIRTABLE_SCHEMA.Guests;
@@ -152,12 +156,13 @@ async function getOrCreateGuestRecord(env, { phone, name, language, preferences 
     });
     if (existing.records?.[0]) {
       const rec = existing.records[0];
-      if (name || preferences) {
+      if (name || preferences || isDemo) {
         await airtable(env, `${G.table}/${rec.id}`, {
           method: 'PATCH',
           fields: {
             [G.fields.name]: name || rec.fields?.[G.fields.name] || undefined,
             [G.fields.knownPreferences]: preferences || rec.fields?.[G.fields.knownPreferences] || undefined,
+            ...(isDemo ? { [G.fields.isDemo]: true, Is_Demo: true } : {}),
           },
         }).catch(() => undefined);
       }
@@ -171,6 +176,7 @@ async function getOrCreateGuestRecord(env, { phone, name, language, preferences 
         [G.fields.language]: language || 'en',
         [G.fields.vipStatus]: 'Standard',
         [G.fields.knownPreferences]: preferences || undefined,
+        ...(isDemo ? { [G.fields.isDemo]: true, Is_Demo: true } : {}),
       },
     });
     return created.id;
@@ -476,10 +482,12 @@ async function enrichSemanticRoute(env, input, history, classification) {
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
   const phone = input.userId?.replace(/^wa:/, '') || input.phone || '';
+  const isDemo = Boolean(input.isDemo || input.is_demo);
   const guestRecordId = await getOrCreateGuestRecord(env, {
     phone,
     name: input.contactName || 'Guest',
     language: input.language,
+    isDemo,
   });
 
   const C = AIRTABLE_SCHEMA.Conversations;
@@ -499,6 +507,7 @@ async function persistConversation(env, input, outcome) {
         [C.fields.sender]: 'Guest',
         [C.fields.timestamp]: input.receivedAt,
         ...(guestRecordId ? { [C.fields.guest]: [guestRecordId] } : {}),
+        ...(isDemo ? { [C.fields.isDemo]: true, Is_Demo: true } : {}),
       },
     }).catch(() => undefined),
     airtable(env, C.table, {
@@ -514,6 +523,7 @@ async function persistConversation(env, input, outcome) {
         [C.fields.sender]: 'AI',
         [C.fields.timestamp]: time,
         ...(guestRecordId ? { [C.fields.guest]: [guestRecordId] } : {}),
+        ...(isDemo ? { [C.fields.isDemo]: true, Is_Demo: true } : {}),
       },
     }).catch(() => undefined),
   ]);
@@ -546,6 +556,7 @@ async function persistConversation(env, input, outcome) {
           [R.fields.status]: 'new',
           ...(guestRecordId ? { [R.fields.guest]: [guestRecordId] } : {}),
           ...(staffRecordId ? { [R.fields.assignedStaff]: [staffRecordId] } : {}),
+          ...(isDemo ? { [R.fields.isDemo]: true, Is_Demo: true } : {}),
         },
       }).catch(() => undefined);
     })
@@ -949,6 +960,78 @@ async function handleJsonChat(request, env, ctx) {
   return response(await resolveChat(body, env, ctx), 200, request, env);
 }
 
+async function handleDemoChat(request, env, ctx) {
+  requireSecrets(env);
+  const body = await request.json();
+
+  const guestName = compactText(body.guestName || body.contactName, 'Guest Name', { max: 100 }) || 'Demo Guest';
+  const language = compactText(body.language, 'Language', { max: 12 }) || 'en';
+  const scenario = compactText(body.scenario, 'Scenario', { max: 50 }) || 'pre_arrival';
+  const isDemo = body.is_demo !== false;
+
+  let messageText = '';
+  if (body.message && typeof body.message === 'string') {
+    messageText = body.message.trim();
+  } else if (Array.isArray(body.chatHistory) && body.chatHistory.length > 0) {
+    const last = body.chatHistory[body.chatHistory.length - 1];
+    messageText = String(last.content || last.message || '').trim();
+  }
+
+  if (!messageText) {
+    if (scenario === 'in_stay') {
+      messageText = 'Hello, could we please have additional towels delivered to our room?';
+    } else if (scenario === 'checkout_review') {
+      messageText = 'We are checking out today. Thank you for the stay!';
+    } else {
+      messageText = 'Hello, I have an upcoming reservation at Hôtel Lumière Paris.';
+    }
+  }
+
+  const input = {
+    userId: `demo:${encodeURIComponent(guestName).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`,
+    contactName: guestName,
+    channel: 'whatsapp',
+    language,
+    message: messageText,
+    receivedAt: new Date().toISOString(),
+    isDemo: true,
+  };
+
+  const outcome = await resolveChat(input, env, ctx);
+
+  let staffAlert = null;
+  const actionable = (outcome.requests || []).find((r) => r.summary);
+  if (actionable) {
+    const role = /towel|clean|linen|amenity|pillow|blanket|bed/i.test(actionable.summary) ? 'Housekeeping' : 'Receptionist';
+    staffAlert = {
+      role,
+      task: actionable.summary,
+      status: 'Dispatched to On-Duty Staff',
+    };
+  }
+
+  let quickReplies = [];
+  if (scenario === 'pre_arrival') {
+    quickReplies = ['Book Airport Transfer', 'Dining Reservations', 'No, thank you'];
+  } else if (scenario === 'in_stay') {
+    quickReplies = ['Thank you', 'Request Room Cleaning', 'Speak with Reception'];
+  } else if (scenario === 'checkout_review') {
+    quickReplies = ['Excellent — 5 Stars', 'Good', 'Leave Private Feedback'];
+  }
+
+  return response({
+    reply: outcome.reply,
+    language: outcome.language || language,
+    intent: outcome.intent,
+    quickReplies,
+    recommendations: outcome.recommendations || [],
+    partner_offers: outcome.partner_offers || [],
+    requests: outcome.requests || [],
+    requires_human: outcome.requires_human || false,
+    staffAlert,
+  }, 200, request, env);
+}
+
 async function handleBookingEnquiry(request, env) {
   requireAirtable(env);
   const enquiry = parseBookingEnquiry(await request.json());
@@ -1129,6 +1212,15 @@ export default {
     if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/test-cron') {
       const result = await runScheduledOutreach(env);
       return response(result, 200, request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/demo-chat') {
+      if (rateLimited(request)) return response({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
+      try {
+        return await handleDemoChat(request, env, ctx);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unexpected service error.';
+        return response({ error: message }, 502, request, env);
+      }
     }
     if (request.method === 'POST' && ['/api/chat', '/concierge/inbound'].includes(url.pathname)) {
       if (rateLimited(request)) return response({ error: 'Too many requests. Please try again shortly.' }, 429, request, env);
