@@ -36,6 +36,45 @@
   let lastFocusedElement = null;
   let activeController = null;
 
+  // Multilingual Hard-coded Meta Pre-Arrival Templates (Bug 1 Fix)
+  const PRE_ARRIVAL_TEMPLATES = {
+    English: {
+      text: (name) => `Bonjour ${name}, your stay at Hôtel Lumière Paris begins in 48 hours. We would be delighted to assist in preparing your arrival. May we arrange a private airport transfer or reserve a table for your first evening?`,
+      quickReplies: ["Book Transfer", "View Spa", "Dining Reservations"],
+    },
+    French: {
+      text: (name) => `Bonjour ${name}, votre séjour à l'Hôtel Lumière Paris débute dans 48 heures. Nous serions ravis de préparer votre arrivée. Souhaitez-vous réserver un transfert privé ou une table au restaurant ?`,
+      quickReplies: ["Réserver transfert", "Voir le Spa", "Réserver une table"],
+    },
+    Spanish: {
+      text: (name) => `Hola ${name}, su estancia en Hôtel Lumière Paris comienza en 48 horas. Será un placer preparar su llegada. ¿Desea que reservemos un traslado privado o una mesa para cenar?`,
+      quickReplies: ["Reservar traslado", "Ver Spa", "Reservar mesa"],
+    },
+    Japanese: {
+      text: (name) => `${name}様、オテル・リュミエール・パリへのお越しを心よりお待ち申し上げております（ご到着まで48時間）。空港送迎やディナーの手配を承りましょうか？`,
+      quickReplies: ["送迎を予約", "スパを見る", "ディナー予約"],
+    },
+  };
+
+  const CHECKOUT_TEMPLATES = {
+    English: {
+      text: (name) => `Dear ${name}, thank you for staying with us at Hôtel Lumière Paris. We hope you had a pleasant journey. How would you rate your stay with us?`,
+      quickReplies: ["Excellent — 5 Stars", "Good", "Speak to Manager"],
+    },
+    French: {
+      text: (name) => `Cher/Chère ${name}, merci d'avoir séjourné à l'Hôtel Lumière Paris. Nous espérons que votre séjour fut remarquable. Comment évaluez-vous votre expérience ?`,
+      quickReplies: ["Excellent — 5 Étoiles", "Bien", "Parler au directeur"],
+    },
+    Spanish: {
+      text: (name) => `Estimado/a ${name}, gracias por su estancia en Hôtel Lumière Paris. ¿Cómo calificaría su experiencia con nosotros?`,
+      quickReplies: ["Excelente — 5 Estrellas", "Buena", "Hablar con gerente"],
+    },
+    Japanese: {
+      text: (name) => `${name}様、オテル・リュミエール・パリにご宿泊いただき誠にありがとうございました。ご滞在はいかがでしたでしょうか？`,
+      quickReplies: ["素晴らしい — 5つ星", "満足", "支配人と話す"],
+    },
+  };
+
   function timeNow() {
     return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date());
   }
@@ -94,12 +133,69 @@
     return button;
   }
 
-  function addMessage({ sender, text, quickReplies = [], listMessage = false }) {
+  // Render WhatsApp chat bubble with optional rich media (Bug 2 Fix)
+  function addMessage({ sender, text, quickReplies = [], listMessage = false, media = null }) {
     const message = document.createElement("article");
     message.className = `message message--${sender}`;
-    const body = document.createElement("p");
-    body.textContent = text;
-    message.append(body);
+
+    // Render Rich Media Attachment Card if present
+    if (media && typeof media === "object") {
+      if (media.type === "document" || media.format === "PDF") {
+        const docCard = document.createElement("div");
+        docCard.className = "message-media-doc";
+        docCard.setAttribute("role", "group");
+        docCard.setAttribute("aria-label", "PDF Attachment");
+
+        const docIcon = document.createElement("div");
+        docIcon.className = "media-doc-icon";
+        docIcon.textContent = media.format || "PDF";
+        docIcon.setAttribute("aria-hidden", "true");
+
+        const docInfo = document.createElement("div");
+        docInfo.className = "media-doc-info";
+
+        const docTitle = document.createElement("div");
+        docTitle.className = "media-doc-title";
+        docTitle.textContent = media.title || media.filename || "Brochure (PDF)";
+
+        const docMeta = document.createElement("div");
+        docMeta.className = "media-doc-meta";
+        docMeta.textContent = `${media.format || "PDF"} · ${media.size || "2.4 MB"}${media.pages ? ` · ${media.pages}` : ""}`;
+
+        docInfo.append(docTitle, docMeta);
+
+        const docBtn = document.createElement("button");
+        docBtn.type = "button";
+        docBtn.className = "media-doc-action";
+        docBtn.title = "View Document";
+        docBtn.setAttribute("aria-label", "View Document");
+        docBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>`;
+        docBtn.addEventListener("click", () => {
+          addTranscript("Document Preview", `Opened document: ${media.title || media.filename}`, "ai");
+          if (media.url && !media.url.startsWith("assets/")) {
+            window.open(media.url, "_blank", "noopener,noreferrer");
+          }
+        });
+
+        docCard.append(docIcon, docInfo, docBtn);
+        message.append(docCard);
+      } else if (media.type === "image" || media.url || media.thumbnail) {
+        const imgCard = document.createElement("div");
+        imgCard.className = "message-media-image";
+        const img = document.createElement("img");
+        img.src = media.url || media.thumbnail;
+        img.alt = media.title || "Attached Media";
+        img.loading = "lazy";
+        imgCard.append(img);
+        message.append(imgCard);
+      }
+    }
+
+    if (text) {
+      const body = document.createElement("p");
+      body.textContent = text;
+      message.append(body);
+    }
 
     if (sender === "ai" && (quickReplies.length || listMessage)) {
       const actions = document.createElement("div");
@@ -115,7 +211,7 @@
     message.append(meta);
     dom.chatMessages.append(message);
     dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
-    addTranscript(sender === "guest" ? "Guest" : "AI Concierge", text, sender === "guest" ? "guest" : "ai");
+    addTranscript(sender === "guest" ? "Guest" : "AI Concierge", text || "[Media Attachment]", sender === "guest" ? "guest" : "ai");
   }
 
   function addChatChrome() {
@@ -168,6 +264,31 @@
     dom.handoffDescription.textContent = "AI replies are enabled for this simulation.";
     dom.conversationMode.classList.remove("is-human");
     dom.conversationMode.textContent = "AI active";
+    const presenceSpan = document.querySelector(".chat-identity span");
+    if (presenceSpan) presenceSpan.textContent = "online";
+  }
+
+  // Trigger Human Handoff (Escape Hatch / Sentiment Override Reaction - Bug 3 Fix)
+  function triggerEscalationHandoff(reason = "Guest requested manager / severe complaint") {
+    humanHandoff = true;
+    dom.handoffButton.classList.add("is-human");
+    dom.handoffButton.textContent = "Resume AI Concierge";
+    dom.handoffButton.setAttribute("aria-pressed", "true");
+    dom.handoffStatus.classList.add("is-human");
+    setOwnerStatus({ human: true });
+    dom.handoffTitle.textContent = "Duty Manager Escalation";
+    dom.handoffDescription.textContent = "Human Agent Active — AI Paused. Automated replies suspended due to guest escalation.";
+    dom.conversationMode.classList.add("is-human");
+    dom.conversationMode.textContent = "Human active";
+    const presenceSpan = document.querySelector(".chat-identity span");
+    if (presenceSpan) presenceSpan.textContent = "Human Staff Active";
+
+    renderStaffAlerts([{
+      role: "Duty Manager / Front Desk",
+      summary: `URGENT: ${reason}`,
+    }]);
+
+    addTranscript("URGENT ESCALATION", `⚠️ ${reason}. AI automatically suspended. Front Desk Duty Manager notified.`, "human");
   }
 
   function hideStaffAlert() {
@@ -185,6 +306,18 @@
     addTranscript("Staff alert", `${alert.role || "Reception"}: ${alert.summary || "New concierge request."}`, "human");
   }
 
+  function disableMessageActions(button) {
+    button.closest(".message-actions")?.querySelectorAll("button").forEach((actionButton) => { actionButton.disabled = true; });
+  }
+
+  function partnerQuickReplies(result) {
+    return (Array.isArray(result.partner_offers) ? result.partner_offers : [])
+      .map((offer) => String(offer?.name || "").trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+
+  // Launch simulation logic (Bug 1 Fix)
   function launchSimulation() {
     activeController?.abort();
     activeController = null;
@@ -202,19 +335,33 @@
     clearChildren(dom.chatMessages);
     clearChildren(dom.transcript);
     addChatChrome();
-    addTranscript("System", `Demo session launched for ${session.name}. Airtable isolation is enabled.`, "ai");
+    addTranscript("System", `Demo session launched for ${session.name} [Scenario: ${scenarioLabel()}, Language: ${session.language}]. Airtable isolation enabled.`, "ai");
     setBusy(false);
-  }
 
-  function disableMessageActions(button) {
-    button.closest(".message-actions")?.querySelectorAll("button").forEach((actionButton) => { actionButton.disabled = true; });
-  }
-
-  function partnerQuickReplies(result) {
-    return (Array.isArray(result.partner_offers) ? result.partner_offers : [])
-      .map((offer) => String(offer?.name || "").trim())
-      .filter(Boolean)
-      .slice(0, 3);
+    // Bug 1: Hard-coded Meta Pre-Arrival Template immediately injected upon Launch
+    if (session.scenario === "pre-arrival") {
+      const templateData = PRE_ARRIVAL_TEMPLATES[session.language] || PRE_ARRIVAL_TEMPLATES.English;
+      const templateText = templateData.text(session.name);
+      session.chatHistory.push({ role: "assistant", content: templateText });
+      addMessage({
+        sender: "ai",
+        text: templateText,
+        quickReplies: templateData.quickReplies,
+        listMessage: true,
+      });
+      addTranscript("Meta Template", `Automated 48h pre-arrival template delivered to ${session.name}.`, "ai");
+    } else if (session.scenario === "checkout") {
+      const checkoutData = CHECKOUT_TEMPLATES[session.language] || CHECKOUT_TEMPLATES.English;
+      const checkoutText = checkoutData.text(session.name);
+      session.chatHistory.push({ role: "assistant", content: checkoutText });
+      addMessage({
+        sender: "ai",
+        text: checkoutText,
+        quickReplies: checkoutData.quickReplies,
+        listMessage: false,
+      });
+      addTranscript("Meta Template", `Automated checkout review template delivered to ${session.name}.`, "ai");
+    }
   }
 
   async function requestConciergeReply() {
@@ -244,8 +391,26 @@
       const reply = String(result.reply || "").trim();
       if (!reply) throw new Error("The concierge service returned an empty reply.");
       session.chatHistory.push({ role: "assistant", content: reply });
-      addMessage({ sender: "ai", text: reply, quickReplies: partnerQuickReplies(result), listMessage: true });
+
+      // Bug 2: Rich Media rendering
+      const media = result.media || null;
+      const quickReplies = (result.quickReplies && result.quickReplies.length) ? result.quickReplies : partnerQuickReplies(result);
+
+      addMessage({
+        sender: "ai",
+        text: reply,
+        quickReplies,
+        listMessage: session.scenario !== "checkout",
+        media,
+      });
+
       renderStaffAlerts(result.staff_alerts);
+
+      // Bug 3: Escape Hatch / Sentiment Override Reaction
+      if (result.escape_hatch_triggered === true || (result.requires_human === true && result.intent === "complaint")) {
+        const lastUserMsg = session.chatHistory.filter((m) => m.role === "user").slice(-1)[0]?.content || "Guest escalation";
+        triggerEscalationHandoff(`Guest complaint / Manager request: "${lastUserMsg}"`);
+      }
     } finally {
       window.clearTimeout(timeout);
       typing.remove();
@@ -300,6 +465,8 @@
       : "AI replies are enabled for this simulation.";
     dom.conversationMode.classList.toggle("is-human", humanHandoff);
     dom.conversationMode.textContent = humanHandoff ? "Human active" : "AI active";
+    const presenceSpan = document.querySelector(".chat-identity span");
+    if (presenceSpan) presenceSpan.textContent = humanHandoff ? "Human Staff Active" : "online";
     addTranscript("System", humanHandoff ? "Human receptionist took over the conversation. AI paused." : "AI Concierge resumed.", humanHandoff ? "human" : "ai");
   }
 

@@ -195,6 +195,88 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .message p { margin: 0; }
 .message-meta { margin-top: 4px; display: flex; justify-content: flex-end; align-items: center; gap: 4px; color: #75818a; font-size: 10px; }
 .message--guest .message-meta::after { content: "✓✓"; color: #3f95b6; letter-spacing: -1px; }
+
+/* Rich Media Attachment Cards */
+.message-media-doc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 6px 0 8px;
+  background: #f0f4f2;
+  border: 1px solid #dce5e0;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.media-doc-icon {
+  width: 38px;
+  height: 44px;
+  background: #d93025;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  flex: 0 0 auto;
+  box-shadow: 0 2px 4px rgba(217, 48, 37, 0.25);
+}
+.media-doc-info {
+  flex: 1;
+  min-width: 0;
+}
+.media-doc-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #172331;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-doc-meta {
+  font-size: 11px;
+  color: #65717e;
+  margin-top: 3px;
+}
+.media-doc-action {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #087b66;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+}
+.media-doc-action:hover {
+  background: rgba(8, 123, 102, 0.1);
+}
+.media-doc-action svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.message-media-image {
+  margin: 4px 0 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eaecef;
+}
+.message-media-image img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  display: block;
+}
+
 .message-actions { margin-top: 8px; display: grid; gap: 4px; border-top: 1px solid #edf0ee; padding-top: 5px; }
 .quick-reply, .list-message {
   min-height: 38px;

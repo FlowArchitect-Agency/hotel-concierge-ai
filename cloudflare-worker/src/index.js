@@ -1,8 +1,11 @@
 import {
   buildPrompt,
   classifyRequest,
+  detectMediaBrochure,
   enforceContract,
+  ESCALATION_REPLIES,
   inheritConversationContext,
+  isEscalation,
   matchingServices,
   parseExternalResults,
   parseGuestInput,
@@ -696,6 +699,7 @@ function categoryPartnerServices(services, category) {
 }
 
 function hotelFirstResponse(input, classification, services) {
+  const media = detectMediaBrochure(input.message, classification.category);
   if (isHotelCollectionQuestion(input.message)) {
     const collection = partnerOffers(services, { limit: null });
     if (!collection.length) return null;
@@ -709,6 +713,7 @@ function hotelFirstResponse(input, classification, services) {
       hotel_collection: collection,
       provider_failure: '',
       requires_human: true,
+      media,
     };
   }
 
@@ -728,6 +733,7 @@ function hotelFirstResponse(input, classification, services) {
       partner_offers: partnerOffers(hotelOptions),
       provider_failure: '',
       requires_human: true,
+      media,
     };
   }
 
@@ -741,6 +747,7 @@ function hotelFirstResponse(input, classification, services) {
     partner_offers: partnerOffers(hotelOptions),
     provider_failure: '',
     requires_human: true,
+    media,
   };
 }
 
@@ -1078,6 +1085,7 @@ function staffRoleFor(serviceType) {
     transport: 'Guest relations',
     tour: 'Concierge desk',
     experience: 'Concierge desk',
+    escalation: 'Duty Manager / Front Desk',
   }[serviceType] || 'Reception team';
 }
 
@@ -1090,7 +1098,8 @@ function staffAlertsFromOutcome(outcome) {
   }));
 }
 
-function chatResponseFromOutcome(outcome, classification, language, partnerOfferList = [], providerFailure = '') {
+function chatResponseFromOutcome(outcome, classification, language, partnerOfferList = [], providerFailure = '', customMedia = null, inputMessage = '') {
+  const media = customMedia || detectMediaBrochure(inputMessage || outcome?.reply || classification?.category || '', classification?.category);
   return {
     reply: outcome.reply,
     language,
@@ -1107,13 +1116,51 @@ function chatResponseFromOutcome(outcome, classification, language, partnerOffer
     })),
     partner_offers: partnerOfferList,
     provider_failure: providerFailure,
-    requires_human: outcome.requiresHuman,
+    requires_human: Boolean(outcome.requiresHuman || outcome.escapeHatchTriggered),
+    escape_hatch_triggered: Boolean(outcome.escapeHatchTriggered),
+    media: media || detectMediaBrochure(outcome.reply || '', classification.category),
     staff_alerts: staffAlertsFromOutcome(outcome),
   };
 }
 
+function escalationResponse(input) {
+  if (!isEscalation(input.message)) return null;
+  const reply = ESCALATION_REPLIES[input.language] ?? ESCALATION_REPLIES.en;
+  const outcome = {
+    reply,
+    intent: 'complaint',
+    serviceType: 'escalation',
+    requiresHuman: true,
+    escapeHatchTriggered: true,
+    requests: [{
+      serviceName: 'Duty Manager Escalation',
+      source: 'partner',
+      summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
+      isUpsell: false,
+    }],
+    externalOptionNames: [],
+    recommendations: [],
+  };
+  return chatResponseFromOutcome(outcome, { category: 'escalation', hasEscalation: true }, input.language);
+}
+
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   const input = parseGuestInput(body);
+  const instantEscalation = escalationResponse(input);
+  if (instantEscalation) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, {
+        reply: instantEscalation.reply,
+        requests: [{
+          serviceName: 'Duty Manager Escalation',
+          source: 'partner',
+          summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
+          isUpsell: false,
+        }],
+      }).catch(() => undefined));
+    }
+    return instantEscalation;
+  }
   let classification = classifyRequest(input.message);
   reportStatus('Reviewing the details of your request\u2026');
   const instantGreeting = simpleGreetingResponse(input);
@@ -1193,7 +1240,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   if (!input.testMode || input.testMode === 'write_verified') {
     ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
   }
-  return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure);
+  return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message);
 }
 
 async function handleJsonChat(request, env, ctx) {

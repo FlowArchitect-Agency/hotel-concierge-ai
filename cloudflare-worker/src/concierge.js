@@ -160,8 +160,85 @@ export function parseGuestInput(body) {
   };
 }
 
+const ESCALATION_TERMS = [
+  'manager', 'director', 'general manager', 'gm', 'front desk', 'reception', 'receptionist', 'duty manager',
+  'human', 'person', 'real person', 'agent', 'representative', 'talk to someone', 'speak to someone', 'speak with someone', 'talk with someone',
+  'angry', 'furious', 'upset', 'terrible', 'horrible', 'awful', 'unacceptable', 'disaster', 'disgusted',
+  'complaint', 'complain', 'complaining', 'refund', 'dirty', 'broken', 'scam', 'ridiculous', 'worst',
+  'incompetent', 'unhappy', 'frustrated', 'frustrating', 'lawyer', 'sue', 'police', 'emergency',
+  'directeur', 'directrice', 'responsable', 'direction', 'receptionniste',
+  'en colere', 'furieux', 'furieuse', 'inadmissible', 'catastrophe', 'scandaleux', 'scandale',
+  'plainte', 'reclamation', 'remboursement', 'sale', 'casse', 'decu', 'degoute', 'pire hotel',
+  'gerente', 'enojado', 'enojada', 'inaceptable', 'queja', 'reclamacion', 'reembolso', 'sucio', 'roto'
+];
+
+export function isEscalation(message) {
+  const text = normalized(message);
+  return ESCALATION_TERMS.some((term) => hasTerm(text, term));
+}
+
+export const ESCALATION_REPLIES = {
+  en: 'I sincerely apologize for the frustration and inconvenience caused. I have flagged your situation with highest urgency for our Front Desk Duty Manager, who is stepping in immediately to assist you directly.',
+  fr: 'Je vous présente toutes mes excuses pour ce désagrément. J’ai immédiatement alerté notre responsable de réception de garde, qui prend personnellement en charge votre situation pour intervenir sans délai.',
+  es: 'Le pido sinceras disculpas por los inconvenientes. He informado de inmediato a nuestro Responsable de Recepción de guardia, quien atenderá su situación personalmente de forma prioritaria.',
+  de: 'Ich entschuldige mich aufrichtig für die Unannehmlichkeiten. Ich habe unser Management-Team umgehend verständigt, damit sich sofort persönlich um Ihr Anliegen gekümmert wird.',
+  it: 'Le porgo le mie più sincere scuse per il disagio. Ho immediatamente allertato il nostro Duty Manager della reception, che interverrà di persona per assisterla senza indugio.',
+  ja: 'ご不便とご不快な思いをおかけし、心より深くお詫び申し上げます。ただちにフロント統括責任者へ緊急連絡いたしました。担当マネージャーが直接引き継ぎ、最優先で対応いたします。',
+  zh: '对于给您带来的不便与困扰，我致以最真诚的歉意。我已为您将此情况直接转达给值班大堂经理，经理将立即亲自跟进并为您妥善处理。',
+  ar: 'أعتذر بشدة عن الإزعاج والاستياء الذي واجهتموه. لقد قمت على الفور بإبلاغ مدير الاستقبال المناوب الذي سيتدخل شخصياً لمساعدتكم ومعالجة الأمر دون تأخير.',
+};
+
+export function detectMediaBrochure(message, category = null) {
+  const text = normalized(message);
+  const asksForBrochure = /\b(menu|carte|brochure|pdf|catalog|catalogue|treatments?|pricing|tarifs?|tarifs|services list|list of services|carte des soins|soins|massages?)\b/i.test(text);
+  const isSpa = category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(text);
+  const isDining = category === 'restaurant' || /\b(dinner|lunch|breakfast|food|carte|dining|restaurant|wine|cocktail|room service)\b/i.test(text);
+  const isRooms = category === 'accommodation' || /\b(room|suite|chambre|habitacion|stay)\b/i.test(text);
+
+  if (asksForBrochure || isSpa) {
+    if (isSpa) {
+      return {
+        type: 'document',
+        format: 'PDF',
+        title: 'Hôtel Lumière — Spa & Wellness Brochure',
+        filename: 'Lumiere_Spa_Wellness_Menu.pdf',
+        size: '2.4 MB',
+        pages: '12 pages',
+        url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/assets/brochures/spa-wellness-menu.pdf',
+        thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
+      };
+    }
+    if (isDining) {
+      return {
+        type: 'document',
+        format: 'PDF',
+        title: 'Le Jardin Lumière — Carte des Saisons & Dining',
+        filename: 'Le_Jardin_Lumiere_Menu.pdf',
+        size: '1.8 MB',
+        pages: '8 pages',
+        url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/assets/brochures/dining-menu.pdf',
+        thumbnail: 'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?auto=format&fit=crop&w=700&q=84',
+      };
+    }
+    if (isRooms) {
+      return {
+        type: 'document',
+        format: 'PDF',
+        title: 'Hôtel Lumière — Suites & Rooms Collection',
+        filename: 'Lumiere_Suites_Collection.pdf',
+        size: '3.1 MB',
+        pages: '16 pages',
+        url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/assets/brochures/suites-collection.pdf',
+        thumbnail: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=700&q=84',
+      };
+    }
+  }
+  return null;
+}
+
 export function classifyRequest(message) {
   const text = normalized(message);
+  const hasEscalation = isEscalation(message);
   const scores = new Map();
   for (const rule of CATEGORY_RULES) {
     for (const word of rule.words) {
@@ -171,14 +248,11 @@ export function classifyRequest(message) {
   if (ITINERARY_WORDS.some((word) => hasTerm(text, word))) scores.set('itinerary', 1);
   let category = [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
-  // A named cuisine is always a dining request. This also prevents nearby
-  // landmarks (for example, "Spanish restaurant near the Eiffel Tower")
-  // from incorrectly changing the category to a tour.
   if (cuisine) category = 'restaurant';
   const trimmed = text.replace(/[!.?\u00a1\u00bf]+$/g, '');
   const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2;
-  const hasIntent = !isGreeting && Boolean(category || cuisine || REQUEST_WORDS.some((word) => hasTerm(text, word)));
-  return { category, cuisine, location: inferLocation(message), hasIntent };
+  const hasIntent = !isGreeting && Boolean(category || cuisine || hasEscalation || REQUEST_WORDS.some((word) => hasTerm(text, word)));
+  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation };
 }
 
 export function inheritConversationContext(classification, history, latestMessage) {
@@ -466,6 +540,25 @@ function conciseReply(value) {
 }
 
 export function enforceContract(model, { language, classification, matching, excluded, externalOptions }) {
+  const isAngry = classification?.hasEscalation || isEscalation(model?.reply);
+  if (isAngry) {
+    return {
+      reply: ESCALATION_REPLIES[language] ?? ESCALATION_REPLIES.en,
+      intent: 'complaint',
+      serviceType: 'escalation',
+      requiresHuman: true,
+      escapeHatchTriggered: true,
+      requests: [{
+        serviceName: 'Duty Manager Escalation',
+        source: 'partner',
+        summary: 'URGENT: Guest requested manager / expressed severe dissatisfaction',
+        isUpsell: false,
+      }],
+      externalOptionNames: [],
+      recommendations: [],
+    };
+  }
+
   const optionNames = externalOptions.map((item) => item.name);
   const excludedNames = excluded.map((item) => item.name);
   const replyText = String(model.reply ?? '').trim();
@@ -489,7 +582,7 @@ export function enforceContract(model, { language, classification, matching, exc
     requests = requests.filter((item) => optionNames.some((name) => normalized(item.serviceName).includes(normalized(name))));
   }
 
-  if (classification.route !== 'partner_catalog' && classification.hasIntent && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
+  if (!isAngry && classification.route !== 'partner_catalog' && classification.hasIntent && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
     const service = matching[0];
     const details = [service.price === null || service.price === '' ? '' : `EUR ${Number(service.price).toFixed(0)}`, service.duration ? `${service.duration} min` : ''].filter(Boolean).join(', ');
     const partnerSuffix = {
@@ -508,9 +601,10 @@ export function enforceContract(model, { language, classification, matching, exc
 
   return {
     reply: finalReply || (DEFERRED[language] ?? DEFERRED.en),
-    intent: model.intent,
-    serviceType: model.serviceType,
-    requiresHuman: Boolean(model.requiresHuman) || Boolean(classification.cuisine),
+    intent: isAngry ? 'complaint' : model.intent,
+    serviceType: isAngry ? 'escalation' : model.serviceType,
+    requiresHuman: isAngry || Boolean(model.requiresHuman) || Boolean(classification.cuisine),
+    escapeHatchTriggered: isAngry || Boolean(model.escapeHatchTriggered),
     requests: requests.filter((item) => !excludedNames.some((name) => normalized(item.serviceName).includes(normalized(name)))),
     externalOptionNames: optionNames,
     recommendations: externalOptions,
@@ -525,6 +619,7 @@ export function buildPrompt({ input, classification, history, services, external
 
 Hard rules:
 - Reply entirely in the guest's latest-message language (${input.language}).
+- SENTIMENT OVERRIDE: If the guest expresses frustration, anger, complaint, or requests a manager/human/reception, apologize sincerely and empathetically. NEVER offer upsells, services, or room upgrades. Set requires_human: true.
 - Use only the facts, partner services, and external search results below.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
 - Partner services are preferred. State a catalog price only when it is supplied below.

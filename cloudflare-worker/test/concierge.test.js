@@ -991,3 +991,90 @@ test('An empty unfamiliar discovery asks one useful refinement instead of deferr
   assert.match(result.reply, /neighbourhood, timing, party size, or budget/i);
   assert.doesNotMatch(result.reply, /team will research/i);
 });
+
+test('Sentiment Override: Frustrated guest or manager request immediately triggers escape hatch without upselling', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    throw new Error(`Unexpected call: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'Angry Guest',
+        language: 'English',
+        scenario: 'in-stay',
+        is_demo: true,
+        sessionId: 'demo_angry_guest',
+        chatHistory: [{ role: 'user', content: 'This service is terrible and unacceptable. I want to speak to the manager right now!' }],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil() {},
+    });
+    const data = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(data.escape_hatch_triggered, true);
+    assert.equal(data.requires_human, true);
+    assert.match(data.reply, /apologize/i);
+    assert.match(data.reply, /Duty Manager|front desk/i);
+    assert.doesNotMatch(data.reply, /Partner option/i);
+    assert.doesNotMatch(data.reply, /upgrade/i);
+    assert.ok(data.staff_alerts.length > 0);
+    assert.equal(data.staff_alerts[0].role, 'Duty Manager / Front Desk');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Rich Media: Spa or menu query returns PDF brochure document card metadata', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('api.airtable.com')) {
+      return Response.json({ records: [{ id: 'rec_spa', fields: { Name: 'Lumière Spa Massage', Category: 'spa', PriceEUR: 220, Active: true, IsPartner: true } }] });
+    }
+    if (target.includes('api.groq.com')) {
+      return Response.json({ choices: [{ message: { content: JSON.stringify({
+        reply_text: 'Here is our Lumière Spa brochure with our full wellness and massage menu.',
+        intent: 'service_request',
+        service_type: 'spa',
+        requests: [],
+        requires_human: false,
+      }) } }] });
+    }
+    throw new Error(`Unexpected call: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'Spa Guest',
+        language: 'English',
+        scenario: 'in-stay',
+        is_demo: true,
+        sessionId: 'demo_spa_guest',
+        chatHistory: [{ role: 'user', content: 'Could you send me the spa menu and treatments brochure?' }],
+      }),
+    }), {
+      GROQ_API_KEY: 'test',
+      AIRTABLE_API_KEY: 'test',
+      AIRTABLE_BASE_ID: 'test',
+      DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io',
+      HOTEL_NAME: 'Hôtel Lumière',
+      HOTEL_CITY: 'Paris',
+    }, {
+      waitUntil() {},
+    });
+    const data = await response.json();
+    assert.equal(response.status, 200);
+    assert.ok(data.media);
+    assert.equal(data.media.type, 'document');
+    assert.equal(data.media.format, 'PDF');
+    assert.match(data.media.filename, /Spa/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
