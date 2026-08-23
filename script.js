@@ -846,6 +846,21 @@ const revealObserver = new IntersectionObserver((entries) => {
 }, { threshold: 0.12, rootMargin: '0px 0px -50px 0px' });
 document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
 
+// Apple Fluid Motion: Interactive 3D Mockup Tilt Tracking (apple-design skill)
+const phoneFrame = document.querySelector('.phone-frame');
+const heroMockup = document.querySelector('.hero-mockup');
+if (phoneFrame && heroMockup && window.matchMedia('(min-width: 900px)').matches) {
+  heroMockup.addEventListener('pointermove', (e) => {
+    const rect = heroMockup.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    phoneFrame.style.transform = `perspective(1000px) rotateY(${x * 9}deg) rotateX(${-y * 9}deg) translateY(-3px)`;
+  });
+  heroMockup.addEventListener('pointerleave', () => {
+    phoneFrame.style.transform = 'rotate(1.4deg)';
+  });
+}
+
 chatSend.addEventListener('click', sendMessage);
 chatInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {

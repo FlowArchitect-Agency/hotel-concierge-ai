@@ -466,13 +466,74 @@
     lastFocusedElement = document.activeElement;
     dom.backdrop.hidden = false;
     dom.sheet.hidden = false;
+    dom.sheet.style.transform = "translateX(-50%) translateY(0)";
     dom.closeSheet.focus();
   }
 
   function closeServices() {
     dom.sheet.hidden = true;
     dom.backdrop.hidden = true;
+    dom.sheet.style.transform = "";
     if (lastFocusedElement instanceof HTMLElement) lastFocusedElement.focus();
+  }
+
+  // Apple Fluid Motion: 1:1 Gesture Tracking & Momentum Projection for Bottom Sheet (WWDC / Emil Kowalski)
+  let isDraggingSheet = false;
+  let startY = 0;
+  let currentY = 0;
+  let moveHistory = [];
+
+  function projectVelocity(initialVelocity, decelerationRate = 0.998) {
+    return (initialVelocity / 1000) * decelerationRate / (1 - decelerationRate);
+  }
+
+  function initSheetGestures() {
+    const sheet = dom.sheet;
+    const handle = dom.sheet.querySelector(".sheet-handle") || sheet;
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (sheet.hidden) return;
+      isDraggingSheet = true;
+      startY = e.clientY;
+      currentY = 0;
+      moveHistory = [{ y: e.clientY, t: performance.now() }];
+      handle.setPointerCapture(e.pointerId);
+      sheet.style.transition = "none";
+    });
+
+    handle.addEventListener("pointermove", (e) => {
+      if (!isDraggingSheet) return;
+      const deltaY = e.clientY - startY;
+      // Rubber-band resistance if dragged upwards past origin
+      currentY = deltaY < 0 ? deltaY * 0.3 : deltaY;
+      sheet.style.transform = `translateX(-50%) translateY(${currentY}px)`;
+      moveHistory.push({ y: e.clientY, t: performance.now() });
+      if (moveHistory.length > 5) moveHistory.shift();
+    });
+
+    const finishDrag = () => {
+      if (!isDraggingSheet) return;
+      isDraggingSheet = false;
+      sheet.style.transition = "";
+
+      let velocity = 0;
+      if (moveHistory.length >= 2) {
+        const first = moveHistory[0];
+        const last = moveHistory[moveHistory.length - 1];
+        const dt = last.t - first.t;
+        if (dt > 0) velocity = ((last.y - first.y) / dt) * 1000; // px/s
+      }
+
+      const projected = currentY + projectVelocity(velocity);
+      if (projected > 120 || currentY > 150) {
+        closeServices();
+      } else {
+        sheet.style.transform = "translateX(-50%) translateY(0)";
+      }
+    };
+
+    handle.addEventListener("pointerup", finishDrag);
+    handle.addEventListener("pointercancel", finishDrag);
   }
 
   function toggleHandoff() {
@@ -533,5 +594,6 @@
     if (event.key === "Escape" && !dom.sheet.hidden) closeServices();
   });
 
+  initSheetGestures();
   launchSimulation();
 })();
