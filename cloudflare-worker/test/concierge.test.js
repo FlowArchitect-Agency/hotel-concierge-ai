@@ -1145,4 +1145,107 @@ test('Operational requests: Physical items (towels/water) alert Housekeeping wit
   }
 });
 
+test('Post-Checkout Positive: 5-star review returns thank you and Google Review link without complaint ticket', async () => {
+  const originalFetch = globalThis.fetch;
+  const writtenTables = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('api.airtable.com')) {
+      if (options.body) {
+        writtenTables.push({ url: target, fields: JSON.parse(options.body).fields });
+      }
+      return Response.json({ records: [], id: 'rec_positive_checkout' });
+    }
+    throw new Error(`Unexpected call: ${url}`);
+  };
+  const scheduled = [];
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://flowarchitect-agency.github.io',
+        'CF-Connecting-IP': '203.0.113.88',
+      },
+      body: JSON.stringify({
+        guestName: 'Delighted Guest',
+        language: 'English',
+        scenario: 'post_checkout',
+        is_demo: true,
+        sessionId: 'demo_post_checkout_pos',
+        chatHistory: [{ role: 'user', content: 'Loved it! Everything was wonderful, 5 stars!' }],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil(p) { scheduled.push(p); },
+    });
+    const data = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.match(data.reply, /Thank you so much, Delighted Guest/i);
+    assert.match(data.reply, /https:\/\/g\.page\/r\/hotel-lumiere-paris\/review/);
+    assert.equal(data.requires_human, false);
+    assert.equal(data.escape_hatch_triggered, false);
+    assert.ok(data.media && data.media.url.includes('g.page'));
+    const requestWrite = writtenTables.find((w) => w.url.includes('/Requests'));
+    assert.equal(requestWrite, undefined, 'No complaint request record should be created for positive reviews');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Post-Checkout Negative: Complaining guest triggers General Manager escalation without public review link', async () => {
+  const originalFetch = globalThis.fetch;
+  const writtenTables = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('api.airtable.com')) {
+      if (options.body) {
+        writtenTables.push({ url: target, fields: JSON.parse(options.body).fields });
+      }
+      return Response.json({ records: [], id: 'rec_negative_checkout' });
+    }
+    throw new Error(`Unexpected call: ${url}`);
+  };
+  const scheduled = [];
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://flowarchitect-agency.github.io',
+        'CF-Connecting-IP': '203.0.113.88',
+      },
+      body: JSON.stringify({
+        guestName: 'Unhappy Guest',
+        language: 'English',
+        scenario: 'post_checkout',
+        is_demo: true,
+        sessionId: 'demo_post_checkout_neg',
+        chatHistory: [{ role: 'user', content: 'The room was noisy and service was terrible.' }],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil(p) { scheduled.push(p); },
+    });
+    const data = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.match(data.reply, /sincerely apologize/i);
+    assert.match(data.reply, /General Manager/i);
+    assert.doesNotMatch(data.reply, /g\.page|tripadvisor|google review/i);
+    assert.equal(data.requires_human, true);
+    assert.equal(data.escape_hatch_triggered, true);
+    assert.equal(data.media, null);
+    assert.ok(data.staff_alerts.length > 0);
+    assert.equal(data.staff_alerts[0].role, 'General Manager');
+    const requestWrite = writtenTables.find((w) => w.url.includes('/Requests'));
+    assert.ok(requestWrite, 'General Manager request record must be created');
+    assert.equal(requestWrite.fields.GuestName, 'Unhappy Guest');
+    assert.equal(requestWrite.fields.Is_Demo, true);
+    assert.equal(requestWrite.fields.ServiceType, 'General Manager');
+    assert.match(requestWrite.fields.RequestSummary, /URGENT POST-CHECKOUT SERVICE RECOVERY/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 

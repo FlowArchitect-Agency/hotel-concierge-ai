@@ -276,6 +276,68 @@ export const OPERATIONAL_REPLIES = {
   ar: 'تم تسجيل طلبكم وإبلاغ فريق الخدمة لتوصيله إلى غرفتكم في أقرب وقت ممكن.',
 };
 
+export const POST_CHECKOUT_POSITIVE_TERMS = [
+  'loved it', 'great stay', 'wonderful', '5 star', '5 stars', 'five star', 'five stars', 'amazing',
+  'excellent', 'perfect', 'superb', 'fantastic', 'pleasure', 'enjoyed', 'recommend', 'loved', 'great',
+  'parfait', 'merveilleux', 'tres bon', 'super', 'genial', 'adore', 'excellent sejour',
+  'encanto', 'maravilloso', 'excelente', 'buena estancia', '5 estrellas',
+  '素晴らしい', '最高', '快適', '満足', '5つ星'
+];
+
+export const POST_CHECKOUT_NEGATIVE_TERMS = [
+  'noisy', 'room was noisy', 'noise', 'bruit', 'bruyant', 'ruido', 'ruidosa', 'うるさい', '騒音',
+  'terrible', 'horrible', 'bad', 'poor', 'awful', 'disappointed', 'disappointing', 'issue', 'issues',
+  'problem', 'problems', 'complaint', 'dirty', 'smell', 'rude', 'unacceptable', 'worst', 'broken',
+  'decevant', 'mauvais', 'catastrophe', 'inadmissible', 'probleme', 'problemes', 'reclamation',
+  'malo', 'pesimo', 'inaceptable', 'queja', 'problemas',
+  '最悪', '問題', '不満', '汚い', '故障'
+];
+
+export function isPostCheckoutNegative(message) {
+  const text = normalized(message);
+  return isEscalation(message) || POST_CHECKOUT_NEGATIVE_TERMS.some((term) => hasTerm(text, term));
+}
+
+export function isPostCheckoutPositive(message) {
+  const text = normalized(message);
+  return POST_CHECKOUT_POSITIVE_TERMS.some((term) => hasTerm(text, term));
+}
+
+export function isPostCheckoutScenario(input) {
+  const scenario = String(input?.scenario || '').trim().toLowerCase();
+  return scenario === 'post_checkout' || scenario === 'checkout';
+}
+
+export function postCheckoutPositiveReply(guestName, language) {
+  const name = guestName || 'Guest';
+  const replies = {
+    en: `Thank you so much, ${name}! We are thrilled to hear you had a wonderful stay with us at Hôtel Lumière. If you have a moment, we would be truly grateful if you could share your review with fellow travelers: https://g.page/r/hotel-lumiere-paris/review`,
+    fr: `Merci infiniment, ${name} ! Nous sommes ravis d'apprendre que votre séjour à l'Hôtel Lumière a été parfait. Si vous avez un instant, nous serions honorés si vous pouviez partager votre avis : https://g.page/r/hotel-lumiere-paris/review`,
+    es: `¡Muchísimas gracias, ${name}! Nos alegra enormemente saber que disfrutó de su estancia en Hôtel Lumière. Si dispone de un momento, le agradeceríamos que compartiera su opinión: https://g.page/r/hotel-lumiere-paris/review`,
+    ja: `${name}様、温かいお言葉をいただき心より御礼申し上げます。オテル・リュミエールでのご滞在をご満喫いただけて大変光栄です。よろしければレビューをご投稿いただけますと幸いです：https://g.page/r/hotel-lumiere-paris/review`,
+    de: `Vielen Dank, ${name}! Wir freuen uns sehr, dass Sie einen wunderbaren Aufenthalt im Hôtel Lumière hatten. Wir würden uns freuen, wenn Sie Ihre Bewertung teilen: https://g.page/r/hotel-lumiere-paris/review`,
+    it: `Grazie di cuore, ${name}! Siamo lieti che il suo soggiorno all'Hôtel Lumière sia stato splendido. Se desidera, può condividere la sua recensione qui: https://g.page/r/hotel-lumiere-paris/review`,
+    zh: `非常感谢您，${name}！很高兴得知您在卢米埃尔酒店度过了愉快的时光。如果您方便，欢迎在此分享您的入住体验：https://g.page/r/hotel-lumiere-paris/review`,
+    ar: `شكراً جزيلاً لكم، ${name}! يسعدنا جداً أن إقامتكم في فندق لوميير كانت مميزة. نكون ممتنين لو شاركتم تجربتكم معنا: https://g.page/r/hotel-lumiere-paris/review`,
+  };
+  return replies[language] ?? replies.en;
+}
+
+export function postCheckoutNegativeReply(guestName, language) {
+  const name = guestName || 'Guest';
+  const replies = {
+    en: `Dear ${name}, we sincerely apologize that your experience fell short of our high standards. Your feedback has been immediately escalated to our General Manager, who is reviewing this matter privately to make things right.`,
+    fr: `Cher/Chère ${name}, nous vous présentons nos excuses les plus sincères pour cette expérience qui ne reflète pas nos standards d'excellence. Votre retour a été directement transmis à notre Directeur Général pour un suivi privé immédiat.`,
+    es: `Estimado/a ${name}, le pedimos sinceras disculpas porque su experiencia no estuvo a la altura de nuestros estándares. Sus comentarios han sido remitidos directamente a nuestro Director General para una atención privada prioritaria.`,
+    ja: `${name}様、ご期待に沿うご滞在を提供できず、深くお詫び申し上げます。いただいたご指摘は直ちに総支配人へ共有し、改善と個別対応に向けて確認を進めております。`,
+    de: `Sehr geehrte(r) ${name}, wir entschuldigen uns aufrichtig für diese Erfahrung. Ihr Feedback wurde direkt an unseren General Manager weitergeleitet, um den Sachverhalt persönlich zu klären.`,
+    it: `Gentile ${name}, le porgiamo le nostre più sincere scuse. La sua segnalazione è stata trasmessa direttamente al nostro Direttore Generale per una gestione privata prioritaria.`,
+    zh: `尊敬的 ${name}，对于未能给您带来满意的入住体验，我们致以最深切的歉意。您的反馈已直接呈报给酒店总经理，总经理将亲自跟进处理。`,
+    ar: `عزيزنا ${name}، نعتذر بشدة لأن تجربتكم لم تكن بالمستوى المطلوب. لقد تم رفع ملاحظاتكم مباشرة إلى المدير العام لمراجعتها والتعامل معها باهتمام بالغ.`,
+  };
+  return replies[language] ?? replies.en;
+}
+
 export function classifyRequest(message) {
   const text = normalized(message);
   const hasEscalation = isEscalation(message);
@@ -661,6 +723,9 @@ export function buildPrompt({ input, classification, history, services, external
 
 Hard rules:
 - Reply entirely in the guest's latest-message language (${input.language}).
+- POST-CHECKOUT REVIEWS:
+  * POSITIVE FEEDBACK (e.g. loved it, great stay, 5 stars, wonderful): Thank the guest warmly and provide the simulated Google Review link (https://g.page/r/hotel-lumiere-paris/review). Do NOT create a complaint ticket.
+  * NEGATIVE FEEDBACK / COMPLAINTS (e.g. noisy room, poor service, disappointment): Apologize profusely and assure the guest that the General Manager is reviewing their feedback privately. You MUST NOT provide any public review link. Create an operational staff request routed to the General Manager for private service recovery. Set requires_human: true.
 - OPERATIONAL & ROOM ITEM REQUESTS: If a guest asks for a physical item to be delivered to their room (e.g., towels, water, pillows, blankets, toiletries, amenities) or reports a maintenance/housekeeping issue, you MUST acknowledge the delivery to their room and trigger an operational request for staff. Do NOT offer hotel partner services, catalog items, or attempt to upsell for operational requests.
 - SENTIMENT OVERRIDE: If the guest expresses frustration, anger, complaint, or requests a manager/human/reception, apologize sincerely and empathetically. NEVER offer upsells, services, or room upgrades. Set requires_human: true.
 - Use only the facts, partner services, and external search results below.

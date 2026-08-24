@@ -56,24 +56,25 @@
     },
   };
 
-  const CHECKOUT_TEMPLATES = {
+  const POST_CHECKOUT_TEMPLATES = {
     English: {
-      text: (name) => `Dear ${name}, thank you for staying with us at Hôtel Lumière Paris. We hope you had a pleasant journey. How would you rate your stay with us?`,
-      quickReplies: ["Excellent — 5 Stars", "Good", "Speak to Manager"],
+      text: (name) => `Thank you for staying at Hôtel Lumière, ${name}. We hope you had a safe journey home. How was your experience with us?`,
+      quickReplies: ["Loved it, 5 stars!", "Great stay, thank you", "The room was noisy", "We had some issues"],
     },
     French: {
-      text: (name) => `Cher/Chère ${name}, merci d'avoir séjourné à l'Hôtel Lumière Paris. Nous espérons que votre séjour fut remarquable. Comment évaluez-vous votre expérience ?`,
-      quickReplies: ["Excellent — 5 Étoiles", "Bien", "Parler au directeur"],
+      text: (name) => `Merci d'avoir séjourné à l'Hôtel Lumière, ${name}. Nous espérons que votre voyage de retour s'est bien passé. Comment s'est déroulée votre expérience parmi nous ?`,
+      quickReplies: ["Séjour parfait, 5 étoiles !", "Très bon séjour", "Chambre bruyante", "Nous avons eu des problèmes"],
     },
     Spanish: {
-      text: (name) => `Estimado/a ${name}, gracias por su estancia en Hôtel Lumière Paris. ¿Cómo calificaría su experiencia con nosotros?`,
-      quickReplies: ["Excelente — 5 Estrellas", "Buena", "Hablar con gerente"],
+      text: (name) => `Gracias por alojarse en Hôtel Lumière, ${name}. Esperamos que haya tenido un buen viaje de regreso. ¿Cómo fue su experiencia con nosotros?`,
+      quickReplies: ["¡Excelente, 5 estrellas!", "Muy buena estancia", "La habitación era ruidosa", "Tuvimos algunos problemas"],
     },
     Japanese: {
-      text: (name) => `${name}様、オテル・リュミエール・パリにご宿泊いただき誠にありがとうございました。ご滞在はいかがでしたでしょうか？`,
-      quickReplies: ["素晴らしい — 5つ星", "満足", "支配人と話す"],
+      text: (name) => `オテル・リュミエールにご宿泊いただき誠にありがとうございました、${name}様。ご無事にご帰宅されたことと存じます。当ホテルでのご滞在はいかがでしたでしょうか？`,
+      quickReplies: ["素晴らしかった！5つ星", "快適な滞在でした", "部屋が少し騒がしかった", "問題がありました"],
     },
   };
+  const CHECKOUT_TEMPLATES = POST_CHECKOUT_TEMPLATES;
 
   function timeNow() {
     return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date());
@@ -291,27 +292,27 @@
     if (presenceSpan) presenceSpan.textContent = "online";
   }
 
-  // Trigger Human Handoff (Escape Hatch / Sentiment Override Reaction - Bug 3 Fix)
-  function triggerEscalationHandoff(reason = "Guest requested manager / severe complaint") {
+  // Trigger Human Handoff (Escape Hatch / Sentiment Override Reaction / General Manager Service Recovery)
+  function triggerEscalationHandoff(reason = "Guest requested manager / severe complaint", role = "General Manager") {
     humanHandoff = true;
     dom.handoffButton.classList.add("is-human");
     dom.handoffButton.textContent = "Resume AI Concierge";
     dom.handoffButton.setAttribute("aria-pressed", "true");
     dom.handoffStatus.classList.add("is-human");
     setOwnerStatus({ human: true });
-    dom.handoffTitle.textContent = "Duty Manager Escalation";
-    dom.handoffDescription.textContent = "Human Agent Active — AI Paused. Automated replies suspended due to guest escalation.";
+    dom.handoffTitle.textContent = `${role} Escalation`;
+    dom.handoffDescription.textContent = `Human Agent Active — AI Paused. Automated replies suspended for ${role} private service recovery.`;
     dom.conversationMode.classList.add("is-human");
     dom.conversationMode.textContent = "Human active";
     const presenceSpan = document.querySelector(".chat-identity span");
-    if (presenceSpan) presenceSpan.textContent = "Human Staff Active";
+    if (presenceSpan) presenceSpan.textContent = `${role} Active`;
 
     renderStaffAlerts([{
-      role: "Duty Manager / Front Desk",
+      role: role,
       summary: `URGENT: ${reason}`,
     }]);
 
-    addTranscript("URGENT ESCALATION", `⚠️ ${reason}. AI automatically suspended. Front Desk Duty Manager notified.`, "human");
+    addTranscript("URGENT ESCALATION", `⚠️ ${reason}. AI automatically suspended. ${role} notified.`, "human");
   }
 
   function hideStaffAlert() {
@@ -340,7 +341,7 @@
       .slice(0, 3);
   }
 
-  // Launch simulation logic (Bug 1 Fix)
+  // Launch simulation logic (Pre-Arrival, In-Stay, Post-Checkout Review)
   function launchSimulation() {
     activeController?.abort();
     activeController = null;
@@ -361,7 +362,7 @@
     addTranscript("System", `Demo session launched for ${session.name} [Scenario: ${scenarioLabel()}, Language: ${session.language}]. Airtable isolation enabled.`, "ai");
     setBusy(false);
 
-    // Bug 1: Hard-coded Meta Pre-Arrival Template immediately injected upon Launch
+    // Hard-coded Meta Template immediately injected upon Launch for Pre-Arrival and Post-Checkout
     if (session.scenario === "pre-arrival") {
       const templateData = PRE_ARRIVAL_TEMPLATES[session.language] || PRE_ARRIVAL_TEMPLATES.English;
       const templateText = templateData.text(session.name);
@@ -373,8 +374,8 @@
         listMessage: true,
       });
       addTranscript("Meta Template", `Automated 48h pre-arrival template delivered to ${session.name}.`, "ai");
-    } else if (session.scenario === "checkout") {
-      const checkoutData = CHECKOUT_TEMPLATES[session.language] || CHECKOUT_TEMPLATES.English;
+    } else if (session.scenario === "post_checkout" || session.scenario === "checkout") {
+      const checkoutData = POST_CHECKOUT_TEMPLATES[session.language] || POST_CHECKOUT_TEMPLATES.English;
       const checkoutText = checkoutData.text(session.name);
       session.chatHistory.push({ role: "assistant", content: checkoutText });
       addMessage({
@@ -383,7 +384,7 @@
         quickReplies: checkoutData.quickReplies,
         listMessage: false,
       });
-      addTranscript("Meta Template", `Automated checkout review template delivered to ${session.name}.`, "ai");
+      addTranscript("Meta Template", `Automated post-checkout review template delivered to ${session.name}.`, "ai");
     }
   }
 
@@ -415,7 +416,7 @@
       if (!reply) throw new Error("The concierge service returned an empty reply.");
       session.chatHistory.push({ role: "assistant", content: reply });
 
-      // Bug 2: Rich Media rendering
+      // Rich Media & Link rendering
       const media = result.media || null;
       const quickReplies = (result.quickReplies && result.quickReplies.length) ? result.quickReplies : partnerQuickReplies(result);
 
@@ -423,16 +424,17 @@
         sender: "ai",
         text: reply,
         quickReplies,
-        listMessage: session.scenario !== "checkout",
+        listMessage: session.scenario !== "post_checkout" && session.scenario !== "checkout",
         media,
       });
 
       renderStaffAlerts(result.staff_alerts);
 
-      // Bug 3: Escape Hatch / Sentiment Override Reaction
+      // Escape Hatch / Sentiment Override / General Manager Service Recovery
       if (result.escape_hatch_triggered === true || (result.requires_human === true && result.intent === "complaint")) {
         const lastUserMsg = session.chatHistory.filter((m) => m.role === "user").slice(-1)[0]?.content || "Guest escalation";
-        triggerEscalationHandoff(`Guest complaint / Manager request: "${lastUserMsg}"`);
+        const role = result.staff_alerts?.[0]?.role || (session.scenario === "post_checkout" || session.scenario === "checkout" ? "General Manager" : "Duty Manager");
+        triggerEscalationHandoff(`Guest complaint / Review recovery: "${lastUserMsg}"`, role);
       }
     } finally {
       window.clearTimeout(timeout);

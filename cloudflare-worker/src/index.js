@@ -7,11 +7,16 @@ import {
   inheritConversationContext,
   isEscalation,
   isOperationalRequest,
+  isPostCheckoutNegative,
+  isPostCheckoutPositive,
+  isPostCheckoutScenario,
   matchingServices,
   OPERATIONAL_REPLIES,
   parseExternalResults,
   parseGuestInput,
   parseModelJson,
+  postCheckoutNegativeReply,
+  postCheckoutPositiveReply,
   shouldSearchExternal,
 } from './concierge.js';
 
@@ -261,7 +266,7 @@ async function airtable(env, table, { method = 'GET', params, fields, recordId =
   const result = await fetch(url, {
     method,
     headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: fields ? JSON.stringify({ fields }) : undefined,
+    body: fields ? JSON.stringify({ fields, typecast: true }) : undefined,
   });
   if (!result.ok) throw new Error(`Airtable ${table} request failed (${result.status}).`);
   return result.json();
@@ -563,6 +568,7 @@ async function enrichSemanticRoute(env, input, history, classification) {
 
 function mapServiceTypeForRequests(type) {
   const t = String(type || '').trim().toLowerCase();
+  if (t === 'general manager' || t === 'general_manager' || t === 'manager') return 'General Manager';
   if (t === 'housekeeping') return 'Housekeeping';
   if (t === 'room service' || t === 'room_service') return 'Room Service';
   if (t === 'concierge' || t === 'escalation') return 'Concierge';
@@ -857,7 +863,7 @@ const DEMO_LANGUAGES = new Map([
   ['spanish', 'es'], ['español', 'es'], ['espanol', 'es'], ['es', 'es'],
   ['japanese', 'ja'], ['日本語', 'ja'], ['ja', 'ja'],
 ]);
-const DEMO_SCENARIOS = new Set(['pre-arrival', 'in-stay', 'checkout']);
+const DEMO_SCENARIOS = new Set(['pre-arrival', 'in-stay', 'checkout', 'post_checkout']);
 
 function parseDemoChatPayload(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid demo chat payload.');
@@ -1102,6 +1108,8 @@ async function persistDiscoveryLead(env, lead) {
 }
 
 function staffRoleFor(serviceType) {
+  const t = String(serviceType || '').trim().toLowerCase();
+  if (t === 'general manager' || t === 'general_manager' || t === 'manager') return 'General Manager';
   return {
     accommodation: 'Reservations',
     restaurant: 'Restaurant reservations',
@@ -1113,7 +1121,7 @@ function staffRoleFor(serviceType) {
     housekeeping: 'Housekeeping team',
     maintenance: 'Maintenance team',
     operational: 'Housekeeping team',
-  }[serviceType] || 'Reception team';
+  }[t] || 'Reception team';
 }
 
 function staffAlertsFromOutcome(outcome) {
@@ -1148,6 +1156,57 @@ function chatResponseFromOutcome(outcome, classification, language, partnerOffer
     media: media || detectMediaBrochure(outcome.reply || '', classification.category),
     staff_alerts: staffAlertsFromOutcome(outcome),
   };
+}
+
+function postCheckoutResponse(input) {
+  if (!isPostCheckoutScenario(input)) return null;
+  const isNeg = isPostCheckoutNegative(input.message);
+  const isPos = isPostCheckoutPositive(input.message);
+
+  if (isNeg) {
+    const reply = postCheckoutNegativeReply(input.guestName, input.language);
+    const outcome = {
+      reply,
+      intent: 'complaint',
+      serviceType: 'General Manager',
+      requiresHuman: true,
+      escapeHatchTriggered: true,
+      requests: [{
+        serviceName: 'Post-Checkout Private Service Recovery',
+        source: 'partner',
+        summary: `URGENT POST-CHECKOUT SERVICE RECOVERY: Guest feedback: "${input.message}"`,
+        isUpsell: false,
+      }],
+      externalOptionNames: [],
+      recommendations: [],
+    };
+    return chatResponseFromOutcome(outcome, { category: 'general_manager', hasEscalation: true }, input.language, [], '', null, input.message);
+  }
+
+  if (isPos) {
+    const reply = postCheckoutPositiveReply(input.guestName, input.language);
+    const outcome = {
+      reply,
+      intent: 'feedback',
+      serviceType: 'other',
+      requiresHuman: false,
+      escapeHatchTriggered: false,
+      requests: [],
+      externalOptionNames: [],
+      recommendations: [],
+    };
+    const linkMedia = {
+      type: 'link',
+      title: 'Hôtel Lumière Paris — Google Reviews',
+      url: 'https://g.page/r/hotel-lumiere-paris/review',
+      thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
+    };
+    const res = chatResponseFromOutcome(outcome, { category: 'review', isPositive: true }, input.language, [], '', linkMedia, input.message);
+    res.quickReplies = ['Leave Google Review', 'Share on TripAdvisor'];
+    return res;
+  }
+
+  return null;
 }
 
 function escalationResponse(input) {
@@ -1193,12 +1252,29 @@ function operationalResponse(input) {
 
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   const input = parseGuestInput(body);
+  const instantPostCheckout = postCheckoutResponse(input);
+  if (instantPostCheckout) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      const isNeg = instantPostCheckout.intent === 'complaint' || instantPostCheckout.escape_hatch_triggered;
+      ctx.waitUntil(persistConversation(env, input, {
+        reply: instantPostCheckout.reply,
+        serviceType: isNeg ? 'General Manager' : 'other',
+        requests: isNeg ? [{
+          serviceName: 'Post-Checkout Private Service Recovery',
+          source: 'partner',
+          summary: `URGENT POST-CHECKOUT SERVICE RECOVERY: Guest feedback: "${input.message}"`,
+          isUpsell: false,
+        }] : [],
+      }).catch(() => undefined));
+    }
+    return instantPostCheckout;
+  }
   const instantEscalation = escalationResponse(input);
   if (instantEscalation) {
     if (!input.testMode || input.testMode === 'write_verified') {
       ctx.waitUntil(persistConversation(env, input, {
         reply: instantEscalation.reply,
-        serviceType: 'escalation',
+        serviceType: 'General Manager',
         requests: [{
           serviceName: 'Duty Manager Escalation',
           source: 'partner',
