@@ -94,14 +94,309 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .quiet-link { color: #fff; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,.38); padding-bottom: 2px; }
 .quiet-link:hover { border-color: #fff; }
 
-.dashboard-grid {
-  height: calc(100dvh - 64px);
-  min-height: 0;
-  padding: 16px;
+.app-screens {
+  position: relative;
+  width: 100%;
+  min-height: calc(100dvh - 64px);
+  overflow-x: hidden;
+}
+
+.app-screen {
+  display: none;
+  opacity: 0;
+  transform: translateY(8px) scale(0.995);
+  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+  will-change: opacity, transform;
+  width: 100%;
+  min-height: calc(100dvh - 64px);
+}
+
+.app-screen.is-active {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* SCREEN 1: Entry / Access Code Gate */
+#screen-entry.is-active {
   display: grid;
-  grid-template-columns: 300px minmax(440px, 1fr) 330px;
+  place-items: center;
+  padding: 32px 20px;
+  min-height: calc(100dvh - 64px);
+  background: radial-gradient(circle at 50% 35%, #22374a 0%, var(--navy) 100%);
+}
+
+.entry-card {
+  width: min(100%, 420px);
+  padding: 34px 28px;
+  border: 1px solid rgba(172, 134, 85, 0.4);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: var(--apple-blur);
+  box-shadow: 0 24px 50px rgba(11, 24, 34, 0.35);
+  text-align: center;
+  animation: message-enter 280ms var(--ease-spring) forwards;
+}
+
+.entry-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 22px;
+}
+
+.entry-mark {
+  width: 52px;
+  height: 52px;
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.entry-body h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  color: var(--navy);
+  letter-spacing: -0.025em;
+}
+
+.entry-body p {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.entry-form {
+  display: grid;
+  gap: 15px;
+  text-align: left;
+}
+
+.entry-footer {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* SCREEN 2: Dashboard Hub */
+#screen-dashboard.is-active {
+  padding: 36px 24px 48px;
+  max-width: 1060px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.hub-header {
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.hub-header h1 {
+  margin: 4px 0 8px;
+  font-size: 28px;
+  color: var(--navy);
+  letter-spacing: -0.025em;
+}
+
+.hub-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.hub-card {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out), border-color 180ms var(--ease-out);
+  cursor: pointer;
+}
+
+.hub-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgba(19, 35, 46, 0.12);
+  border-color: #c4d0cb;
+}
+
+.hub-card:active {
+  transform: scale(0.985);
+}
+
+.hub-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.hub-card-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--champagne-pale);
+  color: #795324;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hub-card-icon {
+  font-size: 20px;
+}
+
+.hub-card h3 {
+  margin: 0 0 8px;
+  color: var(--navy);
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+.hub-card p {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+  flex: 1 0 auto;
+}
+
+.hub-card-action {
+  width: 100%;
+  background: var(--navy);
+  color: #fff;
+  font-size: 13.5px;
+}
+
+.hub-card-action:hover {
+  background: #243a4b;
+}
+
+/* SHARED SCREEN NAV & PANELS */
+.screen-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  overflow: hidden;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: var(--apple-blur);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.button-nav-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 700;
+  transition: transform 100ms var(--ease-out), background 160ms ease;
+}
+
+.button-nav-back:hover {
+  background: #f7f9f8;
+  transform: translateX(-1px);
+}
+
+.button-nav-back:active {
+  transform: scale(0.97);
+}
+
+.button-nav-back svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+
+.screen-nav-pills {
+  display: inline-flex;
+  gap: 6px;
+  background: #e9eeeb;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.nav-pill {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  transition: background 160ms var(--ease-out), color 160ms var(--ease-out), transform 100ms var(--ease-out);
+}
+
+.nav-pill:hover {
+  color: var(--ink);
+}
+
+.nav-pill:active {
+  transform: scale(0.97);
+}
+
+.nav-pill.is-active {
+  background: #fff;
+  color: var(--navy);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.panel-screen-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 20px 24px;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  overflow: auto;
+}
+
+.panel-screen-content .panel {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+.panel-screen-content .conversation-panel {
+  max-width: 540px;
+  height: calc(100dvh - 145px);
+  min-height: 520px;
+}
+
+.panel-screen-content .inbox-panel,
+.panel-screen-content .mission-panel {
+  max-width: 680px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-screen {
+    transform: none !important;
+    transition: opacity 150ms ease;
+  }
 }
 
 .panel {

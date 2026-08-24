@@ -22,143 +22,268 @@
       </div>
     </header>
 
-    <main class="dashboard-grid">
-      <section class="panel mission-panel" aria-labelledby="mission-title">
-        <div class="panel-heading">
-          <p class="eyebrow">Simulation setup</p>
-          <h1 id="mission-title">Mission Control</h1>
-          <p>Set the guest context, then launch a safely isolated demo session.</p>
-        </div>
-
-        <form id="simulationForm" class="simulation-form">
-          <input type="hidden" id="isDemo" name="is_demo" value="true" />
-
-          <div class="field-group">
-            <label for="guestName">Virtual Guest Name</label>
-            <input id="guestName" name="guest_name" type="text" value="Alex Morgan" autocomplete="off" required />
+    <!-- Main Multi-Screen Container -->
+    <main id="appScreens" class="app-screens">
+      
+      <!-- SCREEN 1: Entry / Access Code Gate -->
+      <section id="screen-entry" class="app-screen is-active" data-screen="entry" aria-labelledby="entry-title">
+        <div class="entry-card">
+          <div class="entry-brand">
+            <span class="brand-mark entry-mark" aria-hidden="true">HL</span>
+            <span class="brand-name">Hôtel Lumière</span>
+            <span class="brand-context">Concierge &amp; Operations Simulator</span>
           </div>
-
-          <div class="field-group">
-            <label for="guestLanguage">Language</label>
-            <select id="guestLanguage" name="language">
-              <option value="English">English</option>
-              <option value="French">French</option>
-              <option value="Spanish">Spanish</option>
-              <option value="Japanese">Japanese</option>
-            </select>
-          </div>
-
-          <div class="field-group">
-            <label for="scenario">Scenario</label>
-            <select id="scenario" name="scenario">
-              <option value="pre-arrival">48h Pre-Arrival</option>
-              <option value="in-stay">In-Stay Request</option>
-              <option value="post_checkout">Post-Checkout Review</option>
-            </select>
-          </div>
-
-          <p class="demo-note"><span aria-hidden="true">•</span> Demo records are isolated in Airtable with the Is_Demo flag.</p>
-
-          <button class="button button-primary" type="submit">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-9 11h7l-1 9 10-12h-7z" /></svg>
-            Launch simulation
-          </button>
-        </form>
-      </section>
-
-      <section class="panel conversation-panel" aria-labelledby="conversation-title">
-        <div class="conversation-heading">
-          <div>
-            <p class="eyebrow">Guest channel</p>
-            <h2 id="conversation-title">WhatsApp conversation</h2>
-          </div>
-          <span id="conversationMode" class="mode-pill">AI active</span>
-        </div>
-
-        <div class="chat-shell">
-          <header class="chat-header">
-            <button class="icon-button" type="button" aria-label="Back to conversations" title="Back to conversations">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
-            </button>
-            <span class="avatar avatar-small" aria-hidden="true">HL</span>
-            <div class="chat-identity">
-              <strong>Hôtel Lumière</strong>
-              <span>online</span>
-            </div>
-            <div class="chat-actions" aria-label="Conversation tools">
-              <button class="icon-button" type="button" aria-label="Start video call" title="Start video call">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 10 20 7v10l-5-3M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" /></svg>
+          <div class="entry-body">
+            <h1 id="entry-title">Staff Portal Access</h1>
+            <p>Enter the operations access code to initialize the multi-channel concierge simulation environment.</p>
+            <form id="entryForm" class="entry-form">
+              <div class="field-group">
+                <label for="entryPasscode">Operations Passcode</label>
+                <input id="entryPasscode" type="password" value="1928" placeholder="Enter access code (e.g. 1928)" autocomplete="current-password" required />
+              </div>
+              <button class="button button-primary" type="submit">
+                <span>Unlock Simulator</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
               </button>
-              <button class="icon-button" type="button" aria-label="Open conversation menu" title="Open conversation menu">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" /></svg>
-              </button>
-            </div>
-          </header>
-
-          <div id="chatMessages" class="chat-messages" aria-live="polite" aria-label="Guest conversation"></div>
-
-          <form id="messageForm" class="chat-composer">
-            <button class="icon-button composer-icon" type="button" aria-label="Choose an emoji" title="Choose an emoji">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8M9 9.5h.01M15 9.5h.01" /></svg>
-            </button>
-            <label class="sr-only" for="messageInput">Type a message</label>
-            <input id="messageInput" type="text" placeholder="Type a message" autocomplete="off" />
-            <button id="sendButton" class="send-button" type="submit" aria-label="Send message" title="Send message">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9-4-9Zm4 9h7" /></svg>
-            </button>
-          </form>
+            </form>
+          </div>
+          <div class="entry-footer">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span>Isolated Demo Workspace · Ready</span>
+          </div>
         </div>
       </section>
 
-      <aside class="panel inbox-panel" aria-labelledby="inbox-title">
-        <div class="panel-heading">
-          <p class="eyebrow">Reception</p>
-          <h2 id="inbox-title">Receptionist Inbox</h2>
-          <p>Live guest context and a clear human handoff control.</p>
-        </div>
-
-        <div class="guest-card">
-          <span id="guestInitials" class="avatar" aria-hidden="true">AM</span>
-          <div>
-            <p class="guest-card-label">Current guest</p>
-            <h3 id="inboxGuestName">Alex Morgan</h3>
-            <p id="inboxGuestContext">English · 48h Pre-Arrival</p>
+      <!-- SCREEN 2: Operations Dashboard / Screen Hub -->
+      <section id="screen-dashboard" class="app-screen" data-screen="dashboard" aria-labelledby="dashboard-title">
+        <div class="dashboard-hub">
+          <div class="hub-header">
+            <p class="eyebrow">Operations Hub</p>
+            <h1 id="dashboard-title">Hôtel Lumière Concierge Suite</h1>
+            <p>Select an operational screen to configure guest simulations, monitor live chats, or manage receptionist handoffs.</p>
           </div>
-        </div>
-
-        <section class="handoff-card" aria-labelledby="handoff-title">
-          <div class="handoff-status">
-            <div>
-              <p class="guest-card-label">Conversation owner</p>
-              <h3 id="handoff-title">AI Concierge</h3>
+          <div class="hub-grid">
+            <div class="hub-card" data-nav="mission">
+              <div class="hub-card-top">
+                <span class="hub-card-badge">01 · Setup</span>
+                <span class="hub-card-icon" aria-hidden="true">⚙</span>
+              </div>
+              <h3>Mission Control</h3>
+              <p>Configure virtual guest persona, language preference, and arrival scenarios (48h Pre-Arrival, In-Stay, Post-Checkout).</p>
+              <button class="hub-card-action button" type="button" data-nav="mission">Open Mission Control →</button>
             </div>
-            <span id="handoffStatus" class="owner-status"><span class="status-dot" aria-hidden="true"></span> Active</span>
+
+            <div class="hub-card" data-nav="guest">
+              <div class="hub-card-top">
+                <span class="hub-card-badge">02 · Live Channel</span>
+                <span class="hub-card-icon" aria-hidden="true">💬</span>
+              </div>
+              <h3>Guest WhatsApp Channel</h3>
+              <p>Interactive WhatsApp chat canvas with AI Concierge, rich PDF brochures, restaurant bookings, and quick replies.</p>
+              <button class="hub-card-action button" type="button" data-nav="guest">Open Guest Channel →</button>
+            </div>
+
+            <div class="hub-card" data-nav="inbox">
+              <div class="hub-card-top">
+                <span class="hub-card-badge">03 · Operations</span>
+                <span class="hub-card-icon" aria-hidden="true">🔔</span>
+              </div>
+              <h3>Receptionist Inbox</h3>
+              <p>Monitor live guest context, manage human handoff, receive urgent staff escalation alerts, and inspect transcripts.</p>
+              <button class="hub-card-action button" type="button" data-nav="inbox">Open Reception Inbox →</button>
+            </div>
           </div>
-          <button id="handoffButton" class="button button-handoff" type="button" aria-pressed="false">
-            Take over chat
+        </div>
+      </section>
+
+      <!-- SCREEN 3: Mission Control (Panel Screen) -->
+      <section id="screen-mission" class="app-screen" data-screen="mission" aria-labelledby="mission-title">
+        <nav class="screen-nav" aria-label="Screen navigation">
+          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Dashboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            <span>Dashboard</span>
           </button>
-          <p id="handoffDescription">AI replies are enabled for this simulation.</p>
-        </section>
+          <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
+            <button class="nav-pill is-active" type="button" data-nav="mission" role="tab" aria-selected="true">Mission Control</button>
+            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false">Guest Channel</button>
+            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false">Reception Inbox</button>
+          </div>
+        </nav>
 
-        <section id="staffAlert" class="staff-alert" aria-labelledby="staffAlertTitle" hidden>
-          <div class="staff-alert-heading">
-            <span class="staff-alert-mark" aria-hidden="true">!</span>
-            <div>
-              <p class="guest-card-label">Staff alert</p>
-              <h3 id="staffAlertTitle">Reception follow-up</h3>
+        <div class="panel-screen-content">
+          <section class="panel mission-panel" aria-labelledby="mission-title">
+            <div class="panel-heading">
+              <p class="eyebrow">Simulation setup</p>
+              <h1 id="mission-title">Mission Control</h1>
+              <p>Set the guest context, then launch a safely isolated demo session.</p>
             </div>
-          </div>
-          <p id="staffAlertBody"></p>
-        </section>
 
-        <section class="transcript-section" aria-labelledby="transcript-title">
-          <div class="transcript-heading">
-            <h3 id="transcript-title">Live transcript</h3>
-            <span>Local session</span>
+            <form id="simulationForm" class="simulation-form">
+              <input type="hidden" id="isDemo" name="is_demo" value="true" />
+
+              <div class="field-group">
+                <label for="guestName">Virtual Guest Name</label>
+                <input id="guestName" name="guest_name" type="text" value="Alex Morgan" autocomplete="off" required />
+              </div>
+
+              <div class="field-group">
+                <label for="guestLanguage">Language</label>
+                <select id="guestLanguage" name="language">
+                  <option value="English">English</option>
+                  <option value="French">French</option>
+                  <option value="Spanish">Spanish</option>
+                  <option value="Japanese">Japanese</option>
+                </select>
+              </div>
+
+              <div class="field-group">
+                <label for="scenario">Scenario</label>
+                <select id="scenario" name="scenario">
+                  <option value="pre-arrival">48h Pre-Arrival</option>
+                  <option value="in-stay">In-Stay Request</option>
+                  <option value="post_checkout">Post-Checkout Review</option>
+                </select>
+              </div>
+
+              <p class="demo-note"><span aria-hidden="true">•</span> Demo records are isolated in Airtable with the Is_Demo flag.</p>
+
+              <button class="button button-primary" type="submit">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-9 11h7l-1 9 10-12h-7z" /></svg>
+                Launch simulation &amp; Open Chat
+              </button>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <!-- SCREEN 4: Guest Channel (Panel Screen) -->
+      <section id="screen-guest" class="app-screen" data-screen="guest" aria-labelledby="conversation-title">
+        <nav class="screen-nav" aria-label="Screen navigation">
+          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Dashboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            <span>Dashboard</span>
+          </button>
+          <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
+            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false">Mission Control</button>
+            <button class="nav-pill is-active" type="button" data-nav="guest" role="tab" aria-selected="true">Guest Channel</button>
+            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false">Reception Inbox</button>
           </div>
-          <ol id="transcript" class="transcript" aria-live="polite" aria-label="Live session transcript"></ol>
-        </section>
-      </aside>
+        </nav>
+
+        <div class="panel-screen-content">
+          <section class="panel conversation-panel" aria-labelledby="conversation-title">
+            <div class="conversation-heading">
+              <div>
+                <p class="eyebrow">Guest channel</p>
+                <h2 id="conversation-title">WhatsApp conversation</h2>
+              </div>
+              <span id="conversationMode" class="mode-pill">AI active</span>
+            </div>
+
+            <div class="chat-shell">
+              <header class="chat-header">
+                <button class="icon-button" type="button" data-nav="dashboard" aria-label="Back to dashboard" title="Back to dashboard">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                </button>
+                <span class="avatar avatar-small" aria-hidden="true">HL</span>
+                <div class="chat-identity">
+                  <strong>Hôtel Lumière</strong>
+                  <span>online</span>
+                </div>
+                <div class="chat-actions" aria-label="Conversation tools">
+                  <button class="icon-button" type="button" aria-label="Start video call" title="Start video call">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 10 20 7v10l-5-3M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" /></svg>
+                  </button>
+                  <button class="icon-button" type="button" aria-label="Open conversation menu" title="Open conversation menu">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" /></svg>
+                  </button>
+                </div>
+              </header>
+
+              <div id="chatMessages" class="chat-messages" aria-live="polite" aria-label="Guest conversation"></div>
+
+              <form id="messageForm" class="chat-composer">
+                <button class="icon-button composer-icon" type="button" aria-label="Choose an emoji" title="Choose an emoji">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8M9 9.5h.01M15 9.5h.01" /></svg>
+                </button>
+                <label class="sr-only" for="messageInput">Type a message</label>
+                <input id="messageInput" type="text" placeholder="Type a message" autocomplete="off" />
+                <button id="sendButton" class="send-button" type="submit" aria-label="Send message" title="Send message">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9-4-9Zm4 9h7" /></svg>
+                </button>
+              </form>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- SCREEN 5: Receptionist Inbox (Panel Screen) -->
+      <section id="screen-inbox" class="app-screen" data-screen="inbox" aria-labelledby="inbox-title">
+        <nav class="screen-nav" aria-label="Screen navigation">
+          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Dashboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            <span>Dashboard</span>
+          </button>
+          <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
+            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false">Mission Control</button>
+            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false">Guest Channel</button>
+            <button class="nav-pill is-active" type="button" data-nav="inbox" role="tab" aria-selected="true">Reception Inbox</button>
+          </div>
+        </nav>
+
+        <div class="panel-screen-content">
+          <aside class="panel inbox-panel" aria-labelledby="inbox-title">
+            <div class="panel-heading">
+              <p class="eyebrow">Reception</p>
+              <h2 id="inbox-title">Receptionist Inbox</h2>
+              <p>Live guest context and a clear human handoff control.</p>
+            </div>
+
+            <div class="guest-card">
+              <span id="guestInitials" class="avatar" aria-hidden="true">AM</span>
+              <div>
+                <p class="guest-card-label">Current guest</p>
+                <h3 id="inboxGuestName">Alex Morgan</h3>
+                <p id="inboxGuestContext">English · 48h Pre-Arrival</p>
+              </div>
+            </div>
+
+            <section class="handoff-card" aria-labelledby="handoff-title">
+              <div class="handoff-status">
+                <div>
+                  <p class="guest-card-label">Conversation owner</p>
+                  <h3 id="handoff-title">AI Concierge</h3>
+                </div>
+                <span id="handoffStatus" class="owner-status"><span class="status-dot" aria-hidden="true"></span> Active</span>
+              </div>
+              <button id="handoffButton" class="button button-handoff" type="button" aria-pressed="false">
+                Take over chat
+              </button>
+              <p id="handoffDescription">AI replies are enabled for this simulation.</p>
+            </section>
+
+            <section id="staffAlert" class="staff-alert" aria-labelledby="staffAlertTitle" hidden>
+              <div class="staff-alert-heading">
+                <span class="staff-alert-mark" aria-hidden="true">!</span>
+                <div>
+                  <p class="guest-card-label">Staff alert</p>
+                  <h3 id="staffAlertTitle">Reception follow-up</h3>
+                </div>
+              </div>
+              <p id="staffAlertBody"></p>
+            </section>
+
+            <section class="transcript-section" aria-labelledby="transcript-title">
+              <div class="transcript-heading">
+                <h3 id="transcript-title">Live transcript</h3>
+                <span>Local session</span>
+              </div>
+              <ol id="transcript" class="transcript" aria-live="polite" aria-label="Live session transcript"></ol>
+            </section>
+          </aside>
+        </div>
+      </section>
+
     </main>
 
     <div id="sheetBackdrop" class="sheet-backdrop" hidden></div>

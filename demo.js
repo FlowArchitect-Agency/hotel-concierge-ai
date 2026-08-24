@@ -647,9 +647,75 @@
     addTranscript("System", humanHandoff ? "Human receptionist took over the conversation. AI paused. Composer is now replying as Reception." : "AI Concierge resumed.", humanHandoff ? "human" : "ai");
   }
 
+  // Multi-Screen Navigation Router (Entry, Dashboard Hub, Mission, Guest, Inbox)
+  let currentScreen = "entry";
+
+  function showScreen(screenName, updateHash = true) {
+    const targetScreen = document.querySelector(`.app-screen[data-screen="${screenName}"]`);
+    if (!targetScreen) return;
+
+    currentScreen = screenName;
+
+    document.querySelectorAll(".app-screen").forEach((screen) => {
+      if (screen.dataset.screen === screenName) {
+        screen.classList.add("is-active");
+      } else {
+        screen.classList.remove("is-active");
+      }
+    });
+
+    // Update nav pills active state across screens
+    document.querySelectorAll(".nav-pill").forEach((pill) => {
+      const isActive = pill.dataset.nav === screenName;
+      pill.classList.toggle("is-active", isActive);
+      pill.setAttribute("aria-selected", String(isActive));
+    });
+
+    if (updateHash) {
+      window.location.hash = screenName === "entry" ? "" : `#${screenName}`;
+    }
+
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
+  function initScreenRouter() {
+    // Cosmetic Entry Form Passcode Submit
+    const entryForm = document.querySelector("#entryForm");
+    if (entryForm) {
+      entryForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        showToast("Access verified. Initializing operations suite...");
+        showScreen("dashboard");
+      });
+    }
+
+    // Navigation buttons with [data-nav]
+    document.addEventListener("click", (event) => {
+      const navTarget = event.target.closest("[data-nav]");
+      if (!navTarget) return;
+      const targetScreen = navTarget.dataset.nav;
+      if (targetScreen) {
+        event.preventDefault();
+        showScreen(targetScreen);
+      }
+    });
+
+    // Hash change handler for direct links and browser back/forward
+    const handleHash = () => {
+      const hash = (window.location.hash || "").replace("#", "").trim();
+      if (hash && document.querySelector(`.app-screen[data-screen="${hash}"]`)) {
+        showScreen(hash, false);
+      }
+    };
+    window.addEventListener("hashchange", handleHash);
+    if (window.location.hash) handleHash();
+  }
+
   dom.form.addEventListener("submit", (event) => {
     event.preventDefault();
     launchSimulation();
+    showToast("Simulation initialized. Switching to Guest Channel...");
+    showScreen("guest");
   });
 
   dom.messageForm.addEventListener("submit", async (event) => {
@@ -701,5 +767,9 @@
   });
 
   initSheetGestures();
+  initScreenRouter();
   launchSimulation();
+  if (!window.location.hash) {
+    showScreen("entry", false);
+  }
 })();
