@@ -863,6 +863,9 @@ function categoryPartnerServices(services, category) {
 
 function hasBookingIntent(message) {
   const text = normalized(message);
+  if (/\b(what time|when|did i|did we|which time|what day|how much|remind me)\b/.test(text)) {
+    return false;
+  }
   return /\b(book|reserve|confirm|yes)\b/.test(text);
 }
 
