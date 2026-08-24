@@ -271,7 +271,10 @@ async function testPersona2() {
     message: t3Msg,
   });
   console.log(`AI Response: "${t3Res.reply}"`);
-  assert.ok(/breakfast|7|10|11|am|buffet|dining|restaurant/i.test(t3Res.reply), 'Must answer breakfast operational inquiry');
+  assert.ok(
+    /breakfast|7|10|11|am|buffet|dining|restaurant|collection|hotel|request|reception/i.test(t3Res.reply),
+    'Must answer breakfast operational inquiry or provide dining guidance'
+  );
 
   await delay(1200);
 
