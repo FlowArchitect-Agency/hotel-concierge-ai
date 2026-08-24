@@ -1199,6 +1199,7 @@ function postCheckoutResponse(input) {
       type: 'link',
       title: 'Hôtel Lumière Paris — Google Reviews',
       url: 'https://g.page/r/hotel-lumiere-paris/review',
+      description: '★★★★★ 4.9 (1,240+ reviews) · Google Maps',
       thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
     };
     const res = chatResponseFromOutcome(outcome, { category: 'review', isPositive: true }, input.language, [], '', linkMedia, input.message);

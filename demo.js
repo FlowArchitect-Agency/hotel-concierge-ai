@@ -203,15 +203,71 @@
           addTranscript("Document Download", `Downloaded: ${media.title || fileName}`, "ai");
         });
         message.append(docCard);
-      } else if (media.type === "image" || media.url || media.thumbnail) {
-        const imgCard = document.createElement("div");
-        imgCard.className = "message-media-image";
-        const img = document.createElement("img");
-        img.src = media.url || media.thumbnail;
-        img.alt = media.title || "Attached Media";
-        img.loading = "lazy";
-        imgCard.append(img);
-        message.append(imgCard);
+      } else if (media.type === "link") {
+        // Render WhatsApp Rich Link Preview Card
+        const linkCard = document.createElement("a");
+        linkCard.className = "message-media-link";
+        linkCard.href = media.url || "#";
+        linkCard.target = "_blank";
+        linkCard.rel = "noopener noreferrer";
+        linkCard.setAttribute("role", "group");
+        linkCard.setAttribute("aria-label", `Open ${media.title || "Link"}`);
+
+        const thumbUrl = media.thumbnail || media.image || media.imageUrl;
+        if (thumbUrl) {
+          const thumbWrap = document.createElement("div");
+          thumbWrap.className = "media-link-thumb";
+          const thumbImg = document.createElement("img");
+          thumbImg.src = thumbUrl;
+          thumbImg.alt = media.title || "Link Preview";
+          thumbImg.loading = "lazy";
+          thumbImg.onerror = () => { thumbWrap.remove(); };
+          thumbWrap.append(thumbImg);
+          linkCard.append(thumbWrap);
+        }
+
+        const linkInfo = document.createElement("div");
+        linkInfo.className = "media-link-info";
+
+        const domainSpan = document.createElement("span");
+        domainSpan.className = "media-link-domain";
+        try {
+          domainSpan.textContent = media.url && !media.url.startsWith("#") ? new URL(media.url).hostname.replace(/^www\./, "") : "g.page";
+        } catch {
+          domainSpan.textContent = "g.page";
+        }
+
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "media-link-title";
+        titleSpan.textContent = media.title || "Hôtel Lumière Paris — Google Reviews";
+
+        const descSpan = document.createElement("span");
+        descSpan.className = "media-link-desc";
+        descSpan.textContent = media.description || "★★★★★ 4.9 · Share your stay experience";
+
+        linkInfo.append(domainSpan, titleSpan, descSpan);
+        linkCard.append(linkInfo);
+
+        linkCard.addEventListener("click", (e) => {
+          e.preventDefault();
+          showToast("Demo Mode: Google Review Portal simulated.");
+          addTranscript("Review Link Click", `Opened: ${media.title || "Google Reviews"}`, "ai");
+        });
+
+        message.append(linkCard);
+      } else if (media.type === "image" || media.image_url || media.imageUrl || (media.thumbnail && !media.url) || (media.url && /\.(jpe?g|png|webp|gif|svg)(\?.*)?$/i.test(media.url))) {
+        const imgSrc = media.image_url || media.imageUrl || media.thumbnail || media.url;
+        if (imgSrc) {
+          const imgCard = document.createElement("div");
+          imgCard.className = "message-media-image";
+          const img = document.createElement("img");
+          img.src = imgSrc;
+          img.alt = media.title || "Attached Media";
+          img.loading = "lazy";
+          img.onerror = () => { imgCard.remove(); };
+          imgCard.append(img);
+          message.append(imgCard);
+        }
       }
     }
 
@@ -578,7 +634,16 @@
     }
     if (button.dataset.action === "quick-reply") {
       disableMessageActions(button);
-      sendGuestMessage(button.textContent || "");
+      const replyText = (button.textContent || "").trim();
+      if (/leave google review/i.test(replyText)) {
+        showToast("Demo Mode: Google Review Portal simulated (5 Stars).");
+        addTranscript("Review Portal Action", "Guest opened Google Review Portal (5 Stars).", "guest");
+      } else if (/share on tripadvisor/i.test(replyText)) {
+        showToast("Demo Mode: TripAdvisor Review Portal simulated.");
+        addTranscript("Review Portal Action", "Guest opened TripAdvisor Review Portal.", "guest");
+      } else {
+        sendGuestMessage(replyText);
+      }
     }
   });
 
