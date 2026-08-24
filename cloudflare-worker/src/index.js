@@ -863,7 +863,7 @@ const DEMO_LANGUAGES = new Map([
   ['spanish', 'es'], ['español', 'es'], ['espanol', 'es'], ['es', 'es'],
   ['japanese', 'ja'], ['日本語', 'ja'], ['ja', 'ja'],
 ]);
-const DEMO_SCENARIOS = new Set(['pre-arrival', 'in-stay', 'checkout', 'post_checkout']);
+const DEMO_SCENARIOS = new Set(['pre-arrival', 'pre_arrival', 'in-stay', 'in_stay', 'checkout', 'post-checkout', 'post_checkout']);
 
 function parseDemoChatPayload(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid demo chat payload.');
@@ -874,8 +874,9 @@ function parseDemoChatPayload(body) {
   const language = DEMO_LANGUAGES.get(languageInput);
   if (!language) throw new Error('Invalid demo language.');
 
-  const scenario = compactText(body.scenario, 'Scenario', { required: true, max: 48 });
-  if (!DEMO_SCENARIOS.has(scenario)) throw new Error('Invalid demo scenario.');
+  const rawScenario = compactText(body.scenario, 'Scenario', { required: true, max: 48 });
+  if (!DEMO_SCENARIOS.has(rawScenario)) throw new Error('Invalid demo scenario.');
+  const scenario = rawScenario.toLowerCase();
 
   if (!Array.isArray(body.chatHistory) || body.chatHistory.length < 1 || body.chatHistory.length > 24) {
     throw new Error('chatHistory must contain between 1 and 24 messages.');
@@ -1393,7 +1394,14 @@ async function handleDemoChat(request, env, ctx) {
   if (!demoAllowedOrigin(request, env)) return demoResponse({ error: 'Origin is not allowed.' }, 403, request, env);
   const input = parseDemoChatPayload(await request.json());
   const result = await resolveChat(input, env, ctx);
-  return demoResponse({ ...result, staff_alerts: result.staff_alerts || [], demo: true, is_demo: true }, 200, request, env);
+  return demoResponse({
+    ...result,
+    requires_human: Boolean(result?.requires_human || result?.requiresHuman || result?.escape_hatch_triggered),
+    escape_hatch_triggered: Boolean(result?.escape_hatch_triggered || result?.escapeHatchTriggered),
+    staff_alerts: result?.staff_alerts || [],
+    demo: true,
+    is_demo: true,
+  }, 200, request, env);
 }
 
 async function handleBookingEnquiry(request, env) {

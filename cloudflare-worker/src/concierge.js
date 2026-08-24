@@ -169,10 +169,13 @@ const ESCALATION_TERMS = [
   'angry', 'furious', 'upset', 'terrible', 'horrible', 'awful', 'unacceptable', 'disaster', 'disgusted',
   'complaint', 'complain', 'complaining', 'refund', 'dirty', 'broken', 'scam', 'ridiculous', 'worst',
   'incompetent', 'unhappy', 'frustrated', 'frustrating', 'lawyer', 'sue', 'police', 'emergency',
+  'noise', 'noisy', 'loud', 'drilling', 'disturbance', 'cannot sleep', 'cant sleep', 'cant work', 'cannot work',
   'directeur', 'directrice', 'responsable', 'direction', 'receptionniste',
   'en colere', 'furieux', 'furieuse', 'inadmissible', 'catastrophe', 'scandaleux', 'scandale',
   'plainte', 'reclamation', 'remboursement', 'sale', 'casse', 'decu', 'degoute', 'pire hotel',
-  'gerente', 'enojado', 'enojada', 'inaceptable', 'queja', 'reclamacion', 'reembolso', 'sucio', 'roto'
+  'bruit', 'bruyant', 'tapage',
+  'gerente', 'enojado', 'enojada', 'inaceptable', 'queja', 'reclamacion', 'reembolso', 'sucio', 'roto',
+  'ruido', 'ruidosa', 'no puedo dormir'
 ];
 
 export function isEscalation(message) {
@@ -240,8 +243,8 @@ export function detectMediaBrochure(message, category = null) {
 }
 
 const OPERATIONAL_TERMS = [
-  'towel', 'towels', 'serviette', 'serviettes', 'toalla', 'toallas', 'handtuch', 'asciugamano', 'タオル',
-  'pillow', 'pillows', 'oreiller', 'oreillers', 'almohada', 'almohadas', 'kissen', 'cuscino', '枕',
+  'towel', 'towels', 'towl', 'towls', 'serviette', 'serviettes', 'toalla', 'toallas', 'handtuch', 'asciugamano', 'タオル',
+  'pillow', 'pillows', 'pilow', 'pilows', 'oreiller', 'oreillers', 'almohada', 'almohadas', 'kissen', 'cuscino', '枕',
   'blanket', 'blankets', 'duvet', 'couverture', 'couvertures', 'manta', 'mantas', 'decke', 'coperta', '毛布',
   'bedsheet', 'bedsheets', 'linen', 'linens', 'drap', 'draps', 'sabana', 'sabanas', 'シーツ',
   'water', 'bottled water', 'bottle of water', 'eau', 'bouteille d\'eau', 'agua', 'botella de agua', 'wasser', 'acqua', '水', 'お水',
@@ -253,8 +256,8 @@ const OPERATIONAL_TERMS = [
   'hair dryer', 'hairdryer', 'seche-cheveux', 'secador', 'ドライヤー',
   'trash', 'bin', 'poubelle', 'basura', 'ゴミ',
   'clean my room', 'clean the room', 'housekeeping', 'make up the room', 'nettoyer la chambre', 'menage', 'limpiar la habitacion', '清掃',
-  'air conditioning', 'ac', 'heating', 'heater', 'climatisation', 'clim', 'chauffage', 'aire acondicionado', 'calefaccion', 'エアコン',
-  'leak', 'leaking', 'clogged', 'light bulb', 'bulb', 'tv remote', 'key card', 'door lock', 'safe',
+  'air conditioning', 'ac', 'aircon', 'a/c', 'heating', 'heater', 'climatisation', 'clim', 'chauffage', 'aire acondicionado', 'calefaccion', 'エアコン',
+  'leak', 'leaking', 'clogged', 'light bulb', 'bulb', 'tv remote', 'key card', 'door lock', 'safe', 'plumbing', 'maintenance',
   'en panne', 'ne marche pas', 'fuite', 'bouche', 'ampoule', 'telecommande', 'carte cle', 'serrure',
   'no funciona', 'fuga', 'atascado', 'bombilla', 'mando', 'tarjeta', 'cerradura',
   'luggage', 'bags', 'baggage', 'valise', 'valises', 'bagages', 'maleta', 'maletas', '荷物'
@@ -262,6 +265,8 @@ const OPERATIONAL_TERMS = [
 
 export function isOperationalRequest(message) {
   const text = normalized(message);
+  const isTransport = /\b(transfer|shuttle|airport|aeroport|cdg|orly|flight|vol|landed|atterri|taxi|uber|mercedes|chauffeur)\b/i.test(text);
+  if (isTransport) return false;
   return OPERATIONAL_TERMS.some((term) => hasTerm(text, term));
 }
 
@@ -304,8 +309,8 @@ export function isPostCheckoutPositive(message) {
 }
 
 export function isPostCheckoutScenario(input) {
-  const scenario = String(input?.scenario || '').trim().toLowerCase();
-  return scenario === 'post_checkout' || scenario === 'checkout';
+  const scenario = String(input?.scenario || '').trim().toLowerCase().replace(/_/g, '-');
+  return scenario === 'post-checkout' || scenario === 'checkout';
 }
 
 export function postCheckoutPositiveReply(guestName, language) {
@@ -644,7 +649,7 @@ function conciseReply(value) {
 }
 
 export function enforceContract(model, { language, classification, matching, excluded, externalOptions }) {
-  const isAngry = classification?.hasEscalation || isEscalation(model?.reply);
+  const isAngry = Boolean(classification?.hasEscalation);
   if (isAngry) {
     return {
       reply: ESCALATION_REPLIES[language] ?? ESCALATION_REPLIES.en,
