@@ -16,6 +16,7 @@ import {
   parseGuestInput,
   parseModelJson,
   normalizeServiceType,
+  normalized,
   postCheckoutNegativeReply,
   postCheckoutPositiveReply,
   shouldSearchExternal,
@@ -368,6 +369,24 @@ async function fetchHistory(env, userId) {
   })).filter((item) => item.message).reverse();
 }
 
+async function fetchRequestsForUser(env, userId) {
+  const safeUser = userId.replace(/'/g, "\\'");
+  const records = [];
+  let offset = '';
+  do {
+    const payload = await airtable(env, 'Requests', {
+      params: {
+        filterByFormula: `{UserID}='${safeUser}'`,
+        pageSize: 100,
+        ...(offset ? { offset } : {}),
+      },
+    });
+    records.push(...(payload.records || []));
+    offset = String(payload.offset || '');
+  } while (offset);
+  return records;
+}
+
 function demoFlagFields(input) {
   return (input && (input.isDemo || input.is_demo || input.demo)) ? { Is_Demo: true } : {};
 }
@@ -629,6 +648,33 @@ function mapServiceTypeForRequests(type) {
   return normalizeServiceType(type);
 }
 
+function cancellationTarget(message) {
+  const text = normalized(message);
+  if (/\b(taxi|transfer|chauffeur|shuttle|airport|car)\b/.test(text)) return 'Transport';
+  if (/\b(spa|wellness|massage|treatment|hammam|sauna)\b/.test(text)) return 'Spa & Wellness';
+  if (/\b(restaurant|dining|dinner|lunch|breakfast|food)\b/.test(text)) return 'Dining';
+  return null;
+}
+
+function isCancellationMessage(message) {
+  return /\b(cancel|cancellation|cancelled|canceled|call off|do not want|don't want|no longer need)\b/i.test(String(message || ''));
+}
+
+async function cancelRequests(env, userId, target) {
+  if (!target) return { cancelled: 0, alreadyCancelled: 0 };
+  const matching = (await fetchRequestsForUser(env, userId)).filter((record) => (
+    mapServiceTypeForRequests(record?.fields?.ServiceType) === target
+  ));
+  const alreadyCancelled = matching.filter((record) => /^(cancelled|canceled)$/i.test(String(record?.fields?.Status || ''))).length;
+  const open = matching.filter((record) => !/^(cancelled|canceled)$/i.test(String(record?.fields?.Status || '')));
+  await Promise.all(open.map((record) => airtable(env, 'Requests', {
+    method: 'PATCH',
+    recordId: record.id,
+    fields: { Status: 'cancelled' },
+  })));
+  return { cancelled: open.length, alreadyCancelled };
+}
+
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
   const guestName = String(input?.guestName || input?.guest_name || input?.name || '').trim() || (input?.isDemo || input?.is_demo ? 'Demo Guest' : 'Guest');
@@ -675,7 +721,7 @@ async function persistConversation(env, input, outcome) {
       Source: item.source === 'external' ? 'external' : 'partner',
       ServiceRef: item.serviceName || '',
       Status: 'new',
-      EstValueEUR: item.estValueEur ?? undefined,
+      Revenue: item.estValueEur ?? undefined,
       IsUpsell: Boolean(item.isUpsell),
       Language: input.language,
       HandoverAt: time,
@@ -813,6 +859,79 @@ function guestInsistsOnExternal(message) {
 
 function categoryPartnerServices(services, category) {
   return services.filter((service) => service.isPartner && String(service.category || '').toLowerCase() === category);
+}
+
+function hasBookingIntent(message) {
+  const text = normalized(message);
+  return /\b(book|reserve|confirm|yes)\b/.test(text);
+}
+
+function preferredBookingService(services, category, message) {
+  const candidates = categoryPartnerServices(services, category);
+  if (!candidates.length) return null;
+  const text = normalized(message);
+  const matching = candidates.find((service) => {
+    const name = normalized(service.name);
+    return (text.includes('couples') && name.includes('couples'))
+      || (text.includes('massage') && name.includes('massage'))
+      || (text.includes('airport') && name.includes('airport'))
+      || (text.includes('cdg') && name.includes('cdg'));
+  });
+  return matching || candidates[0];
+}
+
+function partnerBookingOutcome(input, classification, services) {
+  if (!hasBookingIntent(input.message)) return null;
+  const category = String(classification.category || '').toLowerCase();
+  if (!['spa', 'restaurant', 'transport', 'tour', 'experience'].includes(category)) return null;
+  const service = preferredBookingService(services, category, input.message);
+  if (!service) return null;
+  const partySize = input.message.match(/\b(\d{1,2})\s*(?:people|guests?|persons?)\b/i)?.[1];
+  return {
+    reply: `I have recorded your request for ${service.name}${partySize ? ` for ${partySize} guests` : ''}. Our concierge team will verify availability and confirm the details with you shortly.`,
+    intent: 'service_request',
+    serviceType: category,
+    requiresHuman: true,
+    escapeHatchTriggered: false,
+    requests: [{
+      serviceName: service.name,
+      source: 'partner',
+      summary: `Booking request for ${service.name}${partySize ? ` for ${partySize} guests` : ''}. Guest message: "${input.message}"`,
+      estValueEur: Number.isFinite(Number(service.price)) ? Number(service.price) : null,
+      isUpsell: true,
+    }],
+    externalOptionNames: [],
+    recommendations: [],
+  };
+}
+
+async function cancellationOutcome(env, input, classification, services) {
+  if (!isCancellationMessage(input.message)) return null;
+  const target = cancellationTarget(input.message);
+  if (!target) return null;
+
+  const writesAllowed = !input.testMode || input.testMode === 'write_verified';
+  const state = writesAllowed
+    ? await cancelRequests(env, input.userId, target)
+    : { cancelled: 0, alreadyCancelled: 0 };
+  const targetLabel = target === 'Transport' ? 'taxi transfer' : target.toLowerCase();
+  const cancellationReply = state.cancelled
+    ? `Your ${targetLabel} request has been cancelled.`
+    : state.alreadyCancelled
+      ? `Yes — your ${targetLabel} request remains cancelled.`
+      : `I could not find an active ${targetLabel} request to cancel.`;
+  const newBooking = partnerBookingOutcome(input, classification, services);
+
+  return {
+    reply: newBooking ? `${cancellationReply} ${newBooking.reply}` : cancellationReply,
+    intent: newBooking?.intent || 'service_request',
+    serviceType: newBooking?.serviceType || target,
+    requiresHuman: Boolean(newBooking?.requiresHuman),
+    escapeHatchTriggered: false,
+    requests: newBooking?.requests || [],
+    externalOptionNames: [],
+    recommendations: [],
+  };
 }
 
 function hotelCatalogueResponse(input, classification, services) {
@@ -1414,6 +1533,20 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   requireSecrets(env);
   const serviceRecords = await fetchServices(env, { bypassCache: Boolean(input.testMode) });
   const initialServiceSet = matchingServices(serviceRecords, classification);
+  const instantCancellation = await cancellationOutcome(env, input, classification, initialServiceSet.all);
+  if (instantCancellation) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, instantCancellation).catch(() => undefined));
+    }
+    return chatResponseFromOutcome(instantCancellation, classification, input.language, [], '', null, input.message);
+  }
+  const instantDirectBooking = partnerBookingOutcome(input, classification, initialServiceSet.all);
+  if (instantDirectBooking) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, instantDirectBooking).catch(() => undefined));
+    }
+    return chatResponseFromOutcome(instantDirectBooking, classification, input.language);
+  }
   const instantHotelFirst = hotelFirstResponse(input, classification, initialServiceSet.all);
   if (instantHotelFirst) {
     if (!input.testMode || input.testMode === 'write_verified') {
@@ -1447,6 +1580,13 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       }
       return catalogue;
     }
+  }
+  const directBooking = partnerBookingOutcome(input, classification, serviceSet.all);
+  if (directBooking) {
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, directBooking).catch(() => undefined));
+    }
+    return chatResponseFromOutcome(directBooking, classification, input.language);
   }
   const partnerMatches = serviceSet.matching.filter((service) => service.isPartner);
   const promptServices = classification.route === 'partner_catalog'

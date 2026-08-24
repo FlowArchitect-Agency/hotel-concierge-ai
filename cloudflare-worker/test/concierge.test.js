@@ -62,6 +62,15 @@ test('Natural plural room and hotel-reservation language is routed to the hotel 
   assert.equal(classifyRequest('I want to reserve in your hotel.').category, 'accommodation');
 });
 
+test('A short booking confirmation retains a transport category from the same session', () => {
+  const continued = inheritConversationContext(
+    classifyRequest('Yes, book it for 2 people.'),
+    [{ role: 'user', message: 'Can we get an airport transfer from CDG?' }],
+    'Yes, book it for 2 people.',
+  );
+  assert.equal(continued.category, 'transport');
+});
+
 test('Language switching recognises Spanish requests, including the common espangol spelling', () => {
   assert.equal(inferLanguage('habla espangol ?'), 'es');
   assert.equal(inferLanguage('can you answer in Spanish?'), 'es');
@@ -450,7 +459,7 @@ test('Booking enquiry writes a contactable guest request to Airtable before ackn
   try {
     const response = await worker.fetch(new Request('https://worker.example/api/booking-enquiry', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io', 'CF-Connecting-IP': '203.0.113.89' },
       body: JSON.stringify({
         guestName: 'Ada Guest',
         email: 'ada@example.com',
@@ -609,7 +618,7 @@ test('A common curated Italian request returns cards without model or web-search
   }
 });
 
-test('A reservation for the hotel restaurant stays within the preferred collection', async () => {
+test('A confirmed restaurant reservation becomes a preferred-collection request', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url) => {
@@ -627,13 +636,48 @@ test('A reservation for the hotel restaurant stays within the preferred collecti
     }, { waitUntil() {} });
     const body = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(body.intent, 'partner_request');
+    assert.equal(body.intent, 'service_request');
     assert.equal(body.recommendations.length, 0);
-    assert.equal(body.partner_offers.length, 1);
-    assert.equal(body.partner_offers[0].name, 'Le Jardin \u2014 Chef\u2019s Table');
-    assert.equal(body.partner_offers[0].source, 'partner');
-    assert.match(body.reply, /preferred collection/i);
+    assert.equal(body.partner_offers.length, 0);
+    assert.match(body.reply, /recorded your request for Le Jardin/i);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('A direct partner booking persists its value in Airtable Revenue', async () => {
+  const originalFetch = globalThis.fetch;
+  const scheduled = [];
+  let requestFields;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('/Services')) return Response.json({ records: [{
+      fields: { Name: 'Lumière Spa — Couples Massage', Category: 'spa', PriceEUR: 220, Active: true, IsPartner: true },
+    }] });
+    if (target.includes('/Requests') && options.method === 'POST') {
+      requestFields = JSON.parse(options.body).fields;
+      return Response.json({ id: 'rec_revenue_request', fields: requestFields });
+    }
+    if (target.includes('api.airtable.com')) return Response.json({ records: [], id: 'rec_fixture' });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        message: 'Please book a couples massage for 2 people.', sessionId: 'qa_booking_revenue', guestName: 'Revenue Guest', isDemo: true, testMode: 'write_verified',
+      }),
+    }), {
+      GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
+    }, { waitUntil(promise) { scheduled.push(promise); } });
+    await Promise.all(scheduled);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.intent, 'service_request');
+    assert.equal(requestFields?.ServiceType, 'Spa & Wellness');
+    assert.equal(requestFields?.Revenue, 220);
+    assert.equal(Object.hasOwn(requestFields, 'EstValueEUR'), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1066,7 +1110,7 @@ test('Sentiment Override: Frustrated guest or manager request immediately trigge
   try {
     const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io', 'CF-Connecting-IP': '203.0.113.90' },
       body: JSON.stringify({
         guestName: 'Angry Guest',
         language: 'English',

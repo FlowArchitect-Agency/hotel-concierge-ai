@@ -401,7 +401,9 @@ export function inheritConversationContext(classification, history, latestMessag
   const previousGuestMessage = [...(history || [])].reverse().find((item) => item?.role === 'user' && item?.message);
   if (!previousGuestMessage) return classification;
   const prior = classifyRequest(previousGuestMessage.message);
-  if (!prior.cuisine && !['itinerary', 'accommodation'].includes(prior.category)) return classification;
+  // Short confirmations such as "yes, book it" must retain any recently
+  // established service category, including transport and wellness.
+  if (!prior.category && !prior.cuisine) return classification;
   return {
     ...classification,
     category: classification.category || prior.category,
@@ -761,6 +763,7 @@ Hard rules:
   * POSITIVE FEEDBACK (e.g. loved it, great stay, 5 stars, wonderful): Thank the guest warmly and provide the simulated Google Review link (https://g.page/r/hotel-lumiere-paris/review). Do NOT create a complaint ticket.
   * NEGATIVE FEEDBACK / COMPLAINTS (e.g. noisy room, poor service, disappointment): Apologize profusely and assure the guest that the General Manager is reviewing their feedback privately. You MUST NOT provide any public review link. Create an operational staff request routed to the General Manager for private service recovery. Set requires_human: true.
 - OPERATIONAL & ROOM ITEM REQUESTS: If a guest asks for a physical item to be delivered to their room (e.g., towels, water, pillows, blankets, toiletries, amenities) or reports a maintenance/housekeeping issue, you MUST acknowledge the delivery to their room and trigger an operational request for staff. Do NOT offer hotel partner services, catalog items, or attempt to upsell for operational requests.
+- CANCELLATIONS: When the guest cancels a previously requested service, acknowledge the cancellation clearly. Do not continue to offer or create the cancelled service; if another request is present in the same message, handle that new request separately.
 - SENTIMENT OVERRIDE: If the guest expresses frustration, anger, complaint, or requests a manager/human/reception, apologize sincerely and empathetically. NEVER offer upsells, services, or room upgrades. Set requires_human: true.
 - Use only the facts, partner services, and external search results below.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
