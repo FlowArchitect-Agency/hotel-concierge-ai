@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Hôtel Lumière Executive Management Dashboard — Real-time AI Concierge operations, revenue metrics, and reputation intelligence." />
+    <title>Hôtel Lumière | Executive Analytics Dashboard</title>
+    <link rel="stylesheet" href="manager-dashboard.css" />
+  </head>
+  <body>
+    <!-- Executive Navigation Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <a class="brand" href="index.html" aria-label="Return to Hôtel Lumière home">
+          <span class="brand-mark" aria-hidden="true">HL</span>
+          <span>
+            <span class="brand-name">Hôtel Lumière</span>
+            <span class="brand-context">Executive Analytics &amp; Operations</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="header-meta">
+        <div class="header-status-badge">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Live Operations Telemetry</span>
+        </div>
+
+        <button id="themeToggle" class="theme-toggle-btn" type="button" aria-label="Toggle visual theme" title="Toggle dark / light mode">
+          <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 0 1 1-9-9Z"/></svg>
+        </button>
+
+        <a class="header-nav-link" href="demo.html">Open Concierge Simulator →</a>
+        <a class="quiet-link" href="index.html">Hotel Portal</a>
+      </div>
+    </header>
+
+    <!-- Main Dashboard Workspace -->
+    <main class="dashboard-container" role="main">
+      
+      <!-- Dashboard Top Header / Filter Controls -->
+      <section class="dashboard-header" aria-labelledby="analytics-heading">
+        <div class="dashboard-titles">
+          <p class="eyebrow">Executive Intelligence</p>
+          <h1 id="analytics-heading">Manager's Analytics Overview</h1>
+          <p class="dashboard-subtitle">Real-time performance tracking for automated guest interactions, ancillary revenue capture, and guest reputation protection.</p>
+        </div>
+
+        <div class="dashboard-controls">
+          <div class="time-filter-pills" role="tablist" aria-label="Analytics timeframe">
+            <button class="filter-pill" type="button" role="tab" aria-selected="false">24 Hours</button>
+            <button class="filter-pill is-active" type="button" role="tab" aria-selected="true">Last 7 Days</button>
+            <button class="filter-pill" type="button" role="tab" aria-selected="false">30 Days</button>
+            <button class="filter-pill" type="button" role="tab" aria-selected="false">Quarter to Date</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- KPI METRIC CARDS (Top Row) -->
+      <section class="metrics-grid" aria-label="Key Performance Indicators">
+        
+        <!-- Metric Card 1: Operations Hours Saved -->
+        <article class="metric-card" aria-labelledby="metric-hours-title">
+          <div class="metric-card-header">
+            <span class="metric-icon-badge metric-icon-emerald" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+            </span>
+            <span class="metric-trend trend-positive" title="Compared to previous 7 days">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+              +18.4%
+            </span>
+          </div>
+          <div class="metric-card-body">
+            <p class="metric-label" id="metric-hours-title">Operations Hours Saved</p>
+            <h2 class="metric-value">14.2 Hours</h2>
+            <p class="metric-description">86 automated guest inquiries handled with 0s latency, freeing front desk staff for in-person hospitality.</p>
+          </div>
+          <div class="metric-card-footer">
+            <span class="metric-meta-badge">Front Desk Efficiency</span>
+            <span class="metric-meta-stat">Avg resolution: 1.2s</span>
+          </div>
+        </article>
+
+        <!-- Metric Card 2: Add-On Revenue Generated -->
+        <article class="metric-card metric-card-featured" aria-labelledby="metric-revenue-title">
+          <div class="metric-card-header">
+            <span class="metric-icon-badge metric-icon-gold" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </span>
+            <span class="metric-trend trend-positive" title="Compared to previous 7 days">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+              +24.1%
+            </span>
+          </div>
+          <div class="metric-card-body">
+            <p class="metric-label" id="metric-revenue-title">Add-On Revenue Generated</p>
+            <h2 class="metric-value">€450.00</h2>
+            <p class="metric-description">Direct conversions from proactive Meta pre-arrival templates (2x Spa Rituals, 1x Airport Transfer).</p>
+          </div>
+          <div class="metric-card-footer">
+            <span class="metric-meta-badge">Direct Ancillary Sales</span>
+            <span class="metric-meta-stat">12.5% Conversion Rate</span>
+          </div>
+        </article>
+
+        <!-- Metric Card 3: Reputation Escalations Protected -->
+        <article class="metric-card" aria-labelledby="metric-escalations-title">
+          <div class="metric-card-header">
+            <span class="metric-icon-badge metric-icon-amber" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </span>
+            <span class="metric-trend trend-neutral" title="Zero negative reviews posted publicly">
+              100% Intercepted
+            </span>
+          </div>
+          <div class="metric-card-body">
+            <p class="metric-label" id="metric-escalations-title">Reputation Escalations</p>
+            <h2 class="metric-value">2 Escalations</h2>
+            <p class="metric-description">Private GM review recovery triggered for noise &amp; AC feedback before any public review was submitted.</p>
+          </div>
+          <div class="metric-card-footer">
+            <span class="metric-meta-badge">Guest Retention Protection</span>
+            <span class="metric-meta-stat">0 Public Negative Reviews</span>
+          </div>
+        </article>
+
+      </section>
+
+      <!-- ANALYTICS CONTENT SPLIT: Main Velocity Chart & Live AI Feed -->
+      <div class="analytics-layout-grid">
+        
+        <!-- Left Container: Main Analytics Graph -->
+        <section class="analytics-chart-panel" aria-labelledby="chart-title">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Telemetry Velocity</p>
+              <h2 id="chart-title">Automation &amp; Revenue Trends</h2>
+            </div>
+            <div class="chart-legend" aria-hidden="true">
+              <span class="legend-item"><span class="legend-dot dot-emerald"></span> Hours Saved</span>
+              <span class="legend-item"><span class="legend-dot dot-gold"></span> Revenue (€)</span>
+              <span class="legend-item"><span class="legend-dot dot-amber"></span> Intercepted Issues</span>
+            </div>
+          </div>
+
+          <div class="chart-canvas-wrapper">
+            <!-- Main Chart.js Canvas Target -->
+            <canvas id="analyticsChart" aria-label="Operations Hours Saved and Revenue Generation chart over time" role="img"></canvas>
+            
+            <div id="chartPlaceholderNote" class="chart-placeholder-overlay" aria-hidden="true">
+              <div class="chart-placeholder-icon">📈</div>
+              <p class="chart-placeholder-title">Chart Rendering Surface Ready</p>
+              <p class="chart-placeholder-sub">Chart.js visual pipeline ready for Cloudflare Worker analytics endpoint data sync.</p>
+            </div>
+          </div>
+
+          <div class="chart-panel-footer">
+            <div class="chart-summary-stat">
+              <span class="stat-caption">Total AI Conversations</span>
+              <strong class="stat-number">142</strong>
+            </div>
+            <div class="chart-summary-stat">
+              <span class="stat-caption">Airtable Data Records</span>
+              <strong class="stat-number">100% Synced</strong>
+            </div>
+            <div class="chart-summary-stat">
+              <span class="stat-caption">Average Guest CSAT</span>
+              <strong class="stat-number">4.92 / 5.0</strong>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Container: Live AI Activity Feed -->
+        <aside class="activity-feed-panel" aria-labelledby="feed-title">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Real-Time Stream</p>
+              <h2 id="feed-title">Live AI Activity Feed</h2>
+            </div>
+            <span class="pulse-indicator-badge">
+              <span class="status-dot pulse-dot-active" aria-hidden="true"></span>
+              Live
+            </span>
+          </div>
+
+          <div class="activity-feed-list" role="feed" aria-label="Recent AI Concierge Interactions">
+            
+            <!-- Feed Item 1: Spa Revenue Conversion -->
+            <article class="feed-item" tabindex="0">
+              <div class="feed-item-icon feed-icon-gold" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+              <div class="feed-item-content">
+                <div class="feed-item-top">
+                  <span class="feed-guest-name">Elena Rostova <span class="feed-room-badge">Room 402</span></span>
+                  <time class="feed-timestamp">8m ago</time>
+                </div>
+                <p class="feed-item-action">Reserved <strong>Lumière Spa Ritual (€220)</strong> following automated 48h pre-arrival WhatsApp recommendation.</p>
+                <div class="feed-item-meta">
+                  <span class="feed-status-tag tag-success">Add-On Converted</span>
+                  <span class="feed-channel-tag">WhatsApp Cloud API</span>
+                </div>
+              </div>
+            </article>
+
+            <!-- Feed Item 2: Housekeeping Dispatch -->
+            <article class="feed-item" tabindex="0">
+              <div class="feed-item-icon feed-icon-emerald" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </div>
+              <div class="feed-item-content">
+                <div class="feed-item-top">
+                  <span class="feed-guest-name">Alex Morgan <span class="feed-room-badge">Room 214</span></span>
+                  <time class="feed-timestamp">22m ago</time>
+                </div>
+                <p class="feed-item-action">Requested <strong>Extra Fresh Towels &amp; Water</strong>. Zero upselling; dispatched operational ticket directly to Housekeeping.</p>
+                <div class="feed-item-meta">
+                  <span class="feed-status-tag tag-dispatch">Housekeeping Dispatched</span>
+                  <span class="feed-channel-tag">Airtable Synced</span>
+                </div>
+              </div>
+            </article>
+
+            <!-- Feed Item 3: Reputation Service Recovery -->
+            <article class="feed-item" tabindex="0">
+              <div class="feed-item-icon feed-icon-amber" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+              </div>
+              <div class="feed-item-content">
+                <div class="feed-item-top">
+                  <span class="feed-guest-name">Jean-Luc Dupont <span class="feed-room-badge">Post-Checkout</span></span>
+                  <time class="feed-timestamp">1h ago</time>
+                </div>
+                <p class="feed-item-action">Reported <strong>Room Noise Complaint</strong>. AI withheld public Google Reviews link &amp; triggered private General Manager recovery ticket.</p>
+                <div class="feed-item-meta">
+                  <span class="feed-status-tag tag-escalation">GM Private Escalation</span>
+                  <span class="feed-channel-tag">Reputation Protected</span>
+                </div>
+              </div>
+            </article>
+
+          </div>
+
+          <div class="feed-panel-footer">
+            <p class="feed-footer-note"><span class="status-dot" aria-hidden="true"></span> Automatic real-time polling active</p>
+          </div>
+        </aside>
+
+      </div>
+
+    </main>
+
+    <!-- Interactive Theme Toggle Script (Light/Dark persistence) -->
+    <script>
+      (function() {
+        const themeToggle = document.querySelector("#themeToggle");
+        if (themeToggle) {
+          themeToggle.addEventListener("click", () => {
+            const current = document.documentElement.getAttribute("data-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+            const next = current === "dark" ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", next);
+            localStorage.setItem("lumiere-demo-theme", next);
+          });
+          const savedTheme = localStorage.getItem("lumiere-demo-theme");
+          if (savedTheme) {
+            document.documentElement.setAttribute("data-theme", savedTheme);
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>
