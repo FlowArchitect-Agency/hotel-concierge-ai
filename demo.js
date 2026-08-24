@@ -154,10 +154,13 @@
     toast.dataset.timeoutId = String(timeoutId);
   }
 
-  // Render WhatsApp chat bubble with optional rich media (Bug 2 Fix)
+  // Render WhatsApp chat bubble with optional rich media
   function addMessage({ sender, text, quickReplies = [], listMessage = false, media = null }) {
     const message = document.createElement("article");
-    message.className = `message message--${sender}`;
+    const isGuest = sender === "guest";
+    const isStaff = sender === "staff" || sender === "reception";
+    const senderClass = isGuest ? "message--guest msg-guest" : isStaff ? "message--staff msg-staff" : "message--ai msg-ai";
+    message.className = `message ${senderClass}`;
 
     // Render Rich Media Attachment Card if present
     if (media && typeof media === "object") {
@@ -287,11 +290,15 @@
 
     const meta = document.createElement("div");
     meta.className = "message-meta";
-    meta.textContent = timeNow();
+    meta.textContent = `${isStaff ? "Reception · " : ""}${timeNow()}`;
     message.append(meta);
     dom.chatMessages.append(message);
     dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
-    addTranscript(sender === "guest" ? "Guest" : "AI Concierge", text || "[Media Attachment]", sender === "guest" ? "guest" : "ai");
+    addTranscript(
+      isGuest ? "Guest" : isStaff ? "Receptionist (Live)" : "AI Concierge",
+      text || "[Media Attachment]",
+      isGuest ? "guest" : isStaff ? "human" : "ai"
+    );
   }
 
   function addChatChrome() {
@@ -319,12 +326,30 @@
     dom.sendButton.disabled = isBusy;
   }
 
-  function setOwnerStatus({ human }) {
+  function setOwnerStatus({ human, role = "Reception" }) {
     dom.handoffStatus.replaceChildren();
     const dot = document.createElement("span");
     dot.className = "status-dot";
     dot.setAttribute("aria-hidden", "true");
-    dom.handoffStatus.append(dot, human ? " Human active" : " Active");
+    dom.handoffStatus.append(dot, human ? ` You (${role}) · Live` : " Active");
+  }
+
+  function updateComposerState(isHuman, role = "Reception") {
+    if (isHuman) {
+      dom.messageInput.placeholder = `Reply as ${role}...`;
+      dom.messageInput.setAttribute("aria-label", `Reply as ${role}`);
+      dom.sendButton.setAttribute("aria-label", `Reply as ${role}`);
+      dom.sendButton.title = `Reply as ${role}`;
+      const label = document.querySelector('label[for="messageInput"]');
+      if (label) label.textContent = `Reply as ${role}`;
+    } else {
+      dom.messageInput.placeholder = "Type a message";
+      dom.messageInput.setAttribute("aria-label", "Type a message");
+      dom.sendButton.setAttribute("aria-label", "Send message");
+      dom.sendButton.title = "Send message";
+      const label = document.querySelector('label[for="messageInput"]');
+      if (label) label.textContent = "Type a message";
+    }
   }
 
   function updateGuestSummary() {
@@ -346,6 +371,7 @@
     dom.conversationMode.textContent = "AI active";
     const presenceSpan = document.querySelector(".chat-identity span");
     if (presenceSpan) presenceSpan.textContent = "online";
+    updateComposerState(false);
   }
 
   // Trigger Human Handoff (Escape Hatch / Sentiment Override Reaction / General Manager Service Recovery)
@@ -355,20 +381,21 @@
     dom.handoffButton.textContent = "Resume AI Concierge";
     dom.handoffButton.setAttribute("aria-pressed", "true");
     dom.handoffStatus.classList.add("is-human");
-    setOwnerStatus({ human: true });
+    setOwnerStatus({ human: true, role });
     dom.handoffTitle.textContent = `${role} Escalation`;
-    dom.handoffDescription.textContent = `Human Agent Active — AI Paused. Automated replies suspended for ${role} private service recovery.`;
+    dom.handoffDescription.textContent = `Human Agent Active — AI Paused. Messages typed below will be sent as ${role} to the guest.`;
     dom.conversationMode.classList.add("is-human");
-    dom.conversationMode.textContent = "Human active";
+    dom.conversationMode.textContent = `You (${role}) · Live`;
     const presenceSpan = document.querySelector(".chat-identity span");
     if (presenceSpan) presenceSpan.textContent = `${role} Active`;
+    updateComposerState(true, role);
 
     renderStaffAlerts([{
       role: role,
       summary: `URGENT: ${reason}`,
     }]);
 
-    addTranscript("URGENT ESCALATION", `⚠️ ${reason}. AI automatically suspended. ${role} notified.`, "human");
+    addTranscript("URGENT ESCALATION", `⚠️ ${reason}. AI automatically suspended. ${role} in control.`, "human");
   }
 
   function hideStaffAlert() {
@@ -506,7 +533,7 @@
     addMessage({ sender: "guest", text: cleanText });
     session.chatHistory.push({ role: "user", content: cleanText });
     if (humanHandoff) {
-      addTranscript("System", "AI response withheld while a receptionist owns this conversation.", "human");
+      addTranscript("System", "Guest sent message while receptionist is controlling the chat. AI auto-reply is paused.", "human");
       return;
     }
     try {
@@ -518,6 +545,13 @@
       addMessage({ sender: "ai", text: message });
       addTranscript("System", error instanceof Error ? error.message : "Demo chat request failed.", "human");
     }
+  }
+
+  function sendStaffMessage(text) {
+    const cleanText = text.trim();
+    if (!cleanText || !session) return;
+    addMessage({ sender: "staff", text: cleanText });
+    session.chatHistory.push({ role: "assistant", content: cleanText });
   }
 
   function openServices() {
@@ -600,16 +634,17 @@
     dom.handoffButton.textContent = humanHandoff ? "Resume AI Concierge" : "Take over chat";
     dom.handoffButton.setAttribute("aria-pressed", String(humanHandoff));
     dom.handoffStatus.classList.toggle("is-human", humanHandoff);
-    setOwnerStatus({ human: humanHandoff });
+    setOwnerStatus({ human: humanHandoff, role: "Reception" });
     dom.handoffTitle.textContent = humanHandoff ? "Human receptionist" : "AI Concierge";
     dom.handoffDescription.textContent = humanHandoff
-      ? "Human Agent Active — AI Paused. New guest messages will not receive automated replies."
+      ? "Receptionist is in control — AI auto-replies are paused. Messages typed below will be sent as Reception to the guest."
       : "AI replies are enabled for this simulation.";
     dom.conversationMode.classList.toggle("is-human", humanHandoff);
-    dom.conversationMode.textContent = humanHandoff ? "Human active" : "AI active";
+    dom.conversationMode.textContent = humanHandoff ? "You (Reception) · Live" : "AI active";
     const presenceSpan = document.querySelector(".chat-identity span");
-    if (presenceSpan) presenceSpan.textContent = humanHandoff ? "Human Staff Active" : "online";
-    addTranscript("System", humanHandoff ? "Human receptionist took over the conversation. AI paused." : "AI Concierge resumed.", humanHandoff ? "human" : "ai");
+    if (presenceSpan) presenceSpan.textContent = humanHandoff ? "Reception Staff Active" : "online";
+    updateComposerState(humanHandoff, "Reception");
+    addTranscript("System", humanHandoff ? "Human receptionist took over the conversation. AI paused. Composer is now replying as Reception." : "AI Concierge resumed.", humanHandoff ? "human" : "ai");
   }
 
   dom.form.addEventListener("submit", (event) => {
@@ -621,7 +656,11 @@
     event.preventDefault();
     const text = dom.messageInput.value;
     dom.messageInput.value = "";
-    await sendGuestMessage(text);
+    if (humanHandoff) {
+      sendStaffMessage(text);
+    } else {
+      await sendGuestMessage(text);
+    }
     if (!dom.messageInput.disabled) dom.messageInput.focus();
   });
 
