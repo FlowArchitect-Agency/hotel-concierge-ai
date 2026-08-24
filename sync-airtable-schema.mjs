@@ -91,6 +91,7 @@ const DESIRED_SCHEMA = [
     fields: [
       field('Message ID', 'singleLineText'),
       field('Linked Guest', 'singleLineText'),
+      field('Guest Name', 'singleLineText'),
       { name: 'Sender', ...select(['Guest', 'AI', 'Human']) },
       field('Message Content', 'multilineText'),
       field('Timestamp', 'singleLineText'),

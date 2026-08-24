@@ -242,6 +242,35 @@ function createHotelCollectionCard(offer, { roomPicker = false } = {}) {
   return card;
 }
 
+const COLLECTION_CATEGORY_LABELS = {
+  accommodation: 'Rooms & Suites',
+  restaurant: 'Dining',
+  spa: 'Spa & Wellness',
+  transport: 'Transport',
+  tour: 'Private Tours',
+  experience: 'Private Experiences',
+};
+
+function collectionCategoryLabel(category) {
+  const key = String(category || 'experience').toLowerCase();
+  return COLLECTION_CATEGORY_LABELS[key] || key.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function categorizedCollectionCards(offers, options = {}) {
+  const groups = new Map();
+  for (const offer of offers) {
+    const category = String(offer?.category || 'experience').toLowerCase();
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(offer);
+  }
+  return [...groups].flatMap(([category, entries]) => {
+    const heading = document.createElement('p');
+    heading.className = 'hotel-collection-section-heading';
+    heading.textContent = `${collectionCategoryLabel(category)} (${entries.length})`;
+    return [heading, ...entries.map((offer) => createHotelCollectionCard(offer, options))];
+  });
+}
+
 function openHotelCollection(offers, context = {}) {
   const verified = uniqueOffers(offers);
   if (!hotelCollectionModal || !hotelCollectionDialogGrid || !verified.length) return;
@@ -257,7 +286,7 @@ function openHotelCollection(offers, context = {}) {
     ? 'Choose the room style that feels right for your stay. Your final selection is recorded with your enquiry.'
     : 'Every experience below is part of the hotel’s preferred collection. Select one to leave a real enquiry for the concierge team.');
   if (hotelCollectionBack) hotelCollectionBack.hidden = !roomPicker || !hotelCollectionRoot.offers.length;
-  hotelCollectionDialogGrid.replaceChildren(...verified.map((offer) => createHotelCollectionCard(offer, { roomPicker })));
+  hotelCollectionDialogGrid.replaceChildren(...categorizedCollectionCards(verified, { roomPicker }));
   hotelCollectionModal.hidden = false;
   document.body.classList.add('collection-open');
   window.setTimeout(() => hotelCollectionModal.querySelector('[data-close-hotel-collection]')?.focus(), 60);
@@ -302,9 +331,10 @@ function renderHotelCollection(offers, animate = true) {
   eyebrow.className = 'hotel-collection-eyebrow';
   eyebrow.textContent = 'Preferred hotel collection';
   const title = document.createElement('h3');
-  title.textContent = `${verified.length} experiences, ready to explore`;
+  const categoryCount = new Set(verified.map((offer) => String(offer.category || 'experience').toLowerCase())).size;
+  title.textContent = `${verified.length} experiences across ${categoryCount} categories`;
   const intro = document.createElement('p');
-  intro.textContent = 'Open the private collection to browse every hotel experience in a focused, full-screen view.';
+  intro.textContent = 'Open the private collection to browse every hotel experience, grouped by service category in a focused full-screen view.';
   const open = document.createElement('button');
   open.className = 'hotel-collection-open';
   open.type = 'button';

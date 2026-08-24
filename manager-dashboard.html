@@ -73,8 +73,8 @@
           </div>
           <div class="metric-card-body">
             <p class="metric-label" id="metric-hours-title">Operations Hours Saved</p>
-            <h2 class="metric-value">14.2 Hours</h2>
-            <p class="metric-description">86 automated guest inquiries handled with 0s latency, freeing front desk staff for in-person hospitality.</p>
+            <h2 class="metric-value" id="hours-saved-value" aria-live="polite">Loading…</h2>
+            <p class="metric-description" id="hours-saved-description">Calculating from operational tickets at 15 minutes of saved staff time per ticket.</p>
           </div>
           <div class="metric-card-footer">
             <span class="metric-meta-badge">Front Desk Efficiency</span>
@@ -251,6 +251,7 @@
 
     </main>
 
+    <script src="config.js"></script>
     <!-- Interactive Theme Toggle Script (Light/Dark persistence) -->
     <script>
       (function() {
@@ -266,6 +267,27 @@
           if (savedTheme) {
             document.documentElement.setAttribute("data-theme", savedTheme);
           }
+        }
+      })();
+
+      (async function loadHoursSaved() {
+        const value = document.querySelector("#hours-saved-value");
+        const description = document.querySelector("#hours-saved-description");
+        const chatEndpoint = window.CONCIERGE_WEBHOOK_URL || "https://conciergeflow-api.conciergeflow-worker.workers.dev/api/chat";
+        const endpoint = window.CONCIERGE_METRICS_ENDPOINT || chatEndpoint.replace(/\/api\/chat$/, "/api/manager/metrics");
+        try {
+          const response = await fetch(endpoint, { headers: { Accept: "application/json" } });
+          if (!response.ok) throw new Error("Metrics request failed");
+          const metrics = await response.json();
+          const hours = Number(metrics.hours_saved);
+          const tickets = Number(metrics.operational_tickets);
+          const minutesPerTicket = Number(metrics.minutes_per_ticket);
+          if (!Number.isFinite(hours) || !Number.isFinite(tickets) || !Number.isFinite(minutesPerTicket)) throw new Error("Invalid metrics response");
+          value.textContent = `${hours.toFixed(2)} Hours`;
+          description.textContent = `${tickets} operational ticket${tickets === 1 ? "" : "s"} × ${minutesPerTicket} minutes of saved staff time.`;
+        } catch {
+          value.textContent = "Unavailable";
+          description.textContent = "Operational ticket metrics could not be loaded right now.";
         }
       })();
     </script>

@@ -692,6 +692,46 @@ test('A services question returns every hotel partner in a dedicated collection 
   }
 });
 
+test('The complete 12-service catalogue is returned without truncation and keeps every category', async () => {
+  const catalogueRecords = Array.from({ length: 12 }, (_, index) => {
+    const categories = ['accommodation', 'spa', 'restaurant', 'transport', 'tour', 'experience'];
+    const category = categories[index % categories.length];
+    return {
+      fields: {
+        Name: `${category} service ${index + 1}`,
+        Category: category,
+        Description: `A ${category} offering.`,
+        Active: true,
+        IsPartner: true,
+      },
+    };
+  });
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    calls.push(target);
+    if (target.includes('/Services')) return Response.json({ records: catalogueRecords });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'Please show every hotel service you offer.', sessionId: 'qa_full_catalogue', testMode: 'read_only' }),
+    }), {
+      GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris',
+    }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.intent, 'partner_catalog');
+    assert.equal(body.hotel_collection.length, 12);
+    assert.equal(new Set(body.hotel_collection.map((offer) => offer.category)).size, 6);
+    assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('An English catalogue question with a mobile spelling mistake overrides an older French preference', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
@@ -777,7 +817,7 @@ test('Room enquiry writes dates, arrival time, and contact details to Airtable',
     assert.equal(response.status, 201);
     assert.equal(body.ok, true);
     assert.equal(writtenFields.GuestName, 'Adele Guest');
-    assert.equal(writtenFields.ServiceType, 'other');
+    assert.equal(writtenFields.ServiceType, 'Front Desk');
     assert.equal(writtenFields.Source, 'hotel_room_enquiry');
     assert.equal(writtenFields.Is_Demo, true);
     assert.equal(writtenFields.ServiceRef, 'Lumière Eiffel View Deluxe');
@@ -1062,7 +1102,7 @@ test('Rich Media: Spa or menu query returns PDF brochure document card metadata'
   try {
     const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io', 'CF-Connecting-IP': '203.0.113.87' },
       body: JSON.stringify({
         guestName: 'Spa Guest',
         language: 'English',
@@ -1140,6 +1180,62 @@ test('Operational requests: Physical items (towels/water) alert Housekeeping wit
     assert.equal(requestWrite.fields.Is_Demo, true);
     assert.equal(requestWrite.fields.IsUpsell, false);
     assert.equal(requestWrite.fields.ServiceType, 'Housekeeping');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Every booking ticket receives a valid ServiceType instead of Other', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestFields;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('/Requests') && options.body) requestFields = JSON.parse(options.body).fields;
+    if (target.includes('api.airtable.com')) return Response.json({ id: 'rec_booking_type' });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/booking-enquiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io', 'CF-Connecting-IP': '203.0.113.86' },
+      body: JSON.stringify({
+        guestName: 'Type Test Guest', email: 'type-test@example.com', serviceName: 'Custom request',
+        serviceType: 'other', source: 'partner', consent: true, sessionId: 'qa_booking_service_type',
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    assert.equal(response.status, 201);
+    assert.equal(requestFields?.ServiceType, 'Concierge');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Manager metrics use operational tickets times fifteen saved minutes', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('/Requests')) {
+      return Response.json({ records: [
+        { fields: { ServiceType: 'Housekeeping' } },
+        { fields: { ServiceType: 'Maintenance' } },
+        { fields: { ServiceType: 'Room Service' } },
+        { fields: { ServiceType: 'Concierge' } },
+      ] });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/manager/metrics', {
+      headers: { Origin: 'https://flowarchitect-agency.github.io' },
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      operational_tickets: 3,
+      minutes_saved: 45,
+      hours_saved: 0.75,
+      minutes_per_ticket: 15,
+      formula: 'operational tickets × 15 minutes ÷ 60',
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1247,5 +1343,3 @@ test('Post-Checkout Negative: Complaining guest triggers General Manager escalat
     globalThis.fetch = originalFetch;
   }
 });
-
-

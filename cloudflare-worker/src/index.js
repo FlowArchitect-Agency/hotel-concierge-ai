@@ -207,9 +207,22 @@ function inboundWhatsAppTexts(payload) {
 
 function whatsappReplyText(result) {
   const lines = [String(result.reply || '').trim()];
+  const catalogue = Array.isArray(result.hotel_collection) ? result.hotel_collection : [];
+  if (catalogue.length) {
+    const categories = new Map();
+    for (const offer of catalogue) {
+      const category = String(offer?.category || 'experience').replace(/\b\w/g, (letter) => letter.toUpperCase());
+      if (!categories.has(category)) categories.set(category, []);
+      categories.get(category).push(String(offer?.name || '').trim());
+    }
+    for (const [category, names] of categories) {
+      const entries = names.filter(Boolean).map((name) => `• ${name}`).join('\n');
+      if (entries) lines.push(`${category}\n${entries}`);
+    }
+  }
   const offers = Array.isArray(result.partner_offers) ? result.partner_offers : [];
   const recommendations = Array.isArray(result.recommendations) ? result.recommendations : [];
-  const cards = [...offers, ...recommendations].slice(0, 5);
+  const cards = catalogue.length ? [] : [...offers, ...recommendations].slice(0, 5);
   for (const card of cards) {
     const details = [card.name, card.description, card.website_url || card.websiteUrl]
       .filter(Boolean)
@@ -277,9 +290,25 @@ async function fetchServices(env, { bypassCache = false } = {}) {
   if (!bypassCache && Array.isArray(serviceCache.records) && serviceCache.expiresAt > now) return serviceCache.records;
   if (!bypassCache && serviceCache.pending) return serviceCache.pending;
 
-  const request = airtable(env, 'Services', {
-    params: { filterByFormula: '{Active}=TRUE()', pageSize: 100 },
-  }).then((payload) => payload.records || []);
+  // Airtable paginates after 100 records. A catalogue request must never be
+  // limited to the first page: every active partner service belongs in the
+  // guest-facing collection.
+  const request = (async () => {
+    const records = [];
+    let offset = '';
+    do {
+      const payload = await airtable(env, 'Services', {
+        params: {
+          filterByFormula: '{Active}=TRUE()',
+          pageSize: 100,
+          ...(offset ? { offset } : {}),
+        },
+      });
+      records.push(...(payload.records || []));
+      offset = String(payload.offset || '');
+    } while (offset);
+    return records;
+  })();
 
   if (!bypassCache) serviceCache.pending = request;
   try {
@@ -290,6 +319,34 @@ async function fetchServices(env, { bypassCache = false } = {}) {
     if (!bypassCache) serviceCache.pending = null;
     throw error;
   }
+}
+
+const OPERATIONAL_REQUEST_TYPES = new Set(['housekeeping', 'maintenance', 'room service']);
+const MINUTES_SAVED_PER_OPERATIONAL_TICKET = 15;
+
+async function fetchManagerMetrics(env) {
+  const records = [];
+  let offset = '';
+  do {
+    const payload = await airtable(env, 'Requests', {
+      params: { pageSize: 100, ...(offset ? { offset } : {}) },
+    });
+    records.push(...(payload.records || []));
+    offset = String(payload.offset || '');
+  } while (offset);
+
+  const operationalTickets = records.filter((record) => {
+    const serviceType = String(record?.fields?.ServiceType || '').trim().toLowerCase();
+    return OPERATIONAL_REQUEST_TYPES.has(serviceType);
+  }).length;
+  const minutesSaved = operationalTickets * MINUTES_SAVED_PER_OPERATIONAL_TICKET;
+  return {
+    operational_tickets: operationalTickets,
+    minutes_saved: minutesSaved,
+    hours_saved: Number((minutesSaved / 60).toFixed(2)),
+    minutes_per_ticket: MINUTES_SAVED_PER_OPERATIONAL_TICKET,
+    formula: 'operational tickets × 15 minutes ÷ 60',
+  };
 }
 
 async function fetchHistory(env, userId) {
@@ -569,11 +626,16 @@ async function enrichSemanticRoute(env, input, history, classification) {
 function mapServiceTypeForRequests(type) {
   const t = String(type || '').trim().toLowerCase();
   if (t === 'general manager' || t === 'general_manager' || t === 'manager') return 'General Manager';
-  if (t === 'housekeeping') return 'Housekeeping';
+  if (t === 'escalation') return 'General Manager';
+  if (t === 'housekeeping' || t === 'operational') return 'Housekeeping';
+  if (t === 'maintenance') return 'Maintenance';
+  if (t === 'front desk' || t === 'front_desk' || t === 'accommodation') return 'Front Desk';
   if (t === 'room service' || t === 'room_service') return 'Room Service';
-  if (t === 'concierge' || t === 'escalation') return 'Concierge';
-  if (['spa', 'restaurant', 'transport', 'tour', 'experience', 'other'].includes(t)) return t;
-  return 'other';
+  if (t === 'concierge' || t === 'feedback' || t === 'review' || t === 'faq' || t === 'smalltalk') return 'Concierge';
+  if (['spa', 'restaurant', 'transport', 'tour', 'experience'].includes(t)) return t;
+  // A request record is a staff-facing ticket. It must always have a valid
+  // route, even when a provider returns an incomplete or unfamiliar label.
+  return 'Concierge';
 }
 
 async function persistConversation(env, input, outcome) {
@@ -589,6 +651,7 @@ async function persistConversation(env, input, outcome) {
         UserID: input.userId,
         Channel: input.channel,
         Role: 'user',
+        'Guest Name': guestName,
         Message: input.message,
         Language: input.language,
         Timestamp: input.receivedAt,
@@ -601,6 +664,7 @@ async function persistConversation(env, input, outcome) {
         UserID: input.userId,
         Channel: input.channel,
         Role: 'assistant',
+        'Guest Name': guestName,
         Message: outcome.reply,
         Language: input.language,
         Timestamp: time,
@@ -728,23 +792,29 @@ function categoryPartnerServices(services, category) {
   return services.filter((service) => service.isPartner && String(service.category || '').toLowerCase() === category);
 }
 
+function hotelCatalogueResponse(input, classification, services) {
+  const collection = partnerOffers(services, { limit: null });
+  if (!collection.length) return null;
+  const categoryCount = new Set(collection.map((service) => service.category)).size;
+  const intro = HOTEL_COLLECTION_INTRO[input.language] || HOTEL_COLLECTION_INTRO.en;
+  return {
+    reply: `${intro} All ${collection.length} available options are organized by ${categoryCount} service categories below.`,
+    language: input.language,
+    intent: 'partner_catalog',
+    external_option_names: [],
+    recommendations: [],
+    partner_offers: [],
+    hotel_collection: collection,
+    provider_failure: '',
+    requires_human: true,
+    media: detectMediaBrochure(input.message, classification.category),
+  };
+}
+
 function hotelFirstResponse(input, classification, services) {
   const media = detectMediaBrochure(input.message, classification.category);
   if (isHotelCollectionQuestion(input.message)) {
-    const collection = partnerOffers(services, { limit: null });
-    if (!collection.length) return null;
-    return {
-      reply: HOTEL_COLLECTION_INTRO[input.language] || HOTEL_COLLECTION_INTRO.en,
-      language: input.language,
-      intent: 'partner_catalog',
-      external_option_names: [],
-      recommendations: [],
-      partner_offers: [],
-      hotel_collection: collection,
-      provider_failure: '',
-      requires_human: true,
-      media,
-    };
+    return hotelCatalogueResponse(input, classification, services);
   }
 
   const hotelServiceCategories = new Set(['restaurant', 'spa', 'accommodation', 'transport', 'tour', 'experience']);
@@ -915,7 +985,7 @@ function parseBookingEnquiry(body) {
   const serviceName = compactText(body.serviceName, 'Service', { required: true, max: 160 });
   const serviceType = BOOKABLE_SERVICE_TYPES.has(String(body.serviceType || '').toLowerCase())
     ? String(body.serviceType).toLowerCase()
-    : 'other';
+    : 'concierge';
   const source = String(body.source || '').toLowerCase() === 'external' ? 'external' : 'partner';
   const sessionId = compactText(body.sessionId, 'Session', { max: 110 });
   if (sessionId && !/^[a-zA-Z0-9_-]{4,110}$/.test(sessionId)) throw new Error('Invalid session identifier.');
@@ -959,7 +1029,7 @@ async function persistBookingEnquiry(env, enquiry) {
       UserID: enquiry.userId,
       Channel: 'web',
       GuestName: enquiry.guestName,
-      ServiceType: enquiry.serviceType,
+      ServiceType: mapServiceTypeForRequests(enquiry.serviceType),
       RequestSummary: details,
       Source: enquiry.source,
       ServiceRef: enquiry.serviceName,
@@ -1040,7 +1110,7 @@ async function persistRoomEnquiry(env, enquiry) {
       UserID: enquiry.userId,
       Channel: 'web',
       GuestName: `${enquiry.firstName} ${enquiry.lastName}`,
-      ServiceType: 'other',
+      ServiceType: 'Front Desk',
       RequestSummary: details,
       Source: 'hotel_room_enquiry',
       ServiceRef: enquiry.serviceName,
@@ -1130,7 +1200,7 @@ function staffAlertsFromOutcome(outcome) {
     role: staffRoleFor(outcome.serviceType),
     summary: item.summary,
     service_name: item.serviceName || '',
-    service_type: outcome.serviceType || 'other',
+    service_type: mapServiceTypeForRequests(outcome.serviceType),
   }));
 }
 
@@ -1146,7 +1216,7 @@ function chatResponseFromOutcome(outcome, classification, language, partnerOffer
       description: item.description,
       website_url: item.websiteUrl,
       image_url: item.imageUrl,
-      service_type: classification.category || 'other',
+      service_type: mapServiceTypeForRequests(classification.category),
       source: 'external',
       booking_enabled: true,
     })),
@@ -1189,7 +1259,7 @@ function postCheckoutResponse(input) {
     const outcome = {
       reply,
       intent: 'feedback',
-      serviceType: 'other',
+      serviceType: 'concierge',
       requiresHuman: false,
       escapeHatchTriggered: false,
       requests: [],
@@ -1260,7 +1330,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       const isNeg = instantPostCheckout.intent === 'complaint' || instantPostCheckout.escape_hatch_triggered;
       ctx.waitUntil(persistConversation(env, input, {
         reply: instantPostCheckout.reply,
-        serviceType: isNeg ? 'General Manager' : 'other',
+        serviceType: isNeg ? 'General Manager' : 'concierge',
         requests: isNeg ? [{
           serviceName: 'Post-Checkout Private Service Recovery',
           source: 'partner',
@@ -1344,6 +1414,18 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   reportStatus('Considering the most suitable next step\u2026');
   classification = await enrichSemanticRoute(env, input, history, classification);
   const serviceSet = matchingServices(serviceRecords, classification);
+  // Semantic routing can recognize catalogue wording that the fast phrase
+  // matcher did not. Keep this path deterministic as well, so it returns the
+  // complete collection rather than a model-selected subset.
+  if (classification.route === 'partner_catalog') {
+    const catalogue = hotelCatalogueResponse(input, classification, serviceSet.all);
+    if (catalogue) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: catalogue.reply, requests: [] }).catch(() => undefined));
+      }
+      return catalogue;
+    }
+  }
   const partnerMatches = serviceSet.matching.filter((service) => service.isPartner);
   const promptServices = classification.route === 'partner_catalog'
     ? serviceSet.all.filter((service) => service.isPartner)
@@ -1555,6 +1637,15 @@ export default {
     }
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request, env) });
     if (request.method === 'GET' && url.pathname === '/health') return response({ ok: true, service: 'conciergeflow-api' }, 200, request, env);
+    if (request.method === 'GET' && url.pathname === '/api/manager/metrics') {
+      try {
+        requireAirtable(env);
+        return response(await fetchManagerMetrics(env), 200, request, env);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to load manager metrics.';
+        return response({ error: message }, 502, request, env);
+      }
+    }
     if (url.pathname === '/webhooks/whatsapp' && request.method === 'GET') return verifyWhatsAppWebhook(url, env);
     if (url.pathname === '/webhooks/whatsapp' && request.method === 'POST') return handleWhatsAppWebhook(request, env, ctx);
     if (url.pathname === '/webhooks/twilio' && request.method === 'POST') return handleTwilioWebhook(request, env, ctx);
