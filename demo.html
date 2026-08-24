@@ -26,11 +26,14 @@
       </div>
     </header>
 
+    <!-- Screen Reader Live Announcer -->
+    <div id="screenAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
     <!-- Main Multi-Screen Container -->
-    <main id="appScreens" class="app-screens">
+    <main id="appScreens" class="app-screens" role="main">
       
       <!-- SCREEN 1: Entry / Access Code Gate -->
-      <section id="screen-entry" class="app-screen is-active" data-screen="entry" aria-labelledby="entry-title">
+      <section id="screen-entry" class="app-screen is-active" data-screen="entry" aria-labelledby="entry-title" role="region">
         <div class="entry-card">
           <div class="entry-brand">
             <span class="brand-mark entry-mark" aria-hidden="true">HL</span>
@@ -59,7 +62,7 @@
       </section>
 
       <!-- SCREEN 2: Operations Dashboard / Screen Hub -->
-      <section id="screen-dashboard" class="app-screen" data-screen="dashboard" aria-labelledby="dashboard-title">
+      <section id="screen-dashboard" class="app-screen" data-screen="dashboard" aria-labelledby="dashboard-title" role="region" hidden>
         <div class="dashboard-hub">
           <div class="hub-header">
             <p class="eyebrow">Operations Hub</p>
@@ -67,50 +70,50 @@
             <p>Select an operational screen to configure guest simulations, monitor live chats, or manage receptionist handoffs.</p>
           </div>
           <div class="hub-grid">
-            <div class="hub-card" data-nav="mission">
+            <div class="hub-card" data-nav="mission" role="button" tabindex="0" aria-label="Open Mission Control workspace">
               <div class="hub-card-top">
                 <span class="hub-card-badge">01 · Setup</span>
                 <span class="hub-card-icon" aria-hidden="true">⚙</span>
               </div>
               <h3>Mission Control</h3>
               <p>Configure virtual guest persona, language preference, and arrival scenarios (48h Pre-Arrival, In-Stay, Post-Checkout).</p>
-              <button class="hub-card-action button" type="button" data-nav="mission">Open Mission Control →</button>
+              <button class="hub-card-action button" type="button" data-nav="mission" tabindex="-1">Open Mission Control →</button>
             </div>
 
-            <div class="hub-card" data-nav="guest">
+            <div class="hub-card" data-nav="guest" role="button" tabindex="0" aria-label="Open Guest WhatsApp Channel">
               <div class="hub-card-top">
                 <span class="hub-card-badge">02 · Live Channel</span>
                 <span class="hub-card-icon" aria-hidden="true">💬</span>
               </div>
               <h3>Guest WhatsApp Channel</h3>
               <p>Interactive WhatsApp chat canvas with AI Concierge, rich PDF brochures, restaurant bookings, and quick replies.</p>
-              <button class="hub-card-action button" type="button" data-nav="guest">Open Guest Channel →</button>
+              <button class="hub-card-action button" type="button" data-nav="guest" tabindex="-1">Open Guest Channel →</button>
             </div>
 
-            <div class="hub-card" data-nav="inbox">
+            <div class="hub-card" data-nav="inbox" role="button" tabindex="0" aria-label="Open Receptionist Inbox and Escalations">
               <div class="hub-card-top">
                 <span class="hub-card-badge">03 · Operations</span>
                 <span class="hub-card-icon" aria-hidden="true">🔔</span>
               </div>
               <h3>Receptionist Inbox</h3>
               <p>Monitor live guest context, manage human handoff, receive urgent staff escalation alerts, and inspect transcripts.</p>
-              <button class="hub-card-action button" type="button" data-nav="inbox">Open Reception Inbox →</button>
+              <button class="hub-card-action button" type="button" data-nav="inbox" tabindex="-1">Open Reception Inbox →</button>
             </div>
           </div>
         </div>
       </section>
 
       <!-- SCREEN 3: Mission Control (Panel Screen) -->
-      <section id="screen-mission" class="app-screen" data-screen="mission" aria-labelledby="mission-title">
+      <section id="screen-mission" class="app-screen" data-screen="mission" aria-labelledby="mission-title" role="region" hidden>
         <nav class="screen-nav" aria-label="Screen navigation">
-          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Dashboard">
+          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Operations Dashboard">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             <span>Dashboard</span>
           </button>
           <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
-            <button class="nav-pill is-active" type="button" data-nav="mission" role="tab" aria-selected="true">Mission Control</button>
-            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false">Guest Channel</button>
-            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false">Reception Inbox</button>
+            <button class="nav-pill is-active" type="button" data-nav="mission" role="tab" aria-selected="true" tabindex="0">Mission Control</button>
+            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false" tabindex="-1">Guest Channel</button>
+            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false" tabindex="-1">Reception Inbox</button>
           </div>
         </nav>
 
@@ -161,16 +164,16 @@
       </section>
 
       <!-- SCREEN 4: Guest Channel (Panel Screen) -->
-      <section id="screen-guest" class="app-screen" data-screen="guest" aria-labelledby="conversation-title">
+      <section id="screen-guest" class="app-screen" data-screen="guest" aria-labelledby="conversation-title" role="region" hidden>
         <nav class="screen-nav" aria-label="Screen navigation">
-          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Dashboard">
+          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Operations Dashboard">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             <span>Dashboard</span>
           </button>
           <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
-            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false">Mission Control</button>
-            <button class="nav-pill is-active" type="button" data-nav="guest" role="tab" aria-selected="true">Guest Channel</button>
-            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false">Reception Inbox</button>
+            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false" tabindex="-1">Mission Control</button>
+            <button class="nav-pill is-active" type="button" data-nav="guest" role="tab" aria-selected="true" tabindex="0">Guest Channel</button>
+            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false" tabindex="-1">Reception Inbox</button>
           </div>
         </nav>
 
@@ -204,7 +207,7 @@
                 </div>
               </header>
 
-              <div id="chatMessages" class="chat-messages" aria-live="polite" aria-label="Guest conversation"></div>
+              <div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="WhatsApp conversation messages"></div>
 
               <form id="messageForm" class="chat-composer">
                 <button class="icon-button composer-icon" type="button" aria-label="Choose an emoji" title="Choose an emoji">
@@ -222,16 +225,16 @@
       </section>
 
       <!-- SCREEN 5: Receptionist Inbox (Panel Screen) -->
-      <section id="screen-inbox" class="app-screen" data-screen="inbox" aria-labelledby="inbox-title">
+      <section id="screen-inbox" class="app-screen" data-screen="inbox" aria-labelledby="inbox-title" role="region" hidden>
         <nav class="screen-nav" aria-label="Screen navigation">
-          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Dashboard">
+          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Operations Dashboard">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             <span>Dashboard</span>
           </button>
           <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
-            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false">Mission Control</button>
-            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false">Guest Channel</button>
-            <button class="nav-pill is-active" type="button" data-nav="inbox" role="tab" aria-selected="true">Reception Inbox</button>
+            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false" tabindex="-1">Mission Control</button>
+            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false" tabindex="-1">Guest Channel</button>
+            <button class="nav-pill is-active" type="button" data-nav="inbox" role="tab" aria-selected="true" tabindex="0">Reception Inbox</button>
           </div>
         </nav>
 
@@ -282,7 +285,7 @@
                 <h3 id="transcript-title">Live transcript</h3>
                 <span>Local session</span>
               </div>
-              <ol id="transcript" class="transcript" aria-live="polite" aria-label="Live session transcript"></ol>
+              <ol id="transcript" class="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live session event log"></ol>
             </section>
           </aside>
         </div>

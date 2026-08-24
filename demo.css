@@ -1252,6 +1252,39 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   transform: scale(0.97);
 }
 
+/* In-Stay Initial Helper Prompt Card */
+.chat-prompt-card {
+  align-self: center;
+  width: min(100%, 360px);
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  backdrop-filter: var(--apple-blur);
+  -webkit-backdrop-filter: var(--apple-blur);
+  border: 1px dashed var(--accent);
+  text-align: center;
+  animation: message-enter 220ms var(--ease-spring) forwards;
+  margin: 4px 0;
+}
+.prompt-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.chat-prompt-card p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
 /* Chat Composer */
 .chat-composer {
   padding: 8px 10px;
@@ -1673,25 +1706,141 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 
 /* ==========================================================================
-   RESPONSIVE & REDUCED MOTION RULES
+   ACCESSIBILITY & FOCUS MANAGEMENT
+   ========================================================================== */
+:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* Suppress persistent visual outline when focusing screen headings programmatically */
+h1:focus, h2:focus, h3:focus {
+  outline: none;
+}
+h1:focus-visible, h2:focus-visible, h3:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* ==========================================================================
+   RESPONSIVE & MOBILE POLISH (Phone & Tablet Widths)
    ========================================================================== */
 @media (max-width: 768px) {
   .app-header {
     padding: 10px 16px;
   }
+  .brand-context {
+    display: none;
+  }
   .screen-nav {
     padding: 8px 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .screen-nav-pills {
+    width: 100%;
+    justify-content: space-between;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav-pill {
+    flex: 1 1 auto;
+    text-align: center;
+    padding: 6px 10px;
+    font-size: 12px;
+    white-space: nowrap;
   }
   .panel-screen-content {
-    padding: 14px 10px;
+    padding: 14px 12px;
   }
   .panel {
-    padding: 18px 14px;
+    padding: 20px 16px;
     border-radius: var(--radius-lg);
   }
   .chat-shell {
     width: 100%;
     border-radius: var(--radius-lg);
+  }
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 8px 12px;
+  }
+  .header-meta .connection-state {
+    display: none;
+  }
+  .brand-name {
+    font-size: 15px;
+  }
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+  
+  #screen-dashboard.is-active {
+    padding: 24px 14px 40px;
+  }
+  .hub-header h1 {
+    font-size: 24px;
+  }
+  .hub-header p {
+    font-size: 13.5px;
+  }
+  .hub-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .hub-card {
+    padding: 20px 18px;
+  }
+  
+  #screen-entry.is-active {
+    padding: 20px 14px;
+  }
+  .entry-card {
+    padding: 28px 18px;
+  }
+  .entry-body h1 {
+    font-size: 21px;
+  }
+
+  .panel-screen-content {
+    padding: 10px 8px;
+  }
+  .conversation-panel {
+    padding: 10px 8px;
+    height: calc(100dvh - 120px);
+    min-height: 460px;
+  }
+  .chat-shell {
+    border-radius: var(--radius-md);
+  }
+  .chat-messages {
+    padding: 10px 8px;
+  }
+  .message {
+    max-width: 88%;
+  }
+
+  /* Prevent automatic iOS Safari input zoom */
+  .field-group input,
+  .field-group select,
+  .chat-composer input {
+    font-size: 16px;
+  }
+
+  .service-sheet {
+    width: 100%;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+  }
+  .demo-toast {
+    bottom: max(16px, env(safe-area-inset-bottom, 16px));
+    width: calc(100% - 32px);
+    text-align: center;
+    justify-content: center;
   }
 }
 

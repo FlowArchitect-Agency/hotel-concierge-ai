@@ -156,6 +156,10 @@
 
   // Render WhatsApp chat bubble with optional rich media
   function addMessage({ sender, text, quickReplies = [], listMessage = false, media = null }) {
+    // Remove any initial empty / starter helper cards
+    const promptCard = dom.chatMessages.querySelector(".chat-prompt-card");
+    if (promptCard) promptCard.remove();
+
     const message = document.createElement("article");
     const isGuest = sender === "guest";
     const isStaff = sender === "staff" || sender === "reception";
@@ -468,6 +472,26 @@
         listMessage: false,
       });
       addTranscript("Meta Template", `Automated post-checkout review template delivered to ${session.name}.`, "ai");
+    } else if (session.scenario === "in-stay") {
+      const helper = document.createElement("div");
+      helper.className = "chat-prompt-card";
+      helper.innerHTML = `
+        <span class="prompt-badge">In-Stay Guest Channel Active</span>
+        <p>Live concierge session ready. Type an in-stay request as the guest or select a quick starter:</p>
+      `;
+      const actions = document.createElement("div");
+      actions.className = "message-actions";
+      const samplePrompts = session.language === "French"
+        ? ["Pouvez-vous m'envoyer le menu du Spa ?", "Besoin de serviettes supplémentaires", "Horaires du petit-déjeuner"]
+        : session.language === "Spanish"
+        ? ["¿Me puede enviar el menú del Spa?", "Necesito toallas adicionales", "¿A qué hora es el desayuno?"]
+        : session.language === "Japanese"
+        ? ["スパのメニューとパンフレットを送ってください", "タオルが必要です", "朝食は何時ですか？"]
+        : ["Could you send me the Spa Menu and brochure?", "Need extra fresh towels in room", "What time is breakfast served?"];
+
+      samplePrompts.forEach((p) => actions.append(buildActionButton(p, "quick-reply", "quick-reply")));
+      helper.append(actions);
+      dom.chatMessages.append(helper);
     }
   }
 
@@ -659,20 +683,43 @@
     document.querySelectorAll(".app-screen").forEach((screen) => {
       if (screen.dataset.screen === screenName) {
         screen.classList.add("is-active");
+        screen.removeAttribute("hidden");
       } else {
         screen.classList.remove("is-active");
+        screen.setAttribute("hidden", "true");
       }
     });
 
-    // Update nav pills active state across screens
+    // Update nav pills active state and roving tabindex across screens
     document.querySelectorAll(".nav-pill").forEach((pill) => {
       const isActive = pill.dataset.nav === screenName;
       pill.classList.toggle("is-active", isActive);
       pill.setAttribute("aria-selected", String(isActive));
+      pill.setAttribute("tabindex", isActive ? "0" : "-1");
     });
 
     if (updateHash) {
       window.location.hash = screenName === "entry" ? "" : `#${screenName}`;
+    }
+
+    // Screen reader announcement for route change
+    const announcer = document.querySelector("#screenAnnouncer");
+    if (announcer) {
+      const screenTitles = {
+        entry: "Staff Portal Access Screen",
+        dashboard: "Operations Dashboard Hub",
+        mission: "Mission Control Setup Screen",
+        guest: "Guest WhatsApp Channel Screen",
+        inbox: "Receptionist Inbox and Escalations Screen",
+      };
+      announcer.textContent = `${screenTitles[screenName] || screenName} view active.`;
+    }
+
+    // Accessible focus management: focus main heading without scrolling
+    const heading = targetScreen.querySelector("h1, h2");
+    if (heading) {
+      heading.setAttribute("tabindex", "-1");
+      heading.focus({ preventScroll: true });
     }
 
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -704,7 +751,7 @@
       });
     }
 
-    // Navigation buttons with [data-nav]
+    // Navigation buttons & cards with [data-nav]
     document.addEventListener("click", (event) => {
       const navTarget = event.target.closest("[data-nav]");
       if (!navTarget) return;
@@ -712,6 +759,47 @@
       if (targetScreen) {
         event.preventDefault();
         showScreen(targetScreen);
+      }
+    });
+
+    // Keyboard support for hub cards (Enter / Space)
+    document.querySelectorAll(".hub-card").forEach((card) => {
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          const nav = card.dataset.nav;
+          if (nav) showScreen(nav);
+        }
+      });
+    });
+
+    // Keyboard navigation: Escape key to return to dashboard + Arrow keys between nav tabs
+    const pillTabs = ["mission", "guest", "inbox"];
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (!dom.sheet.hidden) {
+          closeServices();
+          return;
+        }
+        if (["mission", "guest", "inbox"].includes(currentScreen)) {
+          showScreen("dashboard");
+          return;
+        }
+      }
+
+      const focusedPill = document.activeElement?.closest(".nav-pill");
+      if (focusedPill && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+        e.preventDefault();
+        const currentIdx = pillTabs.indexOf(focusedPill.dataset.nav);
+        if (currentIdx !== -1) {
+          const nextIdx = e.key === "ArrowRight"
+            ? (currentIdx + 1) % pillTabs.length
+            : (currentIdx - 1 + pillTabs.length) % pillTabs.length;
+          const nextScreen = pillTabs[nextIdx];
+          showScreen(nextScreen);
+          const nextPill = document.querySelector(`.app-screen.is-active .nav-pill[data-nav="${nextScreen}"]`);
+          if (nextPill) nextPill.focus();
+        }
       }
     });
 
