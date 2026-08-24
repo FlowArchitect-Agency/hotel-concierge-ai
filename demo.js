@@ -679,6 +679,21 @@
   }
 
   function initScreenRouter() {
+    // Theme Toggle Handler (Light / Dark)
+    const themeToggle = document.querySelector("#themeToggle");
+    if (themeToggle) {
+      themeToggle.addEventListener("click", () => {
+        const current = document.documentElement.getAttribute("data-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        const next = current === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        localStorage.setItem("lumiere-demo-theme", next);
+      });
+      const savedTheme = localStorage.getItem("lumiere-demo-theme");
+      if (savedTheme) {
+        document.documentElement.setAttribute("data-theme", savedTheme);
+      }
+    }
+
     // Cosmetic Entry Form Passcode Submit
     const entryForm = document.querySelector("#entryForm");
     if (entryForm) {
