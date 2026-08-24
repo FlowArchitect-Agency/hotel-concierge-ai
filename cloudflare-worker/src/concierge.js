@@ -40,6 +40,35 @@ export function normalized(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
+// Airtable dashboard buckets are deliberately narrower than the catalogue
+// taxonomy. Keep this conversion next to the model contract so every caller
+// can turn unpredictable model output into an approved, stable value.
+export const SERVICE_TYPE_BUCKETS = Object.freeze([
+  'Housekeeping',
+  'Maintenance',
+  'Spa & Wellness',
+  'Transport',
+  'Dining',
+  'Concierge',
+  'General Manager',
+]);
+
+export function normalizeServiceType(value) {
+  const type = normalized(value).replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!type) return 'Concierge';
+
+  if (/\b(general manager|manager|gm|escalation|complaint|service recovery)\b/.test(type)) return 'General Manager';
+  if (/\b(maintenance|repair|engineering|plumbing|electrical|air conditioning|ac issue|broken)\b/.test(type)) return 'Maintenance';
+  if (/\b(housekeeping|operational|cleaning|laundry|towels?|amenities|room delivery)\b/.test(type)) return 'Housekeeping';
+  if (/\b(spa|wellness|massage|treatment|hammam|sauna|facial)\b/.test(type)) return 'Spa & Wellness';
+  if (/\b(transport|transfer|taxi|chauffeur|shuttle|airport)\b/.test(type)) return 'Transport';
+  if (/\b(dining|restaurant|food|breakfast|lunch|dinner|room service|catering)\b/.test(type)) return 'Dining';
+
+  // Tours, experiences, accommodation and Front Desk requests are managed by
+  // the concierge team. Unknown provider output must never reach Airtable.
+  return 'Concierge';
+}
+
 function hasTerm(text, value) {
   const term = normalized(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   if (!term) return false;
@@ -736,13 +765,13 @@ Hard rules:
 - Use only the facts, partner services, and external search results below.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
 - Partner services are preferred for leisure & hospitality inquiries. State a catalog price only when it is supplied below.
-- When the guest asks about hotel services or partners, retrieve every active partner service supplied below. Do not truncate, sample, or omit options: group the complete catalogue under its service categories and name every option exactly once.
+- Full-catalogue, services, and spa-menu requests are rendered by the Worker as a text-only catalogue. Never create option, card, button, or booking-choice data for those requests.
 - External results are non-partner suggestions. Never invent a price, rating, address, link, or availability. Keep reply_text to one or two elegant sentences; cards are rendered separately by the website.
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
 - Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request.
 
 Return exactly this JSON shape:
-{"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"spa|restaurant|tour|transport|experience|housekeeping|maintenance|room_service|concierge|general_manager|front_desk","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
+{"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"Housekeeping|Maintenance|Spa & Wellness|Transport|Dining|Concierge|General Manager","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
 
 GUEST MESSAGE:
 ${input.message}

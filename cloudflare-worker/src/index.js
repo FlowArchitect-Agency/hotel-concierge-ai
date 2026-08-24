@@ -15,6 +15,7 @@ import {
   parseExternalResults,
   parseGuestInput,
   parseModelJson,
+  normalizeServiceType,
   postCheckoutNegativeReply,
   postCheckoutPositiveReply,
   shouldSearchExternal,
@@ -229,7 +230,9 @@ function whatsappReplyText(result) {
       .join('\n');
     if (details) lines.push(details);
   }
-  return lines.filter(Boolean).join('\n\n').slice(0, 4000)
+  // The API reply uses standard Markdown; WhatsApp's text formatter uses one
+  // asterisk for bold. Catalogue replies are text-only, never interactive.
+  return lines.filter(Boolean).join('\n\n').replace(/\*\*([^*]+)\*\*/g, '*$1*')
     || 'Thank you for your message. Our concierge will be pleased to assist you.';
 }
 
@@ -321,7 +324,7 @@ async function fetchServices(env, { bypassCache = false } = {}) {
   }
 }
 
-const OPERATIONAL_REQUEST_TYPES = new Set(['housekeeping', 'maintenance', 'room service']);
+const OPERATIONAL_REQUEST_TYPES = new Set(['housekeeping', 'maintenance']);
 const MINUTES_SAVED_PER_OPERATIONAL_TICKET = 15;
 
 async function fetchManagerMetrics(env) {
@@ -562,7 +565,6 @@ async function callGroq(env, prompt, { maxTokens = 350, router = false } = {}) {
 
 const ROUTES = new Set(['greeting', 'hotel_faq', 'partner_catalog', 'partner_request', 'external_discovery', 'conversation']);
 const SERVICE_CATEGORIES = new Set(['accommodation', 'spa', 'restaurant', 'transport', 'tour', 'experience', 'itinerary']);
-const BOOKABLE_SERVICE_TYPES = new Set(['spa', 'restaurant', 'transport', 'tour', 'experience']);
 
 function routerJson(raw) {
   const text = String(raw || '').trim();
@@ -624,18 +626,7 @@ async function enrichSemanticRoute(env, input, history, classification) {
 }
 
 function mapServiceTypeForRequests(type) {
-  const t = String(type || '').trim().toLowerCase();
-  if (t === 'general manager' || t === 'general_manager' || t === 'manager') return 'General Manager';
-  if (t === 'escalation') return 'General Manager';
-  if (t === 'housekeeping' || t === 'operational') return 'Housekeeping';
-  if (t === 'maintenance') return 'Maintenance';
-  if (t === 'front desk' || t === 'front_desk' || t === 'accommodation') return 'Front Desk';
-  if (t === 'room service' || t === 'room_service') return 'Room Service';
-  if (t === 'concierge' || t === 'feedback' || t === 'review' || t === 'faq' || t === 'smalltalk') return 'Concierge';
-  if (['spa', 'restaurant', 'transport', 'tour', 'experience'].includes(t)) return t;
-  // A request record is a staff-facing ticket. It must always have a valid
-  // route, even when a provider returns an incomplete or unfamiliar label.
-  return 'Concierge';
+  return normalizeServiceType(type);
 }
 
 async function persistConversation(env, input, outcome) {
@@ -733,11 +724,42 @@ const CURATED_DINING_INTRO = {
   ar: '\u0627\u062e\u062a\u0631\u062a \u0644\u0643\u0645 \u0628\u0639\u0636 \u0627\u0644\u0639\u0646\u0627\u0648\u064a\u0646 \u0627\u0644\u0645\u0645\u064a\u0632\u0629 \u0641\u064a \u0628\u0627\u0631\u064a\u0633 \u0645\u0646 \u062f\u0644\u064a\u0644\u0646\u0627 \u0627\u0644\u0645\u0646\u0633\u0642. \u0647\u0630\u0647 \u062a\u0648\u0635\u064a\u0627\u062a \u0645\u0633\u062a\u0642\u0644\u0629\u060c \u0648\u0633\u064a\u062a\u062d\u0642\u0642 \u0627\u0644\u0643\u0648\u0646\u0633\u064a\u0631\u062c \u0645\u0646 \u0627\u0644\u062a\u0648\u0641\u0631 \u0628\u0639\u062f \u0627\u062e\u062a\u064a\u0627\u0631\u0643\u0645.',
 };
 
-const HOTEL_COLLECTION_INTRO = {
-  en: 'Here is the full preferred collection available through the hotel. Select any experience and our concierge will record the details needed to confirm it.',
-  fr: 'Voici la collection privilegiee disponible par l\u2019intermediaire de l\u2019hotel. Selectionnez une experience et notre conciergerie recueillera les details necessaires pour la confirmer.',
-  es: 'Esta es la coleccion preferida disponible a traves del hotel. Seleccione cualquier experiencia y nuestro concierge registrara los detalles necesarios para confirmarla.',
+const CATALOGUE_CATEGORY_META = {
+  spa: { label: 'Spa & Wellness', emoji: '\uD83E\uDDD6' },
+  restaurant: { label: 'Dining', emoji: '\uD83C\uDF7D\uFE0F' },
+  transport: { label: 'Transport', emoji: '\uD83D\uDE98' },
+  accommodation: { label: 'Rooms & Suites', emoji: '\uD83D\uDECF\uFE0F' },
+  tour: { label: 'Tours', emoji: '\uD83C\uDFDB\uFE0F' },
+  experience: { label: 'Experiences', emoji: '\u2728' },
 };
+
+function catalogueCategoryMeta(category) {
+  const key = String(category || '').trim().toLowerCase();
+  return CATALOGUE_CATEGORY_META[key] || {
+    label: key.replace(/\b\w/g, (letter) => letter.toUpperCase()) || 'Concierge Experiences',
+    emoji: '\u2728',
+  };
+}
+
+function catalogueText(collection) {
+  const grouped = new Map();
+  for (const offer of collection) {
+    const category = String(offer.category || 'experience').trim().toLowerCase();
+    if (!grouped.has(category)) grouped.set(category, []);
+    grouped.get(category).push(offer);
+  }
+  const sections = [...grouped.entries()].map(([category, offers]) => {
+    const { label, emoji } = catalogueCategoryMeta(category);
+    const entries = offers.map((offer) => {
+      const details = [];
+      if (Number.isFinite(Number(offer.price_eur))) details.push(`EUR ${Number(offer.price_eur).toFixed(0)}`);
+      if (Number.isFinite(Number(offer.duration_mins)) && Number(offer.duration_mins) > 0) details.push(`${Number(offer.duration_mins)} min`);
+      return `• **${offer.name}**${details.length ? ` — ${details.join(' · ')}` : ''}`;
+    }).join('\n');
+    return `${emoji} **${label}**\n${entries}`;
+  });
+  return [`✨ **Full Hotel Collection — ${collection.length} Services**`, 'Everything currently available through the hotel is listed below. Reply with the name of any service and the concierge will take it from there.', ...sections].join('\n\n');
+}
 
 const HOTEL_PARTNER_REQUEST_REPLIES = {
   en: 'For your request, I recommend beginning with the hotel’s preferred collection below. Select the experience you prefer and the concierge will record your details for final availability confirmation.',
@@ -776,10 +798,11 @@ function isHotelCollectionQuestion(message) {
   // Guests frequently transpose the "i" and "v" in "services" on mobile.
   // Treat this as the same catalogue request rather than sending it through a
   // slow, generic model route that can return only one category.
-  const catalogueTerm = /\b(?:services?|serivces?|sevrices?|servcies?|amenities|offerings?|collection|partners?|experiences?|servicios?|servizi)\b/;
+  const catalogueTerm = /\b(?:catalog(?:ue)?|services?|serivces?|sevrices?|servcies?|amenities|offerings?|collection|partners?|experiences?|servicios?|servizi)\b/;
   const catalogueQuestion = /\b(?:what|which|show|see|view|browse|open|list|can you|do you|quels?|montrez|voir|que)\b/;
   const broadHotelOffer = /\bwhat\s+(?:do|can)\s+(?:you|the hotel)\s+(?:offer|arrange|provide)\b/;
-  return (catalogueTerm.test(text) && catalogueQuestion.test(text)) || broadHotelOffer.test(text);
+  const spaMenu = /\b(?:spa|wellness|massage|treatments?)\s+(?:menu|catalog(?:ue)?|list|brochure)\b/;
+  return spaMenu.test(text) || (catalogueTerm.test(text) && catalogueQuestion.test(text)) || broadHotelOffer.test(text);
 }
 
 function guestInsistsOnExternal(message) {
@@ -796,18 +819,21 @@ function hotelCatalogueResponse(input, classification, services) {
   const collection = partnerOffers(services, { limit: null });
   if (!collection.length) return null;
   const categoryCount = new Set(collection.map((service) => service.category)).size;
-  const intro = HOTEL_COLLECTION_INTRO[input.language] || HOTEL_COLLECTION_INTRO.en;
   return {
-    reply: `${intro} All ${collection.length} available options are organized by ${categoryCount} service categories below.`,
+    reply: catalogueText(collection),
     language: input.language,
     intent: 'partner_catalog',
     external_option_names: [],
     recommendations: [],
     partner_offers: [],
-    hotel_collection: collection,
+    // Do not expose structured collection objects here: web and WhatsApp
+    // clients must not turn a full catalogue into buttons or booking cards.
+    hotel_collection: [],
+    catalogue_count: collection.length,
+    catalogue_categories: categoryCount,
     provider_failure: '',
-    requires_human: true,
-    media: detectMediaBrochure(input.message, classification.category),
+    requires_human: false,
+    media: null,
   };
 }
 
@@ -983,9 +1009,9 @@ function parseBookingEnquiry(body) {
   const email = compactText(body.email, 'Email address', { required: true, max: 160 }).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please provide a valid email address.');
   const serviceName = compactText(body.serviceName, 'Service', { required: true, max: 160 });
-  const serviceType = BOOKABLE_SERVICE_TYPES.has(String(body.serviceType || '').toLowerCase())
-    ? String(body.serviceType).toLowerCase()
-    : 'concierge';
+  // Preserve the submitted label only long enough for the single strict
+  // normalizer at persistence time to map it into a dashboard bucket.
+  const serviceType = compactText(body.serviceType, 'Service type', { max: 80 });
   const source = String(body.source || '').toLowerCase() === 'external' ? 'external' : 'partner';
   const sessionId = compactText(body.sessionId, 'Session', { max: 110 });
   if (sessionId && !/^[a-zA-Z0-9_-]{4,110}$/.test(sessionId)) throw new Error('Invalid session identifier.');
@@ -1110,7 +1136,7 @@ async function persistRoomEnquiry(env, enquiry) {
       UserID: enquiry.userId,
       Channel: 'web',
       GuestName: `${enquiry.firstName} ${enquiry.lastName}`,
-      ServiceType: 'Front Desk',
+      ServiceType: mapServiceTypeForRequests('Front Desk'),
       RequestSummary: details,
       Source: 'hotel_room_enquiry',
       ServiceRef: enquiry.serviceName,
@@ -1179,20 +1205,16 @@ async function persistDiscoveryLead(env, lead) {
 }
 
 function staffRoleFor(serviceType) {
-  const t = String(serviceType || '').trim().toLowerCase();
-  if (t === 'general manager' || t === 'general_manager' || t === 'manager') return 'General Manager';
+  const type = mapServiceTypeForRequests(serviceType);
+  if (type === 'General Manager') return 'General Manager';
   return {
-    accommodation: 'Reservations',
-    restaurant: 'Restaurant reservations',
-    spa: 'Spa team',
-    transport: 'Guest relations',
-    tour: 'Concierge desk',
-    experience: 'Concierge desk',
-    escalation: 'Duty Manager / Front Desk',
-    housekeeping: 'Housekeeping team',
-    maintenance: 'Maintenance team',
-    operational: 'Housekeeping team',
-  }[t] || 'Reception team';
+    Housekeeping: 'Housekeeping team',
+    Maintenance: 'Maintenance team',
+    'Spa & Wellness': 'Spa team',
+    Transport: 'Guest relations',
+    Dining: 'Restaurant reservations',
+    Concierge: 'Concierge desk',
+  }[type] || 'Concierge desk';
 }
 
 function staffAlertsFromOutcome(outcome) {

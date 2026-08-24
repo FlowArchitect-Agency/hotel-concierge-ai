@@ -5,6 +5,7 @@ import {
   enforceContract,
   inheritConversationContext,
   matchingServices,
+  normalizeServiceType,
   parseExternalResults,
   parseGuestInput,
   inferLanguage,
@@ -470,7 +471,7 @@ test('Booking enquiry writes a contactable guest request to Airtable before ackn
     assert.equal(response.status, 201);
     assert.equal(body.ok, true);
     assert.equal(writtenFields.GuestName, 'Ada Guest');
-    assert.equal(writtenFields.ServiceType, 'restaurant');
+    assert.equal(writtenFields.ServiceType, 'Dining');
     assert.match(writtenFields.RequestSummary, /Email: ada@example\.com/);
     assert.match(writtenFields.RequestSummary, /Guests: 2/);
     assert.equal(writtenFields.Source, 'partner');
@@ -665,7 +666,7 @@ test('An unmatched cuisine is offered a hotel alternative before any external se
   }
 });
 
-test('A services question returns every hotel partner in a dedicated collection without model latency', async () => {
+test('A services question returns every hotel partner as text-only Markdown without model latency', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url) => {
@@ -684,15 +685,22 @@ test('A services question returns every hotel partner in a dedicated collection 
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.intent, 'partner_catalog');
-    assert.equal(body.hotel_collection.length, 2);
-    assert.deepEqual(body.hotel_collection.map((offer) => offer.name), ['Le Jardin \u2014 Chef\u2019s Table', 'Lumi\u00e8re Spa \u2014 Couples Massage']);
+    assert.equal(body.catalogue_count, 2);
+    assert.equal(body.hotel_collection.length, 0);
+    assert.equal(body.partner_offers.length, 0);
+    assert.equal(body.recommendations.length, 0);
+    assert.match(body.reply, /\*\*Full Hotel Collection — 2 Services\*\*/);
+    assert.match(body.reply, /🍽️ \*\*Dining\*\*/);
+    assert.match(body.reply, /🧖 \*\*Spa & Wellness\*\*/);
+    assert.match(body.reply, /\*\*Le Jardin — Chef’s Table\*\*/);
+    assert.match(body.reply, /\*\*Lumière Spa — Couples Massage\*\*/);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('The complete 12-service catalogue is returned without truncation and keeps every category', async () => {
+test('The complete 12-service catalogue is rendered as one text reply without truncation or controls', async () => {
   const catalogueRecords = Array.from({ length: 12 }, (_, index) => {
     const categories = ['accommodation', 'spa', 'restaurant', 'transport', 'tour', 'experience'];
     const category = categories[index % categories.length];
@@ -724,8 +732,13 @@ test('The complete 12-service catalogue is returned without truncation and keeps
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.intent, 'partner_catalog');
-    assert.equal(body.hotel_collection.length, 12);
-    assert.equal(new Set(body.hotel_collection.map((offer) => offer.category)).size, 6);
+    assert.equal(body.catalogue_count, 12);
+    assert.equal(body.catalogue_categories, 6);
+    assert.equal(body.hotel_collection.length, 0);
+    assert.equal(body.partner_offers.length, 0);
+    assert.equal(body.recommendations.length, 0);
+    assert.match(body.reply, /\*\*Full Hotel Collection — 12 Services\*\*/);
+    for (const record of catalogueRecords) assert.match(body.reply, new RegExp(`\\*\\*${record.fields.Name}\\*\\*`));
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -753,8 +766,10 @@ test('An English catalogue question with a mobile spelling mistake overrides an 
     assert.equal(body.language, 'en');
     assert.equal(body.intent, 'partner_catalog');
     assert.equal(body.partner_offers.length, 0);
-    assert.deepEqual(body.hotel_collection.map((offer) => offer.name), ['Le Jardin — Chef’s Table', 'Lumière Spa — Couples Massage']);
-    assert.match(body.reply, /full preferred collection/i);
+    assert.equal(body.hotel_collection.length, 0);
+    assert.match(body.reply, /\*\*Full Hotel Collection — 2 Services\*\*/);
+    assert.match(body.reply, /\*\*Le Jardin — Chef’s Table\*\*/);
+    assert.match(body.reply, /\*\*Lumière Spa — Couples Massage\*\*/);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -817,7 +832,7 @@ test('Room enquiry writes dates, arrival time, and contact details to Airtable',
     assert.equal(response.status, 201);
     assert.equal(body.ok, true);
     assert.equal(writtenFields.GuestName, 'Adele Guest');
-    assert.equal(writtenFields.ServiceType, 'Front Desk');
+    assert.equal(writtenFields.ServiceType, 'Concierge');
     assert.equal(writtenFields.Source, 'hotel_room_enquiry');
     assert.equal(writtenFields.Is_Demo, true);
     assert.equal(writtenFields.ServiceRef, 'Lumière Eiffel View Deluxe');
@@ -976,7 +991,7 @@ test('Semantic routing discovers an unfamiliar request without a hand-written ca
   }
 });
 
-test('Semantic routing answers the actual partner catalogue without an external search', async () => {
+test('A catalog request never searches externally or exposes structured booking controls', async () => {
   const originalFetch = globalThis.fetch;
   let scraped = false;
   globalThis.fetch = async (url, options = {}) => {
@@ -1009,9 +1024,11 @@ test('Semantic routing answers the actual partner catalogue without an external 
     }, { waitUntil() {} });
     const body = await response.json();
     assert.equal(scraped, false);
-    assert.equal(body.hotel_collection[0].name, 'Le Jardin \u2014 Chef\u2019s Table');
-    assert.equal(body.hotel_collection[1].name, 'Lumi\u00e8re Spa \u2014 Couples Massage');
+    assert.equal(body.hotel_collection.length, 0);
     assert.equal(body.partner_offers.length, 0);
+    assert.equal(body.recommendations.length, 0);
+    assert.match(body.reply, /\*\*Le Jardin — Chef’s Table\*\*/);
+    assert.match(body.reply, /\*\*Lumière Spa — Couples Massage\*\*/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1071,7 +1088,7 @@ test('Sentiment Override: Frustrated guest or manager request immediately trigge
     assert.doesNotMatch(data.reply, /Partner option/i);
     assert.doesNotMatch(data.reply, /upgrade/i);
     assert.ok(data.staff_alerts.length > 0);
-    assert.equal(data.staff_alerts[0].role, 'Duty Manager / Front Desk');
+    assert.equal(data.staff_alerts[0].role, 'General Manager');
     assert.ok(writtenTables.length > 0);
     assert.ok(writtenTables.every((entry) => entry.fields.Is_Demo === true));
     const guestWrite = writtenTables.find((w) => w.url.includes('/Guests'));
@@ -1081,7 +1098,7 @@ test('Sentiment Override: Frustrated guest or manager request immediately trigge
   }
 });
 
-test('Rich Media: Spa or menu query returns PDF brochure document card metadata', async () => {
+test('Spa menu requests return a text-only catalogue instead of a brochure or booking controls', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     const target = String(url);
@@ -1123,11 +1140,14 @@ test('Rich Media: Spa or menu query returns PDF brochure document card metadata'
     });
     const data = await response.json();
     assert.equal(response.status, 200);
-    assert.ok(data.media);
-    assert.equal(data.media.type, 'document');
-    assert.equal(data.media.format, 'PDF');
-    assert.match(data.media.filename, /Spa/i);
-    assert.match(data.media.url, /Lumiere_Spa_Wellness_Menu\.pdf/i);
+    assert.equal(data.intent, 'partner_catalog');
+    assert.equal(data.media, null);
+    assert.equal(data.hotel_collection.length, 0);
+    assert.equal(data.partner_offers.length, 0);
+    assert.equal(data.recommendations.length, 0);
+    assert.match(data.reply, /\*\*Full Hotel Collection — 1 Services\*\*/);
+    assert.match(data.reply, /🧖 \*\*Spa & Wellness\*\*/);
+    assert.match(data.reply, /\*\*Lumière Spa Massage\*\*/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1210,6 +1230,28 @@ test('Every booking ticket receives a valid ServiceType instead of Other', async
   }
 });
 
+test('Service type normalization permits only the seven dashboard buckets', () => {
+  assert.deepEqual([
+    normalizeServiceType('housekeeping'),
+    normalizeServiceType('AC repair'),
+    normalizeServiceType('Spa'),
+    normalizeServiceType('airport transfer'),
+    normalizeServiceType('restaurant'),
+    normalizeServiceType('front desk'),
+    normalizeServiceType('escalation'),
+    normalizeServiceType('totally unknown category'),
+  ], [
+    'Housekeeping',
+    'Maintenance',
+    'Spa & Wellness',
+    'Transport',
+    'Dining',
+    'Concierge',
+    'General Manager',
+    'Concierge',
+  ]);
+});
+
 test('Manager metrics use operational tickets times fifteen saved minutes', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
@@ -1218,7 +1260,7 @@ test('Manager metrics use operational tickets times fifteen saved minutes', asyn
       return Response.json({ records: [
         { fields: { ServiceType: 'Housekeeping' } },
         { fields: { ServiceType: 'Maintenance' } },
-        { fields: { ServiceType: 'Room Service' } },
+        { fields: { ServiceType: 'Dining' } },
         { fields: { ServiceType: 'Concierge' } },
       ] });
     }
@@ -1230,9 +1272,9 @@ test('Manager metrics use operational tickets times fifteen saved minutes', asyn
     }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
-      operational_tickets: 3,
-      minutes_saved: 45,
-      hours_saved: 0.75,
+      operational_tickets: 2,
+      minutes_saved: 30,
+      hours_saved: 0.5,
       minutes_per_ticket: 15,
       formula: 'operational tickets × 15 minutes ÷ 60',
     });
