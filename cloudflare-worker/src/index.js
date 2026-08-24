@@ -960,6 +960,10 @@ function hotelCatalogueResponse(input, classification, services) {
 }
 
 function hotelFirstResponse(input, classification, services) {
+  const text = normalized(input.message);
+  if (/\b(what time|when did|did i|did we|which time|what day|how much did|remind me|what was)\b/.test(text)) {
+    return null;
+  }
   const media = detectMediaBrochure(input.message, classification.category);
   if (isHotelCollectionQuestion(input.message)) {
     return hotelCatalogueResponse(input, classification, services);
