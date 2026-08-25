@@ -863,9 +863,22 @@ function categoryPartnerServices(services, category) {
 
 function hasBookingIntent(message) {
   const text = normalized(message);
+
+  // 1. Strict Negation Checks (e.g. 'do not want to book', 'no tours', 'no thanks', 'not looking for', 'skip')
+  if (
+    /\b(do not|don't|dont|not|no|never|skip|refuse|pass on|without|neither|nor)\s+(?:want|need|wish|interested in|looking for|require)?\s*(?:to\s+)?(?:book|reserve|hire|order|take|get|schedule)\b/i.test(text) ||
+    /\b(?:no|not looking for|no need for|skip the|pass on the|without any)\s+(?:private\s+)?(?:tours?|chauffeurs?|taxis?|transfers?|massages?|spa|tables?|reservations?|bookings?|services?)\b/i.test(text) ||
+    /\b(?:no\s+thanks?|no\s+thank\s+you|not\s+interested|not\s+for\s+me|not\s+for\s+us|on my own|on our own|explore on my own|explore on our own)\b/i.test(text)
+  ) {
+    return false;
+  }
+
+  // 2. Retrospective memory queries (e.g. 'what time did I book')
   if (/\b(what time|when|did i|did we|which time|what day|how much|remind me)\b/.test(text)) {
     return false;
   }
+
+  // 3. Positive booking keywords
   return /\b(book|reserve|confirm|yes)\b/.test(text);
 }
 

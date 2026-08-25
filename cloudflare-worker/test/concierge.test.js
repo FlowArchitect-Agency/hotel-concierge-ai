@@ -1429,3 +1429,65 @@ test('Post-Checkout Negative: Complaining guest triggers General Manager escalat
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Booking Intent Negation: Guest refusal with service keyword aborts booking sequence without false positive requests', async () => {
+  const originalFetch = globalThis.fetch;
+  const writtenTables = [];
+  const scheduled = [];
+  try {
+    globalThis.fetch = async (url, options = {}) => {
+      const target = typeof url === 'string' ? url : url.url || '';
+      if (options.method === 'POST') {
+        writtenTables.push({ url: target, fields: JSON.parse(options.body).fields });
+        return new Response(JSON.stringify({ id: 'rec_neg_test', fields: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (target.includes('/Services')) {
+        return new Response(JSON.stringify({ records: [
+          { id: 'rec1', fields: { ServiceName: 'Montmartre Walking Food Tour', Category: 'Tour', Partner: true, Active: true, Price: 280 } },
+          { id: 'rec2', fields: { ServiceName: 'Lumière Spa — Couples Massage', Category: 'Spa', Partner: true, Active: true, Price: 420 } }
+        ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (target.includes('api.groq.com')) {
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({
+            reply_text: 'Understood! Exploring Paris on foot is a wonderful way to experience the city. Let me know if you would like any neighborhood walking tips.',
+            language_detected: 'English',
+            intent: 'smalltalk',
+            service_type: 'Concierge',
+            requests: [],
+            requires_human: false
+          }) } }]
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'Browsing Guest',
+        language: 'English',
+        scenario: 'in-stay',
+        is_demo: true,
+        sessionId: 'demo_refusal_session',
+        chatHistory: [
+          { role: 'assistant', content: 'We offer the Montmartre Walking Food Tour or Versailles Private Day Trip.' },
+          { role: 'user', content: 'Ah okay. No, I do not want to book any private tours or chauffeurs, just going to explore on my own.' }
+        ],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', GROQ_API_KEY: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil(p) { scheduled.push(p); },
+    });
+
+    const data = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.doesNotMatch(data.reply, /I have recorded your request for Montmartre/i);
+    assert.doesNotMatch(data.reply, /I have recorded your request for/i);
+    const requestWrites = writtenTables.filter((w) => w.url.includes('/Requests'));
+    assert.equal(requestWrites.length, 0, 'No booking requests should be created when guest refuses');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
