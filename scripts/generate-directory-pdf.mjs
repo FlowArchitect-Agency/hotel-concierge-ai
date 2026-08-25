@@ -589,9 +589,9 @@ const htmlContent = `<!DOCTYPE html>
     </div>
     <div class="page-body">
       <div class="service-hero-image">
-        <img src="https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=1600&q=85" alt="Mercedes-Maybach Private Transfer">
+        <img src="https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=1600&q=85" alt="VIP Airport Private Jet Tarmac Chauffeur">
         <div class="service-meta-bar">
-          <span class="service-number">Service 03 · VIP Transfer</span>
+          <span class="service-number">Service 03 · VIP Airport Tarmac Transfer</span>
           <span class="service-price">€180 flat rate · ~60 min</span>
         </div>
       </div>
@@ -648,7 +648,7 @@ const htmlContent = `<!DOCTYPE html>
     </div>
     <div class="page-body">
       <div class="service-hero-image">
-        <img src="https://images.unsplash.com/photo-1508974239320-0a029497e820?auto=format&fit=crop&w=1600&q=85" alt="Chauffeur Half Day Disposal">
+        <img src="https://images.unsplash.com/photo-1617814076367-b759c7d7e738?auto=format&fit=crop&w=1600&q=85" alt="Mercedes-Benz S-Class Luxury Chauffeur">
         <div class="service-meta-bar">
           <span class="service-number">Service 04 · Dedicated Vehicle</span>
           <span class="service-price">€450 · 4 Hours Disposal</span>
@@ -825,7 +825,7 @@ const htmlContent = `<!DOCTYPE html>
     </div>
     <div class="page-body">
       <div class="service-hero-image">
-        <img src="https://images.unsplash.com/photo-1499856871958-5b9627545d1a?auto=format&fit=crop&w=1600&q=85" alt="Louvre After Hours">
+        <img src="https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=1600&q=85" alt="Louvre Pyramid After Hours">
         <div class="service-meta-bar">
           <span class="service-number">Service 07 · Private Museum Opening</span>
           <span class="service-price">€2,800 private group · 120 min</span>
@@ -884,7 +884,7 @@ const htmlContent = `<!DOCTYPE html>
     </div>
     <div class="page-body">
       <div class="service-hero-image">
-        <img src="https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?auto=format&fit=crop&w=1600&q=85" alt="Château de Versailles">
+        <img src="https://images.unsplash.com/photo-1599619351208-3e6c839d6828?auto=format&fit=crop&w=1600&q=85" alt="Château de Versailles Hall of Mirrors">
         <div class="service-meta-bar">
           <span class="service-number">Service 08 · Full-Day Excursion</span>
           <span class="service-price">€950 private group · 8 Hours</span>

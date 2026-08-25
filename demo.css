@@ -1081,6 +1081,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 .message p {
   margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.52;
 }
 
 .message-meta {
