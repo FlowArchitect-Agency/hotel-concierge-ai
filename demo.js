@@ -14,6 +14,12 @@
     messageForm: document.querySelector("#messageForm"),
     messageInput: document.querySelector("#messageInput"),
     sendButton: document.querySelector("#sendButton"),
+    emojiPickerBtn: document.querySelector("#emojiPickerBtn"),
+    emojiPicker: document.querySelector("#emojiPicker"),
+    closeEmojiPicker: document.querySelector("#closeEmojiPicker"),
+    emojiGrid: document.querySelector("#emojiGrid"),
+    inboxStaffForm: document.querySelector("#inboxStaffForm"),
+    inboxStaffInput: document.querySelector("#inboxStaffInput"),
     transcript: document.querySelector("#transcript"),
     inboxName: document.querySelector("#inboxGuestName"),
     inboxContext: document.querySelector("#inboxGuestContext"),
@@ -331,21 +337,20 @@
   }
 
   function setOwnerStatus({ human, role = "Reception" }) {
-    dom.handoffStatus.replaceChildren();
-    const dot = document.createElement("span");
-    dot.className = "status-dot";
-    dot.setAttribute("aria-hidden", "true");
-    dom.handoffStatus.append(dot, human ? ` You (${role}) · Live` : " Active");
+    dom.handoffStatus.textContent = human ? `You (${role}) · Live` : "Active";
   }
 
   function updateComposerState(isHuman, role = "Reception") {
     if (isHuman) {
-      dom.messageInput.placeholder = `Reply as ${role}...`;
+      dom.messageInput.placeholder = `Reply to guest as ${role}...`;
       dom.messageInput.setAttribute("aria-label", `Reply as ${role}`);
       dom.sendButton.setAttribute("aria-label", `Reply as ${role}`);
       dom.sendButton.title = `Reply as ${role}`;
       const label = document.querySelector('label[for="messageInput"]');
       if (label) label.textContent = `Reply as ${role}`;
+      if (dom.inboxStaffInput) {
+        dom.inboxStaffInput.placeholder = `Type message as ${role}...`;
+      }
     } else {
       dom.messageInput.placeholder = "Type a message";
       dom.messageInput.setAttribute("aria-label", "Type a message");
@@ -353,6 +358,9 @@
       dom.sendButton.title = "Send message";
       const label = document.querySelector('label[for="messageInput"]');
       if (label) label.textContent = "Type a message";
+      if (dom.inboxStaffInput) {
+        dom.inboxStaffInput.placeholder = "Type message as Receptionist...";
+      }
     }
   }
 
@@ -576,6 +584,68 @@
     if (!cleanText || !session) return;
     addMessage({ sender: "staff", text: cleanText });
     session.chatHistory.push({ role: "assistant", content: cleanText });
+    addTranscript("Reception / Staff (Live)", cleanText, "human");
+  }
+
+  // Apple-Style Quick Emoji Reactions & Picker System
+  const EMOJI_CATEGORIES = {
+    popular: ["✨", "🛎️", "🏨", "🥂", "🍽️", "🧖", "🚘", "👍", "🙏", "❤️", "😊", "👌", "⭐", "🌟", "🎉", "☕"],
+    faces: ["😊", "😀", "😃", "😄", "😁", "🤩", "🥰", "😍", "😎", "😌", "🙌", "🤝", "👋", "💬", "💭", "💡"],
+    hotel: ["🏨", "🛎️", "🧳", "🔑", "🚪", "🛏️", "🛁", "🧖", "🧼", "💆", "🏊", "🏰", "🗼", "🏛️", "🖼️", "✨"],
+    dining: ["🍽️", "🍷", "🥂", "🍾", "☕", "🥐", "🥖", "🥩", "🍝", "🥗", "🍰", "🍓", "🍇", "🧁", "🍹", "🍸"],
+    travel: ["✈️", "🚘", "🚕", "🚆", "🚢", "🗺️", "📍", "🛍️", "🎫", "⏱️", "⏳", "💼", "💳", "💶", "🌆", "🌅"],
+  };
+
+  let activeEmojiCategory = "popular";
+
+  function renderEmojiGrid(category = "popular") {
+    if (!dom.emojiGrid) return;
+    activeEmojiCategory = category;
+    dom.emojiGrid.replaceChildren();
+    const list = EMOJI_CATEGORIES[category] || EMOJI_CATEGORIES.popular;
+    list.forEach((emoji) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "emoji-item-btn";
+      btn.textContent = emoji;
+      btn.setAttribute("aria-label", `Insert ${emoji}`);
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        insertEmoji(emoji);
+      });
+      dom.emojiGrid.append(btn);
+    });
+
+    document.querySelectorAll(".emoji-cat-btn").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.cat === category);
+    });
+  }
+
+  function insertEmoji(emoji) {
+    const input = dom.messageInput;
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const val = input.value;
+    input.value = val.substring(0, start) + emoji + val.substring(end);
+    input.focus();
+    input.setSelectionRange(start + emoji.length, start + emoji.length);
+  }
+
+  function toggleEmojiPicker(e) {
+    e?.stopPropagation();
+    if (!dom.emojiPicker) return;
+    const isHidden = dom.emojiPicker.hidden;
+    dom.emojiPicker.hidden = !isHidden;
+    if (!dom.emojiPicker.hidden) {
+      renderEmojiGrid(activeEmojiCategory);
+    }
+  }
+
+  function closeEmojiPicker() {
+    if (dom.emojiPicker) {
+      dom.emojiPicker.hidden = true;
+    }
   }
 
   function openServices() {
@@ -866,8 +936,44 @@
   dom.handoffButton.addEventListener("click", toggleHandoff);
   dom.closeSheet.addEventListener("click", closeServices);
   dom.backdrop.addEventListener("click", closeServices);
+
+  // Emoji Picker Listeners
+  if (dom.emojiPickerBtn) dom.emojiPickerBtn.addEventListener("click", toggleEmojiPicker);
+  if (dom.closeEmojiPicker) dom.closeEmojiPicker.addEventListener("click", closeEmojiPicker);
+  document.querySelectorAll(".emoji-cat-btn").forEach((btn) => {
+    btn.addEventListener("click", () => renderEmojiGrid(btn.dataset.cat));
+  });
+  document.addEventListener("click", (event) => {
+    if (dom.emojiPicker && !dom.emojiPicker.hidden) {
+      if (!dom.emojiPicker.contains(event.target) && !dom.emojiPickerBtn?.contains(event.target)) {
+        closeEmojiPicker();
+      }
+    }
+  });
+
+  // Receptionist Inbox Live Staff Form Listener
+  if (dom.inboxStaffForm) {
+    dom.inboxStaffForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = (dom.inboxStaffInput?.value || "").trim();
+      if (!text) return;
+      dom.inboxStaffInput.value = "";
+      sendStaffMessage(text);
+      showToast("Reply sent to guest chat as Receptionist.");
+    });
+  }
+
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !dom.sheet.hidden) closeServices();
+    if (event.key === "Escape") {
+      if (dom.emojiPicker && !dom.emojiPicker.hidden) {
+        closeEmojiPicker();
+        return;
+      }
+      if (!dom.sheet.hidden) {
+        closeServices();
+        return;
+      }
+    }
   });
 
   initSheetGestures();

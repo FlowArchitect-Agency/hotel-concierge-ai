@@ -3,26 +3,27 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="A static hotel concierge conversation simulator." />
-    <title>Hôtel Lumière | Concierge simulator</title>
+    <meta name="description" content="Concierge AI — Enterprise Hospitality Intelligence Simulator." />
+    <title>Concierge AI | Operations Simulator</title>
     <link rel="stylesheet" href="demo.css" />
   </head>
   <body>
     <header class="app-header">
-      <a class="brand" href="index.html" aria-label="Return to Hôtel Lumière home">
-        <span class="brand-mark" aria-hidden="true">HL</span>
-        <span>
-          <span class="brand-name">Hôtel Lumière</span>
-          <span class="brand-context">Concierge simulator</span>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg>
         </span>
-      </a>
+        <span>
+          <span class="brand-name">Concierge AI</span>
+          <span class="brand-context">Enterprise Operations</span>
+        </span>
+      </div>
       <div class="header-meta">
         <button id="themeToggle" class="theme-toggle-btn" type="button" aria-label="Toggle visual theme" title="Toggle dark / light mode">
           <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 0 1 1-9-9Z"/></svg>
         </button>
-        <span class="connection-state"><span class="status-dot" aria-hidden="true"></span> Demo environment</span>
-        <a class="quiet-link" href="index.html">Back to hotel site</a>
+        <span class="connection-state">Demo environment</span>
       </div>
     </header>
 
@@ -36,9 +37,11 @@
       <section id="screen-entry" class="app-screen is-active" data-screen="entry" aria-labelledby="entry-title" role="region">
         <div class="entry-card">
           <div class="entry-brand">
-            <span class="brand-mark entry-mark" aria-hidden="true">HL</span>
-            <span class="brand-name">Hôtel Lumière</span>
-            <span class="brand-context">Concierge &amp; Operations Simulator</span>
+            <span class="brand-mark entry-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg>
+            </span>
+            <span class="brand-name">Concierge AI</span>
+            <span class="brand-context">Operations Simulator</span>
           </div>
           <div class="entry-body">
             <h1 id="entry-title">Staff Portal Access</h1>
@@ -55,7 +58,6 @@
             </form>
           </div>
           <div class="entry-footer">
-            <span class="status-dot" aria-hidden="true"></span>
             <span>Isolated Demo Workspace · Ready</span>
           </div>
         </div>
@@ -66,7 +68,7 @@
         <div class="dashboard-hub">
           <div class="hub-header">
             <p class="eyebrow">Operations Hub</p>
-            <h1 id="dashboard-title">Hôtel Lumière Concierge Suite</h1>
+            <h1 id="dashboard-title">Concierge AI Operations Suite</h1>
             <p>Select an operational screen to configure guest simulations, monitor live chats, or manage receptionist handoffs.</p>
           </div>
           <div class="hub-grid">
@@ -152,11 +154,11 @@
                 </select>
               </div>
 
-              <p class="demo-note"><span aria-hidden="true">•</span> Demo records are isolated in Airtable with the Is_Demo flag.</p>
+              <p class="demo-note">Demo records are isolated in Airtable with the Is_Demo flag.</p>
 
               <button class="button button-primary" type="submit">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-9 11h7l-1 9 10-12h-7z" /></svg>
-                Launch simulation &amp; Open Chat
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>
+                <span>Launch simulation &amp; Open Chat</span>
               </button>
             </form>
           </section>
@@ -189,12 +191,14 @@
 
             <div class="chat-shell">
               <header class="chat-header">
-                <button class="icon-button" type="button" data-nav="dashboard" aria-label="Back to dashboard" title="Back to dashboard">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                <button class="icon-button header-back-btn" type="button" data-nav="dashboard" aria-label="Back to dashboard" title="Back to dashboard">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
-                <span class="avatar avatar-small" aria-hidden="true">HL</span>
+                <span class="avatar avatar-small brand-chat-avatar" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg>
+                </span>
                 <div class="chat-identity">
-                  <strong>Hôtel Lumière</strong>
+                  <strong>Hôtel Lumière Concierge</strong>
                   <span>online</span>
                 </div>
                 <div class="chat-actions" aria-label="Conversation tools">
@@ -202,15 +206,31 @@
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 10 20 7v10l-5-3M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" /></svg>
                   </button>
                   <button class="icon-button" type="button" aria-label="Open conversation menu" title="Open conversation menu">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" /></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
                   </button>
                 </div>
               </header>
 
               <div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="WhatsApp conversation messages"></div>
 
+              <!-- Functional Apple-Style Emoji Popover -->
+              <div id="emojiPicker" class="emoji-picker-popover" hidden>
+                <div class="emoji-picker-header">
+                  <span class="emoji-picker-title">Quick Reactions</span>
+                  <button id="closeEmojiPicker" class="emoji-picker-close" type="button" aria-label="Close emoji picker">&times;</button>
+                </div>
+                <div class="emoji-picker-categories" role="tablist">
+                  <button type="button" class="emoji-cat-btn is-active" data-cat="popular">✨ Quick</button>
+                  <button type="button" class="emoji-cat-btn" data-cat="faces">😊 Faces</button>
+                  <button type="button" class="emoji-cat-btn" data-cat="hotel">🏨 Hotel</button>
+                  <button type="button" class="emoji-cat-btn" data-cat="dining">🍽️ Dining</button>
+                  <button type="button" class="emoji-cat-btn" data-cat="travel">✈️ Travel</button>
+                </div>
+                <div id="emojiGrid" class="emoji-picker-grid"></div>
+              </div>
+
               <form id="messageForm" class="chat-composer">
-                <button class="icon-button composer-icon" type="button" aria-label="Choose an emoji" title="Choose an emoji">
+                <button id="emojiPickerBtn" class="icon-button composer-icon" type="button" aria-label="Choose an emoji" title="Choose an emoji">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8M9 9.5h.01M15 9.5h.01" /></svg>
                 </button>
                 <label class="sr-only" for="messageInput">Type a message</label>
@@ -243,11 +263,11 @@
             <div class="panel-heading">
               <p class="eyebrow">Reception</p>
               <h2 id="inbox-title">Receptionist Inbox</h2>
-              <p>Live guest context and a clear human handoff control.</p>
+              <p>Live guest context and human handoff control.</p>
             </div>
 
             <div class="guest-card">
-              <span id="guestInitials" class="avatar" aria-hidden="true">AM</span>
+              <span id="guestInitials" class="avatar avatar-guest" aria-hidden="true">AM</span>
               <div>
                 <p class="guest-card-label">Current guest</p>
                 <h3 id="inboxGuestName">Alex Morgan</h3>
@@ -261,13 +281,27 @@
                   <p class="guest-card-label">Conversation owner</p>
                   <h3 id="handoff-title">AI Concierge</h3>
                 </div>
-                <span id="handoffStatus" class="owner-status"><span class="status-dot" aria-hidden="true"></span> Active</span>
+                <span id="handoffStatus" class="owner-status">Active</span>
               </div>
               <button id="handoffButton" class="button button-handoff" type="button" aria-pressed="false">
                 Take over chat
               </button>
               <p id="handoffDescription">AI replies are enabled for this simulation.</p>
             </section>
+
+            <!-- Live Staff Composer in Inbox Panel -->
+            <div class="inbox-staff-composer-card">
+              <div class="inbox-composer-header">
+                <span class="inbox-composer-tag">Staff Reply</span>
+                <span id="inboxComposerStatus" class="inbox-composer-note">Dispatches directly to guest chat</span>
+              </div>
+              <form id="inboxStaffForm" class="inbox-staff-form">
+                <input id="inboxStaffInput" type="text" placeholder="Type message as Receptionist..." autocomplete="off" />
+                <button id="inboxStaffSendBtn" class="button button-primary button-sm" type="submit">
+                  <span>Send as Staff</span>
+                </button>
+              </form>
+            </div>
 
             <section id="staffAlert" class="staff-alert" aria-labelledby="staffAlertTitle" hidden>
               <div class="staff-alert-heading">
@@ -298,7 +332,7 @@
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-heading">
         <div>
-          <p class="eyebrow">Hôtel Lumière</p>
+          <p class="eyebrow">Privileges</p>
           <h2 id="serviceSheetTitle">Available services</h2>
         </div>
         <button id="closeSheet" class="icon-button sheet-close" type="button" aria-label="Close services menu">
