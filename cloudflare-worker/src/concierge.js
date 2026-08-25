@@ -372,10 +372,29 @@ export function postCheckoutNegativeReply(guestName, language) {
   return replies[language] ?? replies.en;
 }
 
+export function guestInsistsOnExternal(message) {
+  const text = String(message || '').trim().toLowerCase();
+  return /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text)
+    || /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text);
+}
+
+export function hasNegation(message) {
+  const text = normalized(message);
+  if (
+    /\b(do not|don't|dont|not|no|never|skip|refuse|pass on|without|neither|nor)\s+(?:want|need|wish|interested in|looking for|require)?\s*(?:to\s+)?(?:book|reserve|hire|order|take|get|schedule)\b/i.test(text) ||
+    /\b(?:no|not looking for|no need for|skip the|pass on the|without any)\s+(?:private\s+)?(?:tours?|chauffeurs?|taxis?|transfers?|massages?|spa|tables?|reservations?|bookings?|services?)\b/i.test(text) ||
+    /\b(?:no\s+thanks?|no\s+thank\s+you|not\s+interested|not\s+for\s+me|not\s+for\s+us|on my own|on our own|explore on my own|explore on our own)\b/i.test(text)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function classifyRequest(message) {
   const text = normalized(message);
   const hasEscalation = isEscalation(message);
   const isOperational = isOperationalRequest(message);
+  const wantsExternal = guestInsistsOnExternal(message);
   const scores = new Map();
   for (const rule of CATEGORY_RULES) {
     for (const word of rule.words) {
@@ -389,8 +408,8 @@ export function classifyRequest(message) {
   if (isOperational) category = 'housekeeping';
   const trimmed = text.replace(/[!.?\u00a1\u00bf]+$/g, '');
   const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2;
-  const hasIntent = !isGreeting && Boolean(category || cuisine || hasEscalation || isOperational || REQUEST_WORDS.some((word) => hasTerm(text, word)));
-  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational };
+  const hasIntent = !isGreeting && Boolean(category || cuisine || hasEscalation || isOperational || wantsExternal || REQUEST_WORDS.some((word) => hasTerm(text, word)));
+  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational, wantsExternal, rawMessage: message };
 }
 
 export function inheritConversationContext(classification, history, latestMessage) {
@@ -455,7 +474,7 @@ export function shouldSearchExternal(classification, services) {
   if (!classification.hasIntent || ['greeting', 'hotel_faq', 'partner_catalog'].includes(classification.route)) return false;
   // A semantic route can deliberately prefer current external information
   // even when a broad hotel category happens to contain a partner service.
-  return Boolean(classification.externalDiscovery) || !services.length;
+  return Boolean(classification.externalDiscovery) || Boolean(classification.wantsExternal) || !services.length;
 }
 
 const DIRECTORY_HOSTS = /(^|\.)(tripadvisor|thefork|timeout|reddit|yelp|petitfute|restaurantguru|wanderlog|mappy|pagesjaunes|guide-michelin|google\.|getyourguide|tiqets)\./i;
@@ -679,7 +698,7 @@ function conciseReply(value) {
   return sentences.slice(0, 2).join(' ').slice(0, 360).trim();
 }
 
-export function enforceContract(model, { language, classification, matching, excluded, externalOptions }) {
+export function enforceContract(model, { language, classification, matching, excluded, externalOptions, inputMessage = '' }) {
   const isAngry = Boolean(classification?.hasEscalation);
   if (isAngry) {
     return {
@@ -722,7 +741,15 @@ export function enforceContract(model, { language, classification, matching, exc
     requests = requests.filter((item) => optionNames.some((name) => normalized(item.serviceName).includes(normalized(name))));
   }
 
-  if (!isAngry && !classification.isOperational && classification.route !== 'partner_catalog' && classification.hasIntent && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
+  const rawMsg = String(inputMessage || classification?.rawMessage || '').toLowerCase();
+  const isSmalltalk = model?.intent === 'smalltalk' || model?.intent === 'faq' || !classification?.hasIntent;
+  const isInformational = /\b(weather|temperature|forecast|rain|sunny|time|hours|open|closed|where is|direction|directions|metro|subway|bus|walking|walk|stroll)\b/i.test(rawMsg);
+  const isRefusal = hasNegation(rawMsg);
+  const isExplicitlyExternal = classification?.wantsExternal || guestInsistsOnExternal(rawMsg);
+
+  const suppressPartnerSuffix = isAngry || isSmalltalk || isInformational || isRefusal || isExplicitlyExternal || classification?.isOperational || classification?.route === 'partner_catalog' || !classification?.hasIntent;
+
+  if (!suppressPartnerSuffix && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
     const service = matching[0];
     const details = [service.price === null || service.price === '' ? '' : `EUR ${Number(service.price).toFixed(0)}`, service.duration ? `${service.duration} min` : ''].filter(Boolean).join(', ');
     const partnerSuffix = {

@@ -854,7 +854,7 @@ function isHotelCollectionQuestion(message) {
 function guestInsistsOnExternal(message) {
   const text = String(message || '').trim().toLowerCase();
   return /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text)
-    || /\b(not your|not the hotel|outside the hotel|external option|somewhere else)\b/i.test(text);
+    || /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text);
 }
 
 function categoryPartnerServices(services, category) {
@@ -975,6 +975,9 @@ function hotelCatalogueResponse(input, classification, services) {
 function hotelFirstResponse(input, classification, services) {
   const text = normalized(input.message);
   if (/\b(what time|when did|did i|did we|which time|what day|how much did|remind me|what was)\b/.test(text)) {
+    return null;
+  }
+  if (classification?.wantsExternal || guestInsistsOnExternal(input.message)) {
     return null;
   }
   const media = detectMediaBrochure(input.message, classification.category);
@@ -1624,7 +1627,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   if (classification.externalDiscovery && externalOptions.length) {
     const outcome = enforceContract(
       { reply: '', intent: 'service_request', serviceType: classification.category, requiresHuman: true, requests: [] },
-      { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions },
+      { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions, inputMessage: input.message },
     );
     if (!input.testMode || input.testMode === 'write_verified') {
       ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
@@ -1641,6 +1644,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     matching: promptServices,
     excluded: serviceSet.excluded,
     externalOptions,
+    inputMessage: input.message,
   });
 
   if (!input.testMode || input.testMode === 'write_verified') {
