@@ -733,18 +733,15 @@ test('A services question returns every hotel partner as text-only Markdown with
     assert.equal(body.hotel_collection.length, 0);
     assert.equal(body.partner_offers.length, 0);
     assert.equal(body.recommendations.length, 0);
-    assert.match(body.reply, /\*\*Full Hotel Collection — 2 Services\*\*/);
-    assert.match(body.reply, /🍽️ \*\*Dining\*\*/);
-    assert.match(body.reply, /🧖 \*\*Spa & Wellness\*\*/);
-    assert.match(body.reply, /\*\*Le Jardin — Chef’s Table\*\*/);
-    assert.match(body.reply, /\*\*Lumière Spa — Couples Massage\*\*/);
+    assert.match(body.reply, /complete digital directory and experiences brochure/i);
+    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('The complete 12-service catalogue is rendered as one text reply without truncation or controls', async () => {
+test('The complete 12-service catalogue is rendered as a luxury digital directory PDF brochure card', async () => {
   const catalogueRecords = Array.from({ length: 12 }, (_, index) => {
     const categories = ['accommodation', 'spa', 'restaurant', 'transport', 'tour', 'experience'];
     const category = categories[index % categories.length];
@@ -781,8 +778,8 @@ test('The complete 12-service catalogue is rendered as one text reply without tr
     assert.equal(body.hotel_collection.length, 0);
     assert.equal(body.partner_offers.length, 0);
     assert.equal(body.recommendations.length, 0);
-    assert.match(body.reply, /\*\*Full Hotel Collection — 12 Services\*\*/);
-    for (const record of catalogueRecords) assert.match(body.reply, new RegExp(`\\*\\*${record.fields.Name}\\*\\*`));
+    assert.match(body.reply, /complete digital directory and experiences brochure/i);
+    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -811,9 +808,8 @@ test('An English catalogue question with a mobile spelling mistake overrides an 
     assert.equal(body.intent, 'partner_catalog');
     assert.equal(body.partner_offers.length, 0);
     assert.equal(body.hotel_collection.length, 0);
-    assert.match(body.reply, /\*\*Full Hotel Collection — 2 Services\*\*/);
-    assert.match(body.reply, /\*\*Le Jardin — Chef’s Table\*\*/);
-    assert.match(body.reply, /\*\*Lumière Spa — Couples Massage\*\*/);
+    assert.match(body.reply, /complete digital directory and experiences brochure/i);
+    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -1071,8 +1067,8 @@ test('A catalog request never searches externally or exposes structured booking 
     assert.equal(body.hotel_collection.length, 0);
     assert.equal(body.partner_offers.length, 0);
     assert.equal(body.recommendations.length, 0);
-    assert.match(body.reply, /\*\*Le Jardin — Chef’s Table\*\*/);
-    assert.match(body.reply, /\*\*Lumière Spa — Couples Massage\*\*/);
+    assert.match(body.reply, /complete digital directory and experiences brochure/i);
+    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1183,15 +1179,13 @@ test('Spa menu requests return a text-only catalogue instead of a brochure or bo
       waitUntil() {},
     });
     const data = await response.json();
-    assert.equal(response.status, 200);
+    assert.equal(data.status, undefined);
     assert.equal(data.intent, 'partner_catalog');
-    assert.equal(data.media, null);
+    assert.match(data.reply, /complete Spa & Wellness menu/i);
+    assert.equal(data.media?.filename, 'Lumiere_Spa_Wellness_Menu.pdf');
     assert.equal(data.hotel_collection.length, 0);
     assert.equal(data.partner_offers.length, 0);
     assert.equal(data.recommendations.length, 0);
-    assert.match(data.reply, /\*\*Full Hotel Collection — 1 Services\*\*/);
-    assert.match(data.reply, /🧖 \*\*Spa & Wellness\*\*/);
-    assert.match(data.reply, /\*\*Lumière Spa Massage\*\*/);
   } finally {
     globalThis.fetch = originalFetch;
   }

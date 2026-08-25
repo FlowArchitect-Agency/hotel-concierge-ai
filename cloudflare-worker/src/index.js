@@ -845,11 +845,11 @@ function isHotelCollectionQuestion(message) {
   // Guests frequently transpose the "i" and "v" in "services" on mobile.
   // Treat this as the same catalogue request rather than sending it through a
   // slow, generic model route that can return only one category.
-  const catalogueTerm = /\b(?:catalog(?:ue)?|services?|serivces?|sevrices?|servcies?|amenities|offerings?|collection|partners?|experiences?|servicios?|servizi)\b/;
-  const catalogueQuestion = /\b(?:what|which|show|see|view|browse|open|list|can you|do you|quels?|montrez|voir|que)\b/;
+  const catalogueTerm = /\b(?:catalog(?:ue)?|directory|guide|brochure|services?|serivces?|sevrices?|servcies?|amenities|offerings?|collection|partners?|experiences?|servicios?|servizi|view services|our services)\b/;
+  const catalogueQuestion = /\b(?:what|which|show|see|view|browse|open|list|send|can you|do you|quels?|montrez|voir|que)\b/;
   const broadHotelOffer = /\bwhat\s+(?:do|can)\s+(?:you|the hotel)\s+(?:offer|arrange|provide)\b/;
   const spaMenu = /\b(?:spa|wellness|massage|treatments?)\s+(?:menu|catalog(?:ue)?|list|brochure)\b/;
-  return spaMenu.test(text) || (catalogueTerm.test(text) && catalogueQuestion.test(text)) || broadHotelOffer.test(text);
+  return spaMenu.test(text) || (catalogueTerm.test(text) && catalogueQuestion.test(text)) || broadHotelOffer.test(text) || /^(?:view\s+services?|services?|catalog(?:ue)?|directory)$/i.test(text.trim());
 }
 
 function guestInsistsOnExternal(message) {
@@ -953,23 +953,60 @@ async function cancellationOutcome(env, input, classification, services) {
 
 function hotelCatalogueResponse(input, classification, services) {
   const collection = partnerOffers(services, { limit: null });
-  if (!collection.length) return null;
   const categoryCount = new Set(collection.map((service) => service.category)).size;
+  const isSpaOnly = classification?.category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(input.message);
+
+  const media = isSpaOnly ? {
+    type: 'document',
+    format: 'PDF',
+    title: 'Hôtel Lumière — Spa & Wellness Brochure',
+    filename: 'Lumiere_Spa_Wellness_Menu.pdf',
+    size: '2.4 MB',
+    pages: '12 pages',
+    url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Spa_Wellness_Menu.pdf',
+    thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
+  } : {
+    type: 'document',
+    format: 'PDF',
+    title: 'Hôtel Lumière — Digital Directory & Experiences Brochure 2026',
+    filename: 'Lumiere_Guest_Directory_2026.pdf',
+    size: '4.2 MB',
+    pages: '24 pages',
+    url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Guest_Directory_2026.pdf',
+    thumbnail: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=700&q=84',
+  };
+
+  const replies = {
+    en: isSpaOnly
+      ? 'Here is our complete Spa & Wellness menu and treatment brochure. Please let me know if you would like to book a treatment.'
+      : 'Here is our complete digital directory and experiences brochure. Please let me know if you would like to reserve any service or experience.',
+    fr: isSpaOnly
+      ? 'Voici notre carte complète du Spa & Bien-être. N’hésitez pas à me faire savoir si vous souhaitez réserver un soin.'
+      : 'Voici notre répertoire numérique complet et notre brochure d’expériences. N’hésitez pas à me faire savoir si vous souhaitez réserver un service.',
+    es: isSpaOnly
+      ? 'Aquí tiene nuestro menú completo de Spa & Bienestar. Por favor avíseme si desea reservar algún tratamiento.'
+      : 'Aquí tiene nuestro directorio digital completo y folleto de experiencias. Por favor avíseme si desea reservar algún servicio.',
+    it: 'Ecco la nostra directory digitale completa e la brochure delle esperienze. Mi faccia sapere se desidera prenotare un servizio.',
+    de: 'Hier finden Sie unser vollständiges digitales Verzeichnis und unsere Erlebnisbroschüre. Bitte lassen Sie mich wissen, wenn Sie einen Service reservieren möchten.',
+    ar: 'إليكم الدليل الرقمي الكامل وكتيب التجارب الخاص بنا. يرجى إعلامي إذا كنتم ترغبون في حجز أي خدمة.',
+    ja: '当ホテルのデジタル総合案内および体験プログラムのご案内冊子をお届けいたします。ご予約を希望されるサービスがございましたら、いつでもお申し付けください。',
+    zh: '这是我们的完整电子服务指南与体验手册。如果您想预订任何服务或体验，请随时告知我。',
+  };
+  const reply = replies[input.language] || replies.en;
+
   return {
-    reply: catalogueText(collection),
+    reply,
     language: input.language,
     intent: 'partner_catalog',
     external_option_names: [],
     recommendations: [],
     partner_offers: [],
-    // Do not expose structured collection objects here: web and WhatsApp
-    // clients must not turn a full catalogue into buttons or booking cards.
     hotel_collection: [],
     catalogue_count: collection.length,
     catalogue_categories: categoryCount,
     provider_failure: '',
     requires_human: false,
-    media: null,
+    media,
   };
 }
 

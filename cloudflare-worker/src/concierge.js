@@ -225,13 +225,17 @@ export const ESCALATION_REPLIES = {
 
 export function detectMediaBrochure(message, category = null) {
   const text = normalized(message);
-  const asksForBrochure = /\b(menu|carte|brochure|pdf|catalog|catalogue|treatments?|pricing|tarifs?|tarifs|services list|list of services|carte des soins|soins|massages?)\b/i.test(text);
+  if (isEscalation(message) || /\b(noisy|terrible|bad service|horrible|complaint|dirty|broken|manager)\b/i.test(text)) {
+    return null;
+  }
+  const asksForBrochure = /\b(menu|carte|brochure|pdf|catalog|catalogue|directory|guide|treatments?|pricing|tarifs?|tarifs|services list|list of services|view services|our services|carte des soins|soins|massages?)\b/i.test(text)
+    || /\b(?:show|see|view|send|have|list|what|all)\s+(?:me\s+)?(?:the\s+)?(?:services?|collection)\b/i.test(text);
   const isSpa = category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(text);
   const isDining = category === 'restaurant' || /\b(dinner|lunch|breakfast|food|carte|dining|restaurant|wine|cocktail|room service)\b/i.test(text);
   const isRooms = category === 'accommodation' || /\b(room|suite|chambre|habitacion|stay)\b/i.test(text);
 
   if (asksForBrochure || isSpa) {
-    if (isSpa) {
+    if (isSpa && !/\b(catalog|catalogue|directory|all services|view services|full collection)\b/i.test(text)) {
       return {
         type: 'document',
         format: 'PDF',
@@ -243,7 +247,7 @@ export function detectMediaBrochure(message, category = null) {
         thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
       };
     }
-    if (isDining) {
+    if (isDining && !/\b(catalog|catalogue|directory|all services|view services|full collection)\b/i.test(text)) {
       return {
         type: 'document',
         format: 'PDF',
@@ -255,7 +259,7 @@ export function detectMediaBrochure(message, category = null) {
         thumbnail: 'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?auto=format&fit=crop&w=700&q=84',
       };
     }
-    if (isRooms) {
+    if (isRooms && !/\b(catalog|catalogue|directory|all services|view services|full collection)\b/i.test(text)) {
       return {
         type: 'document',
         format: 'PDF',
@@ -267,6 +271,16 @@ export function detectMediaBrochure(message, category = null) {
         thumbnail: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=700&q=84',
       };
     }
+    return {
+      type: 'document',
+      format: 'PDF',
+      title: 'Hôtel Lumière — Digital Directory & Experiences Brochure 2026',
+      filename: 'Lumiere_Guest_Directory_2026.pdf',
+      size: '4.2 MB',
+      pages: '24 pages',
+      url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Guest_Directory_2026.pdf',
+      thumbnail: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=700&q=84',
+    };
   }
   return null;
 }

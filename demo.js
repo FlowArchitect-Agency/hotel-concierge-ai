@@ -837,7 +837,8 @@
     const button = event.target.closest("button[data-action]");
     if (!button || button.disabled) return;
     if (button.dataset.action === "view-services") {
-      openServices();
+      disableMessageActions(button);
+      sendGuestMessage("View Services");
       return;
     }
     if (button.dataset.action === "quick-reply") {
