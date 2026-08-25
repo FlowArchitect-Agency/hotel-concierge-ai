@@ -788,24 +788,76 @@ function catalogueCategoryMeta(category) {
   };
 }
 
+const SERVICE_METADATA = {
+  'Le Jardin — Chef\'s Table (2 Michelin)': {
+    emoji: '🍽️',
+    desc: '2-Michelin starred gastronomy with a 7-course seasonal tasting symphony.',
+    highlights: 'Kitchen-side VIP table, rare Grand Cru wine pairings, and hand-dived scallops.',
+  },
+  'Terrasse Lumière — Rooftop Dinner': {
+    emoji: '🗼',
+    desc: 'Panoramic rooftop dining overlooking the illuminated Eiffel Tower.',
+    highlights: 'Candlelit terrace table, 3-course dinner, vintage champagne, and hourly light show.',
+  },
+  'Private Chauffeur — CDG/ORY Transfer': {
+    emoji: '🚘',
+    desc: 'Seamless first-class airport transfer in a Mercedes-Maybach S-Class.',
+    highlights: 'Airside gate greeting, real-time flight tracking, chilled Evian, and luggage handling.',
+  },
+  'Private Chauffeur — Half-Day Disposal': {
+    emoji: '🛍️',
+    desc: '4 hours of dedicated executive chauffeur on continuous standby.',
+    highlights: 'Unlimited stops for Avenue Montaigne shopping, gallery viewings, and doorstep waiting.',
+  },
+  'Lumière Spa — Couples Massage': {
+    emoji: '🧖',
+    desc: 'Dual botanical massage in our private subterranean candlelit sanctuary.',
+    highlights: 'Private double suite, organic aromatherapy oils, volcanic hot stones, and fresh macarons.',
+  },
+  'Lumière Spa — Signature Hammam Ritual': {
+    emoji: '🧼',
+    desc: 'Ancient thermal hydrotherapy on heated Carrara marble.',
+    highlights: 'Eucalyptus steam mist, traditional black soap scrub, Kessa glove exfoliation, and Rhassoul clay wrap.',
+  },
+  'VIP Louvre After-Hours Private Tour': {
+    emoji: '🖼️',
+    desc: 'Exclusive access to the Musée du Louvre behind closed doors past 6 PM.',
+    highlights: 'Art historian curator escort, private viewing of the Mona Lisa in complete solitude, and Napoleon III apartments.',
+  },
+  'Versailles Private Day Trip': {
+    emoji: '🏰',
+    desc: 'An 8-hour royal journey to the Sun King Louis XIV\'s iconic palace.',
+    highlights: 'Private chauffeur transport, VIP skip-the-line Hall of Mirrors, Grand Trianon, and Marie Antoinette\'s Hamlet.',
+  },
+};
+
+function cleanServiceEntry(service, index) {
+  const meta = SERVICE_METADATA[service.name] || {
+    emoji: '✨',
+    desc: service.description || 'Exclusive luxury hotel experience.',
+    highlights: 'Dedicated personalized concierge coordination.',
+  };
+  const price = Number.isFinite(Number(service.price_eur || service.price)) ? `€${Number(service.price_eur || service.price).toFixed(0)}` : '';
+  const duration = Number.isFinite(Number(service.duration_mins)) && Number(service.duration_mins) > 0 ? `${service.duration_mins} min` : '';
+  const metaRate = [price, duration].filter(Boolean).join(' · ');
+
+  return [
+    `${index + 1}. ${meta.emoji} ${service.name}`,
+    `Quick description: ${meta.desc}`,
+    `Things you will find there: ${meta.highlights}`,
+    metaRate ? `Rate & duration: ${metaRate}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function buildCleanDirectoryMessage(collection, language = 'en') {
+  const header = '✨ Hôtel Lumière Paris — Signature Collection\n\nHere is our complete digital directory and experiences brochure. Below is our full list of curated privileges:\n\n';
+  const entries = collection.map((service, index) => cleanServiceEntry(service, index)).join('\n\n');
+  const footer = '\n\nPlease let me know if you would like to reserve any service or experience, and our concierge team will arrange everything for you.';
+  return header + entries + footer;
+}
+
 function catalogueText(collection) {
-  const grouped = new Map();
-  for (const offer of collection) {
-    const category = String(offer.category || 'experience').trim().toLowerCase();
-    if (!grouped.has(category)) grouped.set(category, []);
-    grouped.get(category).push(offer);
-  }
-  const sections = [...grouped.entries()].map(([category, offers]) => {
-    const { label, emoji } = catalogueCategoryMeta(category);
-    const entries = offers.map((offer) => {
-      const details = [];
-      if (Number.isFinite(Number(offer.price_eur))) details.push(`EUR ${Number(offer.price_eur).toFixed(0)}`);
-      if (Number.isFinite(Number(offer.duration_mins)) && Number(offer.duration_mins) > 0) details.push(`${Number(offer.duration_mins)} min`);
-      return `• **${offer.name}**${details.length ? ` — ${details.join(' · ')}` : ''}`;
-    }).join('\n');
-    return `${emoji} **${label}**\n${entries}`;
-  });
-  return [`✨ **Full Hotel Collection — ${collection.length} Services**`, 'Everything currently available through the hotel is listed below. Reply with the name of any service and the concierge will take it from there.', ...sections].join('\n\n');
+  return buildCleanDirectoryMessage(collection);
 }
 
 const HOTEL_PARTNER_REQUEST_REPLIES = {
@@ -976,23 +1028,17 @@ function hotelCatalogueResponse(input, classification, services) {
     thumbnail: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=700&q=84',
   };
 
-  const replies = {
-    en: isSpaOnly
-      ? 'Here is our complete Spa & Wellness menu and treatment brochure. Please let me know if you would like to book a treatment.'
-      : 'Here is our complete digital directory and experiences brochure. Please let me know if you would like to reserve any service or experience.',
-    fr: isSpaOnly
-      ? 'Voici notre carte complète du Spa & Bien-être. N’hésitez pas à me faire savoir si vous souhaitez réserver un soin.'
-      : 'Voici notre répertoire numérique complet et notre brochure d’expériences. N’hésitez pas à me faire savoir si vous souhaitez réserver un service.',
-    es: isSpaOnly
-      ? 'Aquí tiene nuestro menú completo de Spa & Bienestar. Por favor avíseme si desea reservar algún tratamiento.'
-      : 'Aquí tiene nuestro directorio digital completo y folleto de experiencias. Por favor avíseme si desea reservar algún servicio.',
-    it: 'Ecco la nostra directory digitale completa e la brochure delle esperienze. Mi faccia sapere se desidera prenotare un servizio.',
-    de: 'Hier finden Sie unser vollständiges digitales Verzeichnis und unsere Erlebnisbroschüre. Bitte lassen Sie mich wissen, wenn Sie einen Service reservieren möchten.',
-    ar: 'إليكم الدليل الرقمي الكامل وكتيب التجارب الخاص بنا. يرجى إعلامي إذا كنتم ترغبون في حجز أي خدمة.',
-    ja: '当ホテルのデジタル総合案内および体験プログラムのご案内冊子をお届けいたします。ご予約を希望されるサービスがございましたら、いつでもお申し付けください。',
-    zh: '这是我们的完整电子服务指南与体验手册。如果您想预订任何服务或体验，请随时告知我。',
+  const spaReplies = {
+    en: 'Here is our complete Spa & Wellness menu and treatment brochure. Please let me know if you would like to book a treatment.',
+    fr: 'Voici notre carte complète du Spa & Bien-être. N’hésitez pas à me faire savoir si vous souhaitez réserver un soin.',
+    es: 'Aquí tiene nuestro menú completo de Spa & Bienestar. Por favor avíseme si desea reservar algún tratamiento.',
+    it: 'Ecco il nostro menu completo di Spa & Benessere. Mi faccia sapere se desidera prenotare un trattamento.',
+    de: 'Hier finden Sie unser vollständiges Spa & Wellness-Menü. Bitte lassen Sie mich wissen, wenn Sie eine Behandlung buchen möchten.',
+    ar: 'إليكم قائمة السبا والعافية الكاملة وكتيب العلاجات. يرجى إعلامي إذا كنتم ترغبون في حجز علاج.',
+    ja: '当ホテルのスパ＆ウェルネスのメニューおよび施術案内をお届けいたします。施術のご予約をご希望の際はお申し付けください。',
+    zh: '这是我们的完整水疗与健康护理手册。如果您想预约任何项目，请随时告知我。',
   };
-  const reply = replies[input.language] || replies.en;
+  const reply = isSpaOnly ? (spaReplies[input.language] || spaReplies.en) : catalogueText(collection);
 
   return {
     reply,
