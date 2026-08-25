@@ -698,7 +698,7 @@ function conciseReply(value) {
   return sentences.slice(0, 2).join(' ').slice(0, 360).trim();
 }
 
-export function enforceContract(model, { language, classification, matching, excluded, externalOptions, inputMessage = '' }) {
+export function enforceContract(model, { language, classification, matching, excluded, externalOptions, inputMessage = '', providerFailure = '' }) {
   const isAngry = Boolean(classification?.hasEscalation);
   if (isAngry) {
     return {
@@ -766,13 +766,23 @@ export function enforceContract(model, { language, classification, matching, exc
     finalReply = finalReply ? `${finalReply}\n\n${suffix}` : suffix;
   }
 
+  const isDelayFallback = Boolean(providerFailure && !finalReply);
+  if (isDelayFallback) {
+    finalReply = 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.';
+  }
+
   return {
     reply: finalReply || (DEFERRED[language] ?? DEFERRED.en),
-    intent: isAngry ? 'complaint' : (classification.isOperational ? 'service_request' : model.intent),
-    serviceType: isAngry ? 'escalation' : (classification.isOperational ? 'housekeeping' : model.serviceType),
-    requiresHuman: isAngry || Boolean(model.requiresHuman) || Boolean(classification.cuisine) || Boolean(classification.isOperational),
-    escapeHatchTriggered: isAngry || Boolean(model.escapeHatchTriggered),
-    requests: requests.filter((item) => !excludedNames.some((name) => normalized(item.serviceName).includes(normalized(name)))),
+    intent: isAngry ? 'complaint' : (classification.isOperational ? 'service_request' : (isDelayFallback ? 'service_request' : model.intent)),
+    serviceType: isAngry ? 'escalation' : (classification.isOperational ? 'housekeeping' : (isDelayFallback ? 'Front Desk' : model.serviceType)),
+    requiresHuman: isAngry || isDelayFallback || Boolean(model.requiresHuman) || Boolean(classification.cuisine) || Boolean(classification.isOperational),
+    escapeHatchTriggered: isAngry || isDelayFallback || Boolean(model.escapeHatchTriggered),
+    requests: isDelayFallback ? [{
+      serviceName: 'Front Desk Assistance',
+      source: 'partner',
+      summary: `System delay fallback for guest message: "${inputMessage || classification?.rawMessage || 'Inquiry'}"`,
+      isUpsell: false,
+    }] : requests.filter((item) => !excludedNames.some((name) => normalized(item.serviceName).includes(normalized(name)))),
     externalOptionNames: optionNames,
     recommendations: externalOptions,
   };

@@ -107,12 +107,13 @@ function twimlResponse(message = '', status = 200) {
 }
 
 function rateLimited(request) {
-  const key = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for');
+  if (!ip) return false;
   const now = Date.now();
-  const timestamps = (RECENT_REQUESTS.get(key) || []).filter((value) => now - value < 60_000);
+  const timestamps = (RECENT_REQUESTS.get(ip) || []).filter((value) => now - value < 60_000);
   timestamps.push(now);
-  RECENT_REQUESTS.set(key, timestamps);
-  return timestamps.length > 20;
+  RECENT_REQUESTS.set(ip, timestamps);
+  return timestamps.length > 60;
 }
 
 function missingWhatsAppSecrets(env, { inbound = false } = {}) {
@@ -1487,170 +1488,215 @@ function operationalResponse(input) {
 }
 
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
-  const input = parseGuestInput(body);
-  const instantPostCheckout = postCheckoutResponse(input);
-  if (instantPostCheckout) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      const isNeg = instantPostCheckout.intent === 'complaint' || instantPostCheckout.escape_hatch_triggered;
-      ctx.waitUntil(persistConversation(env, input, {
-        reply: instantPostCheckout.reply,
-        serviceType: isNeg ? 'General Manager' : 'concierge',
-        requests: isNeg ? [{
-          serviceName: 'Post-Checkout Private Service Recovery',
-          source: 'partner',
-          summary: `URGENT POST-CHECKOUT SERVICE RECOVERY: Guest feedback: "${input.message}"`,
-          isUpsell: false,
-        }] : [],
-      }).catch(() => undefined));
-    }
-    return instantPostCheckout;
+  let input;
+  try {
+    input = parseGuestInput(body);
+  } catch (err) {
+    throw err;
   }
-  const instantEscalation = escalationResponse(input);
-  if (instantEscalation) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, {
-        reply: instantEscalation.reply,
-        serviceType: 'General Manager',
-        requests: [{
-          serviceName: 'Duty Manager Escalation',
-          source: 'partner',
-          summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
-          isUpsell: false,
-        }],
-      }).catch(() => undefined));
-    }
-    return instantEscalation;
-  }
-  const instantOperational = operationalResponse(input);
-  if (instantOperational) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, {
-        reply: instantOperational.reply,
-        serviceType: 'housekeeping',
-        requests: [{
-          serviceName: 'Room Delivery / Operational Request',
-          source: 'partner',
-          summary: `Room Request: "${input.message}"`,
-          isUpsell: false,
-        }],
-      }).catch(() => undefined));
-    }
-    return instantOperational;
-  }
-  let classification = classifyRequest(input.message);
-  reportStatus('Reviewing the details of your request\u2026');
-  const instantGreeting = simpleGreetingResponse(input);
-  if (instantGreeting) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, { reply: instantGreeting.reply, requests: [] }).catch(() => undefined));
-    }
-    return instantGreeting;
-  }
-  const languagePreference = languagePreferenceResponse(input);
-  if (languagePreference) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, { reply: languagePreference.reply, requests: [] }).catch(() => undefined));
-    }
-    return languagePreference;
-  }
-  requireSecrets(env);
-  const serviceRecords = await fetchServices(env, { bypassCache: Boolean(input.testMode) });
-  const initialServiceSet = matchingServices(serviceRecords, classification);
-  const instantCancellation = await cancellationOutcome(env, input, classification, initialServiceSet.all);
-  if (instantCancellation) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, instantCancellation).catch(() => undefined));
-    }
-    return chatResponseFromOutcome(instantCancellation, classification, input.language, [], '', null, input.message);
-  }
-  const instantDirectBooking = partnerBookingOutcome(input, classification, initialServiceSet.all);
-  if (instantDirectBooking) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, instantDirectBooking).catch(() => undefined));
-    }
-    return chatResponseFromOutcome(instantDirectBooking, classification, input.language);
-  }
-  const instantHotelFirst = hotelFirstResponse(input, classification, initialServiceSet.all);
-  if (instantHotelFirst) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, { reply: instantHotelFirst.reply, requests: [] }).catch(() => undefined));
-    }
-    return instantHotelFirst;
-  }
-  const instantDining = curatedDiningResponse(input, classification, initialServiceSet.matching);
-  if (instantDining) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, { reply: instantDining.reply, requests: [] }).catch(() => undefined));
-    }
-    return instantDining;
-  }
-  const [history, facts] = await Promise.all([
-    input.chatHistory ? Promise.resolve(input.chatHistory) : fetchHistory(env, input.userId),
-    fetchFacts(env),
-  ]);
-  classification = inheritConversationContext(classification, history, input.message);
-  reportStatus('Considering the most suitable next step\u2026');
-  classification = await enrichSemanticRoute(env, input, history, classification);
-  const serviceSet = matchingServices(serviceRecords, classification);
-  // Semantic routing can recognize catalogue wording that the fast phrase
-  // matcher did not. Keep this path deterministic as well, so it returns the
-  // complete collection rather than a model-selected subset.
-  if (classification.route === 'partner_catalog') {
-    const catalogue = hotelCatalogueResponse(input, classification, serviceSet.all);
-    if (catalogue) {
+
+  try {
+    const instantPostCheckout = postCheckoutResponse(input);
+    if (instantPostCheckout) {
       if (!input.testMode || input.testMode === 'write_verified') {
-        ctx.waitUntil(persistConversation(env, input, { reply: catalogue.reply, requests: [] }).catch(() => undefined));
+        const isNeg = instantPostCheckout.intent === 'complaint' || instantPostCheckout.escape_hatch_triggered;
+        ctx.waitUntil(persistConversation(env, input, {
+          reply: instantPostCheckout.reply,
+          serviceType: isNeg ? 'General Manager' : 'concierge',
+          requests: isNeg ? [{
+            serviceName: 'Post-Checkout Private Service Recovery',
+            source: 'partner',
+            summary: `URGENT POST-CHECKOUT SERVICE RECOVERY: Guest feedback: "${input.message}"`,
+            isUpsell: false,
+          }] : [],
+        }).catch(() => undefined));
       }
-      return catalogue;
+      return instantPostCheckout;
     }
-  }
-  const directBooking = partnerBookingOutcome(input, classification, serviceSet.all);
-  if (directBooking) {
-    if (!input.testMode || input.testMode === 'write_verified') {
-      ctx.waitUntil(persistConversation(env, input, directBooking).catch(() => undefined));
+    const instantEscalation = escalationResponse(input);
+    if (instantEscalation) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, {
+          reply: instantEscalation.reply,
+          serviceType: 'General Manager',
+          requests: [{
+            serviceName: 'Duty Manager Escalation',
+            source: 'partner',
+            summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
+            isUpsell: false,
+          }],
+        }).catch(() => undefined));
+      }
+      return instantEscalation;
     }
-    return chatResponseFromOutcome(directBooking, classification, input.language);
-  }
-  const partnerMatches = serviceSet.matching.filter((service) => service.isPartner);
-  const promptServices = classification.route === 'partner_catalog'
-    ? serviceSet.all.filter((service) => service.isPartner)
-    : partnerMatches;
-  let externalOptions = [];
-  if (shouldSearchExternal(classification, partnerMatches)) {
-    reportStatus('Searching current Paris addresses\u2026');
-    externalOptions = await externalSearch(env, input, classification);
-    if (preferenceForOneRecommendation(input.message)) externalOptions = externalOptions.slice(0, 1);
-    reportStatus('Curating only independently verified matches\u2026');
-  } else {
-    reportStatus('Reviewing the hotel\u2019s preferred collection\u2026');
-  }
-  if (classification.externalDiscovery && externalOptions.length) {
-    const outcome = enforceContract(
-      { reply: '', intent: 'service_request', serviceType: classification.category, requiresHuman: true, requests: [] },
-      { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions, inputMessage: input.message },
-    );
+    const instantOperational = operationalResponse(input);
+    if (instantOperational) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, {
+          reply: instantOperational.reply,
+          serviceType: 'housekeeping',
+          requests: [{
+            serviceName: 'Room Delivery / Operational Request',
+            source: 'partner',
+            summary: `Room Request: "${input.message}"`,
+            isUpsell: false,
+          }],
+        }).catch(() => undefined));
+      }
+      return instantOperational;
+    }
+    let classification = classifyRequest(input.message);
+    reportStatus('Reviewing the details of your request\u2026');
+    const instantGreeting = simpleGreetingResponse(input);
+    if (instantGreeting) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: instantGreeting.reply, requests: [] }).catch(() => undefined));
+      }
+      return instantGreeting;
+    }
+    const languagePreference = languagePreferenceResponse(input);
+    if (languagePreference) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: languagePreference.reply, requests: [] }).catch(() => undefined));
+      }
+      return languagePreference;
+    }
+    requireSecrets(env);
+    const serviceRecords = await fetchServices(env, { bypassCache: Boolean(input.testMode) }).catch((err) => {
+      console.error('Failed to fetch services from Airtable:', err);
+      return [];
+    });
+    const initialServiceSet = matchingServices(serviceRecords, classification);
+    const instantCancellation = await cancellationOutcome(env, input, classification, initialServiceSet.all);
+    if (instantCancellation) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, instantCancellation).catch(() => undefined));
+      }
+      return chatResponseFromOutcome(instantCancellation, classification, input.language, [], '', null, input.message);
+    }
+    const instantDirectBooking = partnerBookingOutcome(input, classification, initialServiceSet.all);
+    if (instantDirectBooking) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, instantDirectBooking).catch(() => undefined));
+      }
+      return chatResponseFromOutcome(instantDirectBooking, classification, input.language);
+    }
+    const instantHotelFirst = hotelFirstResponse(input, classification, initialServiceSet.all);
+    if (instantHotelFirst) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: instantHotelFirst.reply, requests: [] }).catch(() => undefined));
+      }
+      return instantHotelFirst;
+    }
+    const instantDining = curatedDiningResponse(input, classification, initialServiceSet.matching);
+    if (instantDining) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: instantDining.reply, requests: [] }).catch(() => undefined));
+      }
+      return instantDining;
+    }
+    const [history, facts] = await Promise.all([
+      input.chatHistory ? Promise.resolve(input.chatHistory) : fetchHistory(env, input.userId).catch(() => []),
+      fetchFacts(env).catch(() => ({ hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', hotelCity: env.HOTEL_CITY || 'Paris', text: '' })),
+    ]);
+    classification = inheritConversationContext(classification, history, input.message);
+    reportStatus('Considering the most suitable next step\u2026');
+    classification = await enrichSemanticRoute(env, input, history, classification).catch(() => classification);
+    const serviceSet = matchingServices(serviceRecords, classification);
+    // Semantic routing can recognize catalogue wording that the fast phrase
+    // matcher did not. Keep this path deterministic as well, so it returns the
+    // complete collection rather than a model-selected subset.
+    if (classification.route === 'partner_catalog') {
+      const catalogue = hotelCatalogueResponse(input, classification, serviceSet.all);
+      if (catalogue) {
+        if (!input.testMode || input.testMode === 'write_verified') {
+          ctx.waitUntil(persistConversation(env, input, { reply: catalogue.reply, requests: [] }).catch(() => undefined));
+        }
+        return catalogue;
+      }
+    }
+    const directBooking = partnerBookingOutcome(input, classification, serviceSet.all);
+    if (directBooking) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, directBooking).catch(() => undefined));
+      }
+      return chatResponseFromOutcome(directBooking, classification, input.language);
+    }
+    const partnerMatches = serviceSet.matching.filter((service) => service.isPartner);
+    const promptServices = classification.route === 'partner_catalog'
+      ? serviceSet.all.filter((service) => service.isPartner)
+      : partnerMatches;
+    let externalOptions = [];
+    if (shouldSearchExternal(classification, partnerMatches)) {
+      reportStatus('Searching current Paris addresses\u2026');
+      externalOptions = await externalSearch(env, input, classification).catch(() => []);
+      if (preferenceForOneRecommendation(input.message)) externalOptions = externalOptions.slice(0, 1);
+      reportStatus('Curating only independently verified matches\u2026');
+    } else {
+      reportStatus('Reviewing the hotel\u2019s preferred collection\u2026');
+    }
+    if (classification.externalDiscovery && externalOptions.length) {
+      const outcome = enforceContract(
+        { reply: '', intent: 'service_request', serviceType: classification.category, requiresHuman: true, requests: [] },
+        { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions, inputMessage: input.message },
+      );
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
+      }
+      return chatResponseFromOutcome(outcome, classification, input.language);
+    }
+    reportStatus('Preparing a considered recommendation\u2026');
+    const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts });
+    const provider = await callGroq(env, prompt).catch((err) => ({ content: '', providerFailure: err.message || 'groq_error' }));
+    const model = parseModelJson(provider.content);
+    const outcome = enforceContract(model, {
+      language: input.language,
+      classification,
+      matching: promptServices,
+      excluded: serviceSet.excluded,
+      externalOptions,
+      inputMessage: input.message,
+      providerFailure: provider.providerFailure,
+    });
+
     if (!input.testMode || input.testMode === 'write_verified') {
       ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
     }
-    return chatResponseFromOutcome(outcome, classification, input.language);
+    return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message);
+  } catch (error) {
+    console.error('Graceful fallback in resolveChat:', error);
+    const fallbackReply = 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.';
+    const fallbackOutcome = {
+      reply: fallbackReply,
+      intent: 'service_request',
+      serviceType: 'Front Desk',
+      requiresHuman: true,
+      escapeHatchTriggered: true,
+      requests: [{
+        serviceName: 'Front Desk Assistance',
+        source: 'partner',
+        summary: `System delay fallback for guest message: "${input.message}"`,
+        isUpsell: false,
+      }],
+      externalOptionNames: [],
+      recommendations: [],
+    };
+    if (!input.testMode || input.testMode === 'write_verified') {
+      ctx.waitUntil(persistConversation(env, input, fallbackOutcome).catch(() => undefined));
+    }
+    return {
+      reply: fallbackReply,
+      language: input?.language || 'en',
+      intent: 'service_request',
+      service_type: 'Front Desk',
+      requires_human: true,
+      escape_hatch_triggered: true,
+      external_option_names: [],
+      recommendations: [],
+      partner_offers: [],
+      staff_alerts: [{ role: 'Front Desk', summary: `System delay fallback: ${error instanceof Error ? error.message : 'Backend error'}` }],
+    };
   }
-  reportStatus('Preparing a considered recommendation\u2026');
-  const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts });
-  const provider = await callGroq(env, prompt);
-  const model = parseModelJson(provider.content);
-  const outcome = enforceContract(model, {
-    language: input.language,
-    classification,
-    matching: promptServices,
-    excluded: serviceSet.excluded,
-    externalOptions,
-    inputMessage: input.message,
-  });
-
-  if (!input.testMode || input.testMode === 'write_verified') {
-    ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
-  }
-  return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message);
 }
 
 async function handleJsonChat(request, env, ctx) {
@@ -1660,16 +1706,37 @@ async function handleJsonChat(request, env, ctx) {
 
 async function handleDemoChat(request, env, ctx) {
   if (!demoAllowedOrigin(request, env)) return demoResponse({ error: 'Origin is not allowed.' }, 403, request, env);
-  const input = parseDemoChatPayload(await request.json());
-  const result = await resolveChat(input, env, ctx);
-  return demoResponse({
-    ...result,
-    requires_human: Boolean(result?.requires_human || result?.requiresHuman || result?.escape_hatch_triggered),
-    escape_hatch_triggered: Boolean(result?.escape_hatch_triggered || result?.escapeHatchTriggered),
-    staff_alerts: result?.staff_alerts || [],
-    demo: true,
-    is_demo: true,
-  }, 200, request, env);
+  let input;
+  try {
+    input = parseDemoChatPayload(await request.json());
+  } catch (validationErr) {
+    return demoResponse({ error: validationErr.message }, 400, request, env);
+  }
+
+  try {
+    const result = await resolveChat(input, env, ctx);
+    return demoResponse({
+      ...result,
+      requires_human: Boolean(result?.requires_human || result?.requiresHuman || result?.escape_hatch_triggered),
+      escape_hatch_triggered: Boolean(result?.escape_hatch_triggered || result?.escapeHatchTriggered),
+      staff_alerts: result?.staff_alerts || [],
+      demo: true,
+      is_demo: true,
+    }, 200, request, env);
+  } catch (error) {
+    console.error('Error in handleDemoChat execution:', error);
+    return demoResponse({
+      reply: 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.',
+      language: input?.language || 'en',
+      intent: 'service_request',
+      serviceType: 'Front Desk',
+      requires_human: true,
+      escape_hatch_triggered: true,
+      staff_alerts: [{ role: 'Front Desk', summary: `System delay fallback: ${error instanceof Error ? error.message : 'Backend error'}` }],
+      demo: true,
+      is_demo: true,
+    }, 200, request, env);
+  }
 }
 
 async function handleBookingEnquiry(request, env) {

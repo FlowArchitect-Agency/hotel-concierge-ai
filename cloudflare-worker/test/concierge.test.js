@@ -1491,3 +1491,40 @@ test('Booking Intent Negation: Guest refusal with service keyword aborts booking
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Graceful Failure Handling: Downstream Groq or Airtable failure returns polite delay notice and triggers escape hatch', async () => {
+  const originalFetch = globalThis.fetch;
+  const scheduled = [];
+  try {
+    globalThis.fetch = async () => {
+      throw new Error('Network timeout connecting to upstream service');
+    };
+
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'Stuck Guest',
+        language: 'English',
+        scenario: 'in-stay',
+        is_demo: true,
+        sessionId: 'demo_failure_session',
+        chatHistory: [
+          { role: 'user', content: 'What are the top museum tours today?' }
+        ],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', GROQ_API_KEY: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil(p) { scheduled.push(p); },
+    });
+
+    const data = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.match(data.reply, /experiencing a brief system delay/i);
+    assert.equal(data.requires_human, true);
+    assert.equal(data.escape_hatch_triggered, true);
+    assert.ok(data.staff_alerts.length > 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
