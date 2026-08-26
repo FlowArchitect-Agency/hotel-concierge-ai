@@ -3,356 +3,142 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Concierge AI — Enterprise Hospitality Intelligence Simulator." />
-    <title>Concierge AI | Operations Simulator</title>
-    <link rel="stylesheet" href="demo.css" />
+    <meta name="description" content="ConciergeFlow hospitality AI product simulation." />
+    <title>ConciergeFlow | Product simulation</title>
+    <link rel="stylesheet" href="demo.css?v=conciergeflow-v2-requests-r10" />
   </head>
-  <body>
-    <header class="app-header">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg>
-        </span>
-        <span>
-          <span class="brand-name">Concierge AI</span>
-          <span class="brand-context">Enterprise Operations</span>
-        </span>
-      </div>
-      <div class="header-meta">
-        <button id="themeToggle" class="theme-toggle-btn" type="button" aria-label="Toggle visual theme" title="Toggle dark / light mode">
-          <svg class="sun-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-          <svg class="moon-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 0 1 1-9-9Z"/></svg>
-        </button>
-        <span class="connection-state">Demo environment</span>
-      </div>
-    </header>
+  <body class="demo-locked">
+    <div class="demo-application">
+      <div class="app-content">
+        <header class="product-masthead">
+          <a href="index.html" class="product-brand" aria-label="Return to ConciergeFlow home"><img src="logo-icon.svg" alt="" /><span>ConciergeFlow</span></a>
+          <div class="product-property"><span>Hôtel Lumière Paris</span><i aria-hidden="true"></i><span>Product Simulation</span></div>
+          <nav class="product-navigation" aria-label="Product areas">
+            <button class="product-nav-button" type="button" data-nav="dashboard">Overview</button>
+            <button class="product-nav-button" type="button" data-nav="website">Website Concierge</button>
+            <button class="product-nav-button" type="button" data-nav="guest">Live Simulation</button>
+            <button class="product-nav-button" type="button" data-nav="inbox">Reception</button>
+            <button class="product-nav-button" type="button" data-nav="requests">Requests</button>
+            <button class="product-nav-button" type="button" data-nav="mission">Mission Control</button>
+          </nav>
+          <div class="masthead-actions"><span class="connection-state" title="This environment simulates selected guest journeys using demo data."><i aria-hidden="true"></i>Demo</span><button id="resetDemo" class="masthead-action" type="button">Reset</button><a class="masthead-exit" href="index.html">Exit</a></div>
+        </header>
 
-    <!-- Screen Reader Live Announcer -->
-    <div id="screenAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+        <div id="screenAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- Main Multi-Screen Container -->
-    <main id="appScreens" class="app-screens" role="main">
-      
-      <!-- SCREEN 1: Entry / Access Code Gate -->
-      <section id="screen-entry" class="app-screen is-active" data-screen="entry" aria-labelledby="entry-title" role="region">
-        <div class="entry-card">
-          <div class="entry-brand">
-            <span class="brand-mark entry-mark" aria-hidden="true">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg>
-            </span>
-            <span class="brand-name">Concierge AI</span>
-            <span class="brand-context">Operations Simulator</span>
-          </div>
-          <div class="entry-body">
-            <h1 id="entry-title">Staff Portal Access</h1>
-            <p>Enter the operations access code to initialize the multi-channel concierge simulation environment.</p>
-            <form id="entryForm" class="entry-form">
-              <div class="field-group">
-                <label for="entryPasscode">Operations Passcode</label>
-                <input id="entryPasscode" type="password" value="1928" placeholder="Enter access code (e.g. 1928)" autocomplete="current-password" required />
+        <main id="appScreens" class="app-screens" role="main">
+          <section id="screen-entry" class="app-screen is-active" data-screen="entry" aria-labelledby="entry-title" role="region">
+            <div class="entry-card">
+              <div class="entry-brand"><span class="brand-mark entry-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg></span><span class="brand-name">ConciergeFlow</span><span class="brand-context">Private product demonstration</span></div>
+              <div class="entry-body">
+                <p class="entry-kicker">Hôtel Lumière Paris</p>
+                <h1 id="entry-title">Experience ConciergeFlow as a hotel team would.</h1>
+                <p>Explore selected guest journeys and see how conversations become thoughtful hotel service.</p>
+                <form id="entryForm" class="entry-form"><div class="field-group"><label for="entryPasscode">Access code</label><input id="entryPasscode" type="password" value="1928" placeholder="Enter access code" autocomplete="current-password" required /></div><button class="button button-primary" type="submit"><span>Enter demo</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg></button></form>
               </div>
-              <button class="button button-primary" type="submit">
-                <span>Unlock Simulator</span>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-              </button>
-            </form>
-          </div>
-          <div class="entry-footer">
-            <span>Isolated Demo Workspace · Ready</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- SCREEN 2: Operations Dashboard / Screen Hub -->
-      <section id="screen-dashboard" class="app-screen" data-screen="dashboard" aria-labelledby="dashboard-title" role="region" hidden>
-        <div class="dashboard-hub">
-          <div class="hub-header">
-            <p class="eyebrow">Operations Hub</p>
-            <h1 id="dashboard-title">Concierge AI Operations Suite</h1>
-            <p>Select an operational screen to configure guest simulations, monitor live chats, or manage receptionist handoffs.</p>
-          </div>
-          <div class="hub-grid">
-            <div class="hub-card" data-nav="mission" role="button" tabindex="0" aria-label="Open Mission Control workspace">
-              <div class="hub-card-top">
-                <span class="hub-card-badge">01 · Setup</span>
-                <span class="hub-card-icon" aria-hidden="true">⚙</span>
-              </div>
-              <h3>Mission Control</h3>
-              <p>Configure virtual guest persona, language preference, and arrival scenarios (48h Pre-Arrival, In-Stay, Post-Checkout).</p>
-              <button class="hub-card-action button" type="button" data-nav="mission" tabindex="-1">Open Mission Control →</button>
+              <div class="entry-footer"><span>Demo data only · Selected flows are simulated</span></div>
             </div>
-
-            <div class="hub-card" data-nav="guest" role="button" tabindex="0" aria-label="Open Guest WhatsApp Channel">
-              <div class="hub-card-top">
-                <span class="hub-card-badge">02 · Live Channel</span>
-                <span class="hub-card-icon" aria-hidden="true">💬</span>
-              </div>
-              <h3>Guest WhatsApp Channel</h3>
-              <p>Interactive WhatsApp chat canvas with AI Concierge, rich PDF brochures, restaurant bookings, and quick replies.</p>
-              <button class="hub-card-action button" type="button" data-nav="guest" tabindex="-1">Open Guest Channel →</button>
-            </div>
-
-            <div class="hub-card" data-nav="inbox" role="button" tabindex="0" aria-label="Open Receptionist Inbox and Escalations">
-              <div class="hub-card-top">
-                <span class="hub-card-badge">03 · Operations</span>
-                <span class="hub-card-icon" aria-hidden="true">🔔</span>
-              </div>
-              <h3>Receptionist Inbox</h3>
-              <p>Monitor live guest context, manage human handoff, receive urgent staff escalation alerts, and inspect transcripts.</p>
-              <button class="hub-card-action button" type="button" data-nav="inbox" tabindex="-1">Open Reception Inbox →</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- SCREEN 3: Mission Control (Panel Screen) -->
-      <section id="screen-mission" class="app-screen" data-screen="mission" aria-labelledby="mission-title" role="region" hidden>
-        <nav class="screen-nav" aria-label="Screen navigation">
-          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Operations Dashboard">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            <span>Dashboard</span>
-          </button>
-          <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
-            <button class="nav-pill is-active" type="button" data-nav="mission" role="tab" aria-selected="true" tabindex="0">Mission Control</button>
-            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false" tabindex="-1">Guest Channel</button>
-            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false" tabindex="-1">Reception Inbox</button>
-          </div>
-        </nav>
-
-        <div class="panel-screen-content">
-          <section class="panel mission-panel" aria-labelledby="mission-title">
-            <div class="panel-heading">
-              <p class="eyebrow">Simulation setup</p>
-              <h1 id="mission-title">Mission Control</h1>
-              <p>Set the guest context, then launch a safely isolated demo session.</p>
-            </div>
-
-            <form id="simulationForm" class="simulation-form">
-              <input type="hidden" id="isDemo" name="is_demo" value="true" />
-
-              <div class="field-group">
-                <label for="guestName">Virtual Guest Name</label>
-                <input id="guestName" name="guest_name" type="text" value="Alex Morgan" autocomplete="off" required />
-              </div>
-
-              <div class="field-group">
-                <label for="guestLanguage">Language</label>
-                <select id="guestLanguage" name="language">
-                  <option value="English">English</option>
-                  <option value="French">French</option>
-                  <option value="Spanish">Spanish</option>
-                  <option value="Japanese">Japanese</option>
-                </select>
-              </div>
-
-              <div class="field-group">
-                <label for="scenario">Scenario</label>
-                <select id="scenario" name="scenario">
-                  <option value="pre-arrival">48h Pre-Arrival</option>
-                  <option value="in-stay">In-Stay Request</option>
-                  <option value="post_checkout">Post-Checkout Review</option>
-                </select>
-              </div>
-
-              <p class="demo-note">Demo records are isolated in Airtable with the Is_Demo flag.</p>
-
-              <button class="button button-primary" type="submit">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>
-                <span>Launch simulation &amp; Open Chat</span>
-              </button>
-            </form>
           </section>
-        </div>
-      </section>
 
-      <!-- SCREEN 4: Guest Channel (Panel Screen) -->
-      <section id="screen-guest" class="app-screen" data-screen="guest" aria-labelledby="conversation-title" role="region" hidden>
-        <nav class="screen-nav" aria-label="Screen navigation">
-          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Operations Dashboard">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            <span>Dashboard</span>
-          </button>
-          <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
-            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false" tabindex="-1">Mission Control</button>
-            <button class="nav-pill is-active" type="button" data-nav="guest" role="tab" aria-selected="true" tabindex="0">Guest Channel</button>
-            <button class="nav-pill" type="button" data-nav="inbox" role="tab" aria-selected="false" tabindex="-1">Reception Inbox</button>
-          </div>
-        </nav>
-
-        <div class="panel-screen-content">
-          <section class="panel conversation-panel" aria-labelledby="conversation-title">
-            <div class="conversation-heading">
-              <div>
-                <p class="eyebrow">Guest channel</p>
-                <h2 id="conversation-title">WhatsApp conversation</h2>
-              </div>
-              <span id="conversationMode" class="mode-pill">AI active</span>
+          <section id="screen-dashboard" class="app-screen" data-screen="dashboard" aria-labelledby="dashboard-title" role="region" hidden>
+            <div class="simulation-home">
+              <div class="home-hero"><p class="eyebrow">Hôtel Lumière Paris · Product Simulation</p><h1 id="dashboard-title">See how ConciergeFlow supports every guest journey.</h1><p>Start with a guest journey or try the concierge on the hotel website. Follow the conversation through to a clear request and the staff view.</p><div class="home-actions"><button class="button button-primary" type="button" data-nav="mission">Experience a guest journey <span aria-hidden="true">→</span></button><button class="button button-quiet" type="button" data-nav="website">Try the Website Concierge</button><button class="text-action" type="button" data-nav="inbox">See the staff view <span aria-hidden="true">↗</span></button></div></div>
+              <section class="system-map" aria-label="ConciergeFlow platform architecture">
+                <div class="system-channel system-channel--website"><span class="system-channel-icon" aria-hidden="true">⌘</span><div><p>Website Concierge</p><small>Visitor-initiated · begins on the hotel website</small></div></div>
+                <div class="system-connector" aria-hidden="true"></div>
+                <div class="system-core"><span class="core-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg></span><div><strong>ConciergeFlow</strong><small>Guest context · hotel knowledge · service intelligence</small></div><span class="core-status"><i aria-hidden="true"></i>Ready</span></div>
+                <div class="system-connector" aria-hidden="true"></div>
+                <div class="system-channel system-channel--whatsapp"><span class="system-channel-icon" aria-hidden="true">↗</span><div><p>WhatsApp Concierge</p><small>Stay-aware · supports the guest across the stay</small></div></div>
+                <div class="system-connector system-connector--down" aria-hidden="true"></div>
+                <div class="system-operations"><div><span>Hotel Operations</span><small>Structured requests and staff attention when needed</small></div><button type="button" data-nav="inbox">Open Reception <span aria-hidden="true">→</span></button></div>
+              </section>
+              <div class="home-footnote"><span><i aria-hidden="true"></i>Demo environment</span><p>Selected guest journeys are simulated so you can explore freely.</p></div>
             </div>
+          </section>
 
-            <div class="chat-shell">
-              <header class="chat-header">
-                <button class="icon-button header-back-btn" type="button" data-nav="dashboard" aria-label="Back to dashboard" title="Back to dashboard">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <span class="avatar avatar-small brand-chat-avatar" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg>
-                </span>
-                <div class="chat-identity">
-                  <strong>Hôtel Lumière Concierge</strong>
-                  <span>online</span>
-                </div>
-                <div class="chat-actions" aria-label="Conversation tools">
-                  <button class="icon-button" type="button" aria-label="Start video call" title="Start video call">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 10 20 7v10l-5-3M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z" /></svg>
-                  </button>
-                  <button class="icon-button" type="button" aria-label="Open conversation menu" title="Open conversation menu">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
-                  </button>
-                </div>
+          <section id="screen-website" class="app-screen" data-screen="website" aria-labelledby="website-title" role="region" hidden>
+            <div class="hotel-site-demo">
+              <header class="hotel-site-header">
+                <a class="hotel-site-wordmark" href="#website" aria-label="Hôtel Lumière Paris home"><span aria-hidden="true">✦</span><strong>Hôtel Lumière</strong><small>Paris</small></a>
+                <nav class="hotel-site-navigation" aria-label="Hôtel Lumière website navigation">
+                  <button type="button" data-website-prompt="Show me your rooms and suites.">Rooms &amp; Suites</button>
+                  <button type="button" data-website-prompt="What dining experiences are available at Hôtel Lumière?">Dining</button>
+                  <button type="button" data-website-prompt="What spa and wellness treatments do you offer?">Spa &amp; Wellness</button>
+                  <button type="button" data-website-prompt="What Paris experiences can you help us plan?">Experiences</button>
+                </nav>
+                <button class="hotel-site-availability" type="button" data-website-room-enquiry>Request availability <span aria-hidden="true">↗</span></button>
               </header>
 
-              <div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="WhatsApp conversation messages"></div>
-
-              <!-- Functional Apple-Style Emoji Popover -->
-              <div id="emojiPicker" class="emoji-picker-popover" hidden>
-                <div class="emoji-picker-header">
-                  <span class="emoji-picker-title">Quick Reactions</span>
-                  <button id="closeEmojiPicker" class="emoji-picker-close" type="button" aria-label="Close emoji picker">&times;</button>
+              <div class="hotel-site-hero">
+                <div class="hotel-site-hero-image" role="img" aria-label="The luminous salon at Hôtel Lumière Paris"></div>
+                <div class="hotel-site-hero-wash" aria-hidden="true"></div>
+                <div class="hotel-site-hero-copy">
+                  <p class="hotel-site-kicker">8th arrondissement · Paris</p>
+                  <h1 id="website-title">A more luminous way to stay in Paris.</h1>
+                  <p>Quietly Parisian rooms, considered rituals and a concierge attuned to the details that make a stay feel entirely your own.</p>
+                  <div class="hotel-site-hero-actions"><button type="button" class="hotel-site-primary" data-website-prompt="Show me your rooms and suites.">Discover the hotel <span aria-hidden="true">→</span></button><button type="button" class="hotel-site-text-action" data-website-open>Ask the concierge <span aria-hidden="true">↗</span></button></div>
                 </div>
-                <div class="emoji-picker-categories" role="tablist">
-                  <button type="button" class="emoji-cat-btn is-active" data-cat="popular">✨ Quick</button>
-                  <button type="button" class="emoji-cat-btn" data-cat="faces">😊 Faces</button>
-                  <button type="button" class="emoji-cat-btn" data-cat="hotel">🏨 Hotel</button>
-                  <button type="button" class="emoji-cat-btn" data-cat="dining">🍽️ Dining</button>
-                  <button type="button" class="emoji-cat-btn" data-cat="travel">✈️ Travel</button>
-                </div>
-                <div id="emojiGrid" class="emoji-picker-grid"></div>
+                <aside class="hotel-site-stay-card" aria-label="Hôtel Lumière highlights"><p>At Hôtel Lumière</p><dl><div><dt>42</dt><dd>Rooms &amp; suites</dd></div><div><dt>01</dt><dd>Intimate spa</dd></div><div><dt>Paris</dt><dd>Made personal</dd></div></dl></aside>
               </div>
 
-              <form id="messageForm" class="chat-composer">
-                <button id="emojiPickerBtn" class="icon-button composer-icon" type="button" aria-label="Choose an emoji" title="Choose an emoji">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8M9 9.5h.01M15 9.5h.01" /></svg>
-                </button>
-                <label class="sr-only" for="messageInput">Type a message</label>
-                <input id="messageInput" type="text" placeholder="Type a message" autocomplete="off" />
-                <button id="sendButton" class="send-button" type="submit" aria-label="Send message" title="Send message">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9-4-9Zm4 9h7" /></svg>
-                </button>
+              <section class="hotel-site-editorial" aria-label="A stay composed around you"><div><p class="hotel-site-kicker">Your Paris, considered</p><h2>Arrive with a plan. Leave with a story.</h2></div><p>From a table at L&rsquo;Orangerie to a late arrival from CDG, the hotel team is here for the arrangements that deserve a little more attention.</p><button type="button" data-website-prompt="Help me plan a stay at Hôtel Lumière in Paris.">Plan a stay <span aria-hidden="true">→</span></button></section>
+
+              <footer class="hotel-site-footer"><span>Hôtel Lumière Paris</span><span>Visitor-initiated website conversation</span><button type="button" data-nav="mission">See the stay-aware WhatsApp concierge <span aria-hidden="true">→</span></button></footer>
+
+              <button id="websiteConciergeLauncher" class="website-concierge-launcher" type="button" aria-expanded="false" aria-controls="websiteConciergePanel"><span class="website-concierge-launcher-mark" aria-hidden="true">✦</span><span><strong>Concierge</strong><small>Ask our concierge</small></span></button>
+
+              <aside id="websiteConciergePanel" class="website-concierge-panel" aria-labelledby="websiteConciergeTitle" aria-hidden="true" hidden>
+                <header class="website-concierge-header"><div><p>Hôtel Lumière Paris</p><h2 id="websiteConciergeTitle">At your service</h2></div><button id="websiteConciergeClose" type="button" aria-label="Close concierge">×</button></header>
+                <div id="websiteConciergeMessages" class="website-concierge-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Website concierge conversation"></div>
+                <div id="websiteConciergeStarters" class="website-concierge-starters" aria-label="Suggested concierge questions"><button type="button" data-website-prompt="Show me your rooms and suites.">Explore rooms</button><button type="button" data-website-prompt="What dining experiences are available at Hôtel Lumière?">Dining recommendations</button><button type="button" data-website-prompt="What spa and wellness treatments do you offer?">Spa &amp; wellness</button><button type="button" data-website-prompt="Help me plan a stay at Hôtel Lumière in Paris.">Plan my stay</button></div>
+                <form id="websiteConciergeForm" class="website-concierge-composer"><label class="sr-only" for="websiteConciergeInput">Ask the concierge</label><textarea id="websiteConciergeInput" rows="1" maxlength="1200" placeholder="Ask about your Paris stay" autocomplete="off"></textarea><button id="websiteConciergeSend" type="submit" aria-label="Send your message"><span aria-hidden="true">↑</span></button></form>
+                <footer class="website-concierge-footer"><span id="websiteConciergeStatus" role="status" aria-live="polite">Private website conversation</span><span>Powered by ConciergeFlow</span></footer>
+              </aside>
+
+              <section id="websiteServiceEnquiry" class="website-enquiry-modal" role="dialog" aria-modal="true" aria-labelledby="websiteServiceEnquiryTitle" hidden><div class="website-enquiry-dialog"><button type="button" class="website-enquiry-close" data-website-close-enquiry aria-label="Close service enquiry">×</button><p>Hôtel Lumière Paris</p><h2 id="websiteServiceEnquiryTitle">Send a concierge enquiry</h2><div class="website-enquiry-summary"><span id="websiteServiceName">Selected experience</span><small id="websiteServiceMeta">Price on request</small></div><p class="website-enquiry-intro">Share the essentials and the concierge team can follow up. Availability is never confirmed until the hotel replies.</p><form id="websiteServiceEnquiryForm" novalidate><input name="serviceName" type="hidden" /><input name="serviceType" type="hidden" /><input name="source" type="hidden" /><label>Full name<input name="guestName" autocomplete="name" maxlength="100" required placeholder="Your name" /></label><label>Email address<input name="email" type="email" autocomplete="email" maxlength="160" required placeholder="you@example.com" /></label><div class="website-enquiry-form-grid"><label>Preferred date<input name="preferredDate" type="date" /></label><label>Preferred time<input name="preferredTime" type="time" /></label><label>Guests<input name="partySize" type="number" min="1" max="20" inputmode="numeric" placeholder="2" /></label></div><label>Anything to note <span>(optional)</span><textarea name="notes" maxlength="600" placeholder="Celebration, dietary needs…"></textarea></label><label class="website-enquiry-consent"><input name="consent" type="checkbox" value="yes" required /> <span>I agree that Hôtel Lumière may use these details to respond to this enquiry.</span></label><p id="websiteServiceEnquiryError" class="website-enquiry-error" role="alert"></p><button id="websiteServiceEnquirySubmit" class="website-enquiry-submit" type="submit">Send concierge enquiry</button></form></div></section>
+
+              <section id="websiteRoomEnquiry" class="website-enquiry-modal" role="dialog" aria-modal="true" aria-labelledby="websiteRoomEnquiryTitle" hidden><div class="website-enquiry-dialog"><button type="button" class="website-enquiry-close" data-website-close-enquiry aria-label="Close room enquiry">×</button><p>Hôtel Lumière reservations</p><h2 id="websiteRoomEnquiryTitle">Request your stay</h2><div id="websiteRoomSummary" class="website-enquiry-summary" hidden><span id="websiteRoomName">Selected room</span><small id="websiteRoomMeta">Price on request</small></div><p class="website-enquiry-intro">Tell us the essentials and reservations will return with the best available options. Your stay is only confirmed after their reply.</p><form id="websiteRoomEnquiryForm" novalidate><input name="serviceName" type="hidden" /><div class="website-enquiry-form-grid website-enquiry-form-grid--two"><label>First name<input name="firstName" autocomplete="given-name" maxlength="60" required /></label><label>Last name<input name="lastName" autocomplete="family-name" maxlength="60" required /></label><label>Email address<input name="email" type="email" autocomplete="email" maxlength="160" required placeholder="you@example.com" /></label><label>Phone number<input name="phone" type="tel" autocomplete="tel" maxlength="60" required placeholder="+33 …" /></label><label>Check-in date<input name="checkIn" type="date" required /></label><label>Check-out date<input name="checkOut" type="date" required /></label></div><div class="website-enquiry-form-grid"><label>Adults<input name="adults" type="number" min="1" max="12" value="2" required /></label><label>Children<input name="children" type="number" min="0" max="10" value="0" required /></label><label>Rooms<input name="rooms" type="number" min="1" max="5" value="1" required /></label></div><label>Room preference <span>(optional)</span><input name="preference" maxlength="80" placeholder="Quiet room, king bed…" /></label><label>Anything to note <span>(optional)</span><textarea name="notes" maxlength="600" placeholder="Celebration, accessibility needs…"></textarea></label><label class="website-enquiry-consent"><input name="consent" type="checkbox" value="yes" required /> <span>I agree that Hôtel Lumière may use these details to respond to this room enquiry.</span></label><p id="websiteRoomEnquiryError" class="website-enquiry-error" role="alert"></p><button id="websiteRoomEnquirySubmit" class="website-enquiry-submit" type="submit">Send room enquiry</button></form></div></section>
+            </div>
+          </section>
+
+          <section id="screen-mission" class="app-screen" data-screen="mission" aria-labelledby="mission-title" role="region" hidden>
+            <div class="journey-launcher"><header class="journey-launcher-heading"><p class="eyebrow">Mission Control</p><h1 id="mission-title">Choose a guest journey to explore</h1><p>Start where the guest is in their stay, then follow the conversation through to the hotel team.</p></header>
+              <form id="simulationForm" class="simulation-form journey-form"><input type="hidden" id="isDemo" name="is_demo" value="true" /><select id="scenario" name="scenario" class="sr-only" aria-label="Selected guest journey"><option value="pre-arrival">48h Pre-Arrival</option><option value="in-stay">In-Stay Request</option><option value="post_checkout">Post-Checkout Review</option></select>
+                <div class="journey-lifecycle" aria-label="Hotel guest lifecycle"><span class="is-current" data-lifecycle="pre-arrival"><b>01</b> Before arrival</span><i aria-hidden="true"></i><span data-lifecycle="in-stay"><b>02</b> During stay</span><i aria-hidden="true"></i><span data-lifecycle="post_checkout"><b>03</b> After checkout</span></div>
+                <div class="journey-choices" role="radiogroup" aria-label="Guest journey">
+                  <button class="journey-choice is-selected" type="button" data-journey="pre-arrival" role="radio" aria-checked="true"><span class="journey-index">01 · BEFORE ARRIVAL</span><span class="journey-path" aria-hidden="true"></span><strong>Prepare the stay</strong><small>Help the guest plan a smooth arrival with transport, dining and thoughtful preparation.</small><em>48 hours before arrival <b aria-hidden="true">→</b></em></button>
+                  <button class="journey-choice" type="button" data-journey="in-stay" role="radio" aria-checked="false"><span class="journey-index">02 · DURING THE STAY</span><span class="journey-path" aria-hidden="true"></span><strong>Assist in the moment</strong><small>Handle a service need, spa request or hotel question while the guest is staying.</small><em>Live in-stay request <b aria-hidden="true">→</b></em></button>
+                  <button class="journey-choice" type="button" data-journey="post_checkout" role="radio" aria-checked="false"><span class="journey-index">03 · AFTER CHECKOUT</span><span class="journey-path" aria-hidden="true"></span><strong>Recover with care</strong><small>Invite feedback after checkout and bring staff in when recovery needs human judgement.</small><em>Post-stay follow-up <b aria-hidden="true">→</b></em></button>
+                </div>
+                <section class="launch-configuration" aria-labelledby="configuration-title"><div class="configuration-heading"><p class="eyebrow">Guest context</p><h2 id="configuration-title">Set the scene</h2></div><div class="configuration-grid"><div class="field-group"><label for="guestName">Guest</label><input id="guestName" name="guest_name" type="text" value="Alex Morgan" autocomplete="off" required /></div><div class="field-group"><label for="guestLanguage">Language</label><select id="guestLanguage" name="language"><option value="English">English</option><option value="French">French</option><option value="Spanish">Spanish</option><option value="Japanese">Japanese</option></select></div><div class="context-readout"><span>Property</span><strong>Hôtel Lumière Paris</strong></div><div class="context-readout"><span>Journey</span><strong id="journeySummary">48 hours before arrival</strong></div></div><div class="launch-confirmation"><p id="launchInstruction">ConciergeFlow will open a simulated pre-arrival conversation, then carry the guest context into the staff view.</p><button class="button button-primary" type="submit"><span>Launch simulation</span><span aria-hidden="true">→</span></button></div></section>
               </form>
             </div>
           </section>
-        </div>
-      </section>
 
-      <!-- SCREEN 5: Receptionist Inbox (Panel Screen) -->
-      <section id="screen-inbox" class="app-screen" data-screen="inbox" aria-labelledby="inbox-title" role="region" hidden>
-        <nav class="screen-nav" aria-label="Screen navigation">
-          <button class="button-nav-back" type="button" data-nav="dashboard" aria-label="Return to Operations Dashboard">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            <span>Dashboard</span>
-          </button>
-          <div class="screen-nav-pills" role="tablist" aria-label="Workspace screens">
-            <button class="nav-pill" type="button" data-nav="mission" role="tab" aria-selected="false" tabindex="-1">Mission Control</button>
-            <button class="nav-pill" type="button" data-nav="guest" role="tab" aria-selected="false" tabindex="-1">Guest Channel</button>
-            <button class="nav-pill is-active" type="button" data-nav="inbox" role="tab" aria-selected="true" tabindex="0">Reception Inbox</button>
-          </div>
-        </nav>
-
-        <div class="panel-screen-content">
-          <aside class="panel inbox-panel" aria-labelledby="inbox-title">
-            <div class="panel-heading">
-              <p class="eyebrow">Reception</p>
-              <h2 id="inbox-title">Receptionist Inbox</h2>
-              <p>Live guest context and human handoff control.</p>
-            </div>
-
-            <div class="guest-card">
-              <span id="guestInitials" class="avatar avatar-guest" aria-hidden="true">AM</span>
-              <div>
-                <p class="guest-card-label">Current guest</p>
-                <h3 id="inboxGuestName">Alex Morgan</h3>
-                <p id="inboxGuestContext">English · 48h Pre-Arrival</p>
+          <section id="screen-guest" class="app-screen" data-screen="guest" aria-labelledby="conversation-title" role="region" hidden>
+            <div class="live-workspace"><header class="workspace-heading"><div><p class="eyebrow">Live simulation</p><h1>Guest journey in motion</h1></div><div class="workspace-heading-actions"><span class="workspace-live-state"><i aria-hidden="true"></i><span id="workspaceJourneyState">Pre-arrival active</span></span><button class="button button-quiet button-sm" type="button" data-nav="inbox">Staff view <span aria-hidden="true">→</span></button></div></header>
+              <div class="workspace-grid">
+                <section class="channel-workspace" aria-labelledby="conversation-title"><div class="channel-region-heading"><div><p>Guest channel</p><h2 id="conversation-title">WhatsApp</h2></div><span id="conversationMode" class="mode-pill">AI active</span></div><div class="chat-shell"><header class="chat-header"><span class="avatar avatar-small brand-chat-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg></span><div class="chat-identity"><strong>Hôtel Lumière Concierge</strong><span>online</span></div><div class="chat-channel-meta"><span id="channelGuestName">Alex Morgan</span><small id="channelStayMeta">48h pre-arrival</small></div></header><div id="chatMessages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="WhatsApp conversation messages"></div><div id="emojiPicker" class="emoji-picker-popover" hidden><div class="emoji-picker-header"><span class="emoji-picker-title">Quick Reactions</span><button id="closeEmojiPicker" class="emoji-picker-close" type="button" aria-label="Close emoji picker">×</button></div><div class="emoji-picker-categories" role="tablist"><button type="button" class="emoji-cat-btn is-active" data-cat="popular">✨ Quick</button><button type="button" class="emoji-cat-btn" data-cat="faces">😊 Faces</button><button type="button" class="emoji-cat-btn" data-cat="hotel">🏨 Hotel</button><button type="button" class="emoji-cat-btn" data-cat="dining">🍽️ Dining</button><button type="button" class="emoji-cat-btn" data-cat="travel">✈️ Travel</button></div><div id="emojiGrid" class="emoji-picker-grid"></div></div><form id="messageForm" class="chat-composer"><button id="emojiPickerBtn" class="icon-button composer-icon" type="button" aria-label="Choose an emoji" title="Choose an emoji"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8M9 9.5h.01M15 9.5h.01" /></svg></button><label class="sr-only" for="messageInput">Type a message</label><input id="messageInput" type="text" placeholder="Type a message" autocomplete="off" /><button id="sendButton" class="send-button" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 9-18 9 4-9-4-9Zm4 9h7" /></svg></button></form></div></section>
+                <aside class="activity-workspace" aria-labelledby="activity-title"><div class="activity-heading"><div><p>ConciergeFlow</p><h2 id="activity-title">System activity</h2></div><span id="activityState" class="activity-status"><i aria-hidden="true"></i>Ready</span></div><p class="activity-intro">Observable journey events and operational state.</p><ol id="activityTimeline" class="activity-timeline" aria-live="polite" aria-relevant="additions"></ol></aside>
+                <aside class="context-workspace" aria-labelledby="context-title"><div class="context-heading"><p>Live context</p><h2 id="context-title">Guest &amp; stay</h2></div><section class="context-group" aria-labelledby="context-guest-title"><h3 id="context-guest-title">Guest</h3><dl class="guest-context-list"><div><dt>Name</dt><dd id="workspaceGuestName">Alex Morgan</dd></div><div><dt>Language</dt><dd id="workspaceLanguage">English</dd></div></dl></section><section class="context-group" aria-labelledby="context-stay-title"><h3 id="context-stay-title">Stay</h3><dl class="guest-context-list"><div><dt>Property</dt><dd>Hôtel Lumière Paris</dd></div><div><dt>Stay status</dt><dd id="workspaceStay">Arrival in 48 hours</dd></div><div><dt>Journey</dt><dd id="workspaceJourney">Pre-arrival</dd></div></dl></section><section class="context-group context-group--conversation" aria-labelledby="context-conversation-title"><h3 id="context-conversation-title">Current conversation</h3><dl class="guest-context-list operational-context"><div><dt>Intent</dt><dd id="workspaceIntent">Preparing the stay</dd></div><div><dt>Request status</dt><dd id="workspaceRequestStatus">Journey initiated</dd></div><div><dt>Conversation owner</dt><dd id="workspaceOwner">ConciergeFlow</dd></div></dl></section><section id="workspaceActiveRequest" class="context-group context-group--request" aria-labelledby="workspaceActiveRequestLabel" hidden><h3 id="workspaceActiveRequestLabel">Active request</h3><p id="workspaceActiveRequestTitle" class="context-request-title"></p><p id="workspaceActiveRequestMeta" class="context-request-meta"></p><button id="workspaceRequestOpen" class="context-reception-link context-request-link" type="button">Open request <span aria-hidden="true">→</span></button></section><section class="context-group context-group--state" aria-labelledby="context-state-title"><h3 id="context-state-title">Operational state</h3><p id="workspaceOperationalState" class="operational-state-value"><i aria-hidden="true"></i>AI active</p></section><button class="context-reception-link" type="button" data-nav="inbox">Open staff view <span aria-hidden="true">→</span></button></aside>
               </div>
             </div>
+          </section>
 
-            <section class="handoff-card" aria-labelledby="handoff-title">
-              <div class="handoff-status">
-                <div>
-                  <p class="guest-card-label">Conversation owner</p>
-                  <h3 id="handoff-title">AI Concierge</h3>
-                </div>
-                <span id="handoffStatus" class="owner-status">Active</span>
-              </div>
-              <button id="handoffButton" class="button button-handoff" type="button" aria-pressed="false">
-                Take over chat
-              </button>
-              <p id="handoffDescription">AI replies are enabled for this simulation.</p>
-            </section>
+          <section id="screen-requests" class="app-screen" data-screen="requests" aria-labelledby="requests-title" role="region" hidden>
+            <div class="requests-workspace"><header class="workspace-heading requests-workspace-heading"><div><p class="eyebrow">Hotel operations · Requests</p><h1 id="requests-title">What needs attention now?</h1><p>Clear hotel work prepared from the active ConciergeFlow conversation.</p></div><div class="workspace-heading-actions"><span id="requestsQueueState" class="workspace-live-state"><i aria-hidden="true"></i>No active requests</span><button class="button button-quiet button-sm" type="button" data-nav="inbox">Open Reception <span aria-hidden="true">→</span></button></div></header><div class="requests-layout"><aside class="requests-queue-panel" aria-label="Request queue"><div class="requests-queue-heading"><div><p class="eyebrow">Request queue</p><h2>Hotel work</h2></div><span id="requestsQueueCount">0</span></div><div class="request-filters" role="group" aria-label="Filter requests"><button type="button" class="is-active" data-request-filter="open" aria-pressed="true">Open</button><button type="button" data-request-filter="in_progress" aria-pressed="false">In progress</button><button type="button" data-request-filter="resolved" aria-pressed="false">Resolved</button><button type="button" data-request-filter="all" aria-pressed="false">All</button></div><div id="requestQueue" class="request-queue" role="list" aria-live="polite"></div></aside><section class="request-detail-panel" aria-labelledby="request-detail-title"><div id="requestDetail" class="request-detail" aria-live="polite"><div class="request-detail-empty"><p class="eyebrow">Request detail</p><h2 id="request-detail-title">No request selected</h2><p>When a guest action requires hotel follow-up, ConciergeFlow will prepare a structured request here.</p><span>Product simulation · status controls affect this demonstration only.</span></div></div></section></div></div>
+          </section>
 
-            <!-- Live Staff Composer in Inbox Panel -->
-            <div class="inbox-staff-composer-card">
-              <div class="inbox-composer-header">
-                <span class="inbox-composer-tag">Staff Reply</span>
-                <span id="inboxComposerStatus" class="inbox-composer-note">Dispatches directly to guest chat</span>
-              </div>
-              <form id="inboxStaffForm" class="inbox-staff-form">
-                <input id="inboxStaffInput" type="text" placeholder="Type message as Receptionist..." autocomplete="off" />
-                <button id="inboxStaffSendBtn" class="button button-primary button-sm" type="submit">
-                  <span>Send as Staff</span>
-                </button>
-              </form>
-            </div>
-
-            <section id="staffAlert" class="staff-alert" aria-labelledby="staffAlertTitle" hidden>
-              <div class="staff-alert-heading">
-                <span class="staff-alert-mark" aria-hidden="true">!</span>
-                <div>
-                  <p class="guest-card-label">Staff alert</p>
-                  <h3 id="staffAlertTitle">Reception follow-up</h3>
-                </div>
-              </div>
-              <p id="staffAlertBody"></p>
-            </section>
-
-            <section class="transcript-section" aria-labelledby="transcript-title">
-              <div class="transcript-heading">
-                <h3 id="transcript-title">Live transcript</h3>
-                <span>Local session</span>
-              </div>
-              <ol id="transcript" class="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live session event log"></ol>
-            </section>
-          </aside>
-        </div>
-      </section>
-
-    </main>
+          <section id="screen-inbox" class="app-screen" data-screen="inbox" aria-labelledby="inbox-title" role="region" hidden>
+            <div class="reception-workspace"><header class="workspace-heading"><div><p class="eyebrow">Live operations · Reception</p><h1>Where staff step in when judgement matters</h1></div><div class="workspace-heading-actions"><span class="workspace-live-state"><i aria-hidden="true"></i>Guest ↔ ConciergeFlow ↔ Reception</span><button class="button button-quiet button-sm" type="button" data-nav="guest">Return to live simulation <span aria-hidden="true">→</span></button></div></header><div class="reception-layout"><aside class="panel inbox-panel" aria-labelledby="inbox-title"><div class="panel-heading"><p class="eyebrow">Guest conversation</p><h2 id="inbox-title">Reception Desk</h2><p>Context, ownership and correspondence for the active guest journey.</p></div><div class="guest-card"><span id="guestInitials" class="avatar avatar-guest" aria-hidden="true">AM</span><div><p class="guest-card-label">Current guest</p><h3 id="inboxGuestName">Alex Morgan</h3><p id="inboxGuestContext">English · 48h Pre-Arrival</p></div></div><section class="handoff-card" aria-labelledby="handoff-title"><div class="handoff-status"><div><p class="guest-card-label">Conversation owner</p><h3 id="handoff-title">AI Concierge</h3></div><span id="handoffStatus" class="owner-status">Active</span></div><button id="handoffButton" class="button button-handoff" type="button" aria-pressed="false">Take over chat</button><p id="handoffDescription">AI replies are enabled for this simulation.</p></section><section id="staffAlert" class="staff-alert" aria-labelledby="staffAlertTitle" hidden><div class="staff-alert-heading"><span class="staff-alert-mark" aria-hidden="true">!</span><div><p class="guest-card-label">Staff attention</p><h3 id="staffAlertTitle">Reception follow-up</h3></div></div><p id="staffAlertBody"></p></section><section id="receptionRequestSummary" class="reception-request-summary" aria-labelledby="receptionRequestTitle" hidden><div><p class="guest-card-label">Active request</p><h3 id="receptionRequestTitle"></h3></div><span id="receptionRequestStatus" class="request-status"></span><p id="receptionRequestMeta"></p><button id="receptionRequestOpen" type="button">Open request <span aria-hidden="true">→</span></button></section><div class="inbox-staff-composer-card"><div class="inbox-composer-header"><span class="inbox-composer-tag">Staff reply</span><span id="inboxComposerStatus" class="inbox-composer-note">Appears in the guest conversation for this demo</span></div><form id="inboxStaffForm" class="inbox-staff-form"><input id="inboxStaffInput" type="text" placeholder="Type message as Receptionist..." autocomplete="off" /><button id="inboxStaffSendBtn" class="button button-primary button-sm" type="submit"><span>Send as staff</span></button></form></div></aside><section class="reception-transcript-panel" aria-labelledby="transcript-title"><div class="reception-transcript-heading"><div><p>Conversation timeline</p><h2 id="transcript-title">Live transcript</h2></div><span>Product simulation</span></div><ol id="transcript" class="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Live session event log"></ol></section></div></div>
+          </section>
+        </main>
+      </div>
+    </div>
 
     <div id="sheetBackdrop" class="sheet-backdrop" hidden></div>
-    <section id="serviceSheet" class="service-sheet" role="dialog" aria-modal="true" aria-labelledby="serviceSheetTitle" hidden>
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <div class="sheet-heading">
-        <div>
-          <p class="eyebrow">Privileges</p>
-          <h2 id="serviceSheetTitle">Available services</h2>
-        </div>
-        <button id="closeSheet" class="icon-button sheet-close" type="button" aria-label="Close services menu">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
-        </button>
-      </div>
-      <div class="service-list">
-        <button class="service-option" type="button" data-service="Private airport transfer">
-          <span class="service-icon" aria-hidden="true">01</span><span><strong>Private airport transfer</strong><small>Mercedes transfer from CDG or Orly</small></span><em>€180</em>
-        </button>
-        <button class="service-option" type="button" data-service="Lumière spa ritual">
-          <span class="service-icon" aria-hidden="true">02</span><span><strong>Lumière spa ritual</strong><small>90-minute restorative treatment</small></span><em>€220</em>
-        </button>
-        <button class="service-option" type="button" data-service="Eiffel View rooftop dining">
-          <span class="service-icon" aria-hidden="true">03</span><span><strong>Eiffel View rooftop dining</strong><small>Seven-course seasonal tasting menu</small></span><em>€240</em>
-        </button>
-      </div>
-    </section>
-
+    <section id="serviceSheet" class="service-sheet" role="dialog" aria-modal="true" aria-labelledby="serviceSheetTitle" hidden><div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><div><p class="eyebrow">Hotel services</p><h2 id="serviceSheetTitle">Available services</h2></div><button id="closeSheet" class="icon-button sheet-close" type="button" aria-label="Close services menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><div class="service-list"><button class="service-option" type="button" data-service="Private airport transfer"><span class="service-icon" aria-hidden="true">01</span><span><strong>Private airport transfer</strong><small>Mercedes transfer from CDG or Orly</small></span><em>€180</em></button><button class="service-option" type="button" data-service="Lumière spa ritual"><span class="service-icon" aria-hidden="true">02</span><span><strong>Lumière spa ritual</strong><small>90-minute restorative treatment</small></span><em>€220</em></button><button class="service-option" type="button" data-service="Eiffel View rooftop dining"><span class="service-icon" aria-hidden="true">03</span><span><strong>Eiffel View rooftop dining</strong><small>Seven-course seasonal tasting menu</small></span><em>€240</em></button></div></section>
     <script src="config.js"></script>
-    <script src="demo.js"></script>
+    <script src="demo.js?v=conciergeflow-v2-requests-r11"></script>
   </body>
 </html>

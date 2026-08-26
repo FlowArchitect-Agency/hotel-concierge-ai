@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict';
+import { existsSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
   classifyRequest,
+  detectMediaBrochure,
+  ESCALATION_REPLIES,
   enforceContract,
   inheritConversationContext,
+  isOperationalRequest,
   matchingServices,
   normalizeServiceType,
+  operationalServiceType,
+  OPERATIONAL_REPLIES,
   parseExternalResults,
   parseGuestInput,
   inferLanguage,
+  postCheckoutNegativeReply,
   shouldSearchExternal,
 } from '../src/concierge.js';
 import worker from '../src/index.js';
@@ -1191,7 +1199,7 @@ test('Spa menu requests return a text-only catalogue instead of a brochure or bo
   }
 });
 
-test('Operational requests: Physical items (towels/water) alert Housekeeping with zero upselling', async () => {
+test('Operational requests: Physical items (towels/water) prepare a Housekeeping request with zero upselling', async () => {
   const originalFetch = globalThis.fetch;
   const writtenTables = [];
   globalThis.fetch = async (url, options = {}) => {
@@ -1227,7 +1235,8 @@ test('Operational requests: Physical items (towels/water) alert Housekeeping wit
     const data = await response.json();
     await Promise.all(scheduled);
     assert.equal(response.status, 200);
-    assert.match(data.reply, /logged your request|delivered to your room|team/i);
+    assert.match(data.reply, /prepared your request|request queue/i);
+    assert.doesNotMatch(data.reply, /notified|dispatched|received by/i);
     assert.doesNotMatch(data.reply, /Partner option/i);
     assert.doesNotMatch(data.reply, /upgrade/i);
     assert.ok(data.staff_alerts.length > 0);
@@ -1241,6 +1250,94 @@ test('Operational requests: Physical items (towels/water) alert Housekeeping wit
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('Operational routing deterministically separates Housekeeping from Maintenance', () => {
+  for (const message of [
+    'Please bring extra towels and clean the room.',
+    'Could I have fresh linen and toiletries?',
+  ]) {
+    assert.equal(isOperationalRequest(message), true);
+    assert.equal(operationalServiceType(message), 'Housekeeping');
+  }
+  for (const message of [
+    'The air conditioning is not working.',
+    'There is a plumbing leak by the sink.',
+    'Our door lock is broken and the electrical outlet has stopped working.',
+  ]) {
+    assert.equal(isOperationalRequest(message), true);
+    assert.equal(operationalServiceType(message), 'Maintenance');
+  }
+});
+
+test('Operational requests: maintenance issues prepare a Maintenance request', async () => {
+  const originalFetch = globalThis.fetch;
+  const writtenTables = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('api.airtable.com')) {
+      if (options.body) writtenTables.push({ url: target, fields: JSON.parse(options.body).fields });
+      return Response.json({ records: [], id: 'rec_maintenance_test' });
+    }
+    throw new Error(`Unexpected call: ${url}`);
+  };
+  const scheduled = [];
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'Maintenance Guest',
+        language: 'English',
+        scenario: 'in-stay',
+        is_demo: true,
+        sessionId: 'demo_in_stay_ac',
+        chatHistory: [{ role: 'user', content: 'The air conditioning is broken in room 402.' }],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil(promise) { scheduled.push(promise); },
+    });
+    const data = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.equal(data.requests?.[0]?.service_type, 'Maintenance');
+    assert.doesNotMatch(data.reply, /notified|dispatched|received by/i);
+    const requestWrite = writtenTables.find((entry) => entry.url.includes('/Requests'));
+    assert.equal(requestWrite?.fields.ServiceType, 'Maintenance');
+    assert.equal(requestWrite?.fields.IsUpsell, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Operational, escalation, and recovery copy does not claim a human was notified or dispatched', () => {
+  const replies = [
+    ...Object.values(OPERATIONAL_REPLIES),
+    ...Object.values(ESCALATION_REPLIES),
+    postCheckoutNegativeReply('Truth Test', 'en'),
+  ];
+  for (const reply of replies) {
+    assert.doesNotMatch(reply, /staff (?:were|was)?\s*notified|team (?:were|was)?\s*notified|has been notified|have notified|alerted|received your request|stepping in|dispatched/i);
+  }
+});
+
+test('Media contract returns only shipped brochures with verified metadata', () => {
+  const workerRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const directoryPath = `${repoRoot}Lumiere_Guest_Directory_2026.pdf`;
+  const spaPath = `${repoRoot}Lumiere_Spa_Wellness_Menu.pdf`;
+  assert.equal(existsSync(directoryPath), true);
+  assert.equal(existsSync(spaPath), true);
+  assert.equal(statSync(directoryPath).size, 27339632);
+  assert.equal(statSync(spaPath).size, 1063);
+  assert.ok(workerRoot, 'The Worker test path should resolve deterministically.');
+
+  const directory = detectMediaBrochure('Please send the hotel directory PDF.');
+  const spa = detectMediaBrochure('Please send the spa menu.', 'spa');
+  assert.deepEqual([directory?.filename, directory?.size, directory?.pages], ['Lumiere_Guest_Directory_2026.pdf', '27.3 MB', '10 pages']);
+  assert.deepEqual([spa?.filename, spa?.size, spa?.pages], ['Lumiere_Spa_Wellness_Menu.pdf', '1.1 KB', '1 page']);
+  assert.equal(detectMediaBrochure('Please send the dining menu brochure.', 'restaurant'), null);
+  assert.equal(detectMediaBrochure('Please send the suites collection brochure.', 'accommodation'), null);
 });
 
 test('Every booking ticket receives a valid ServiceType instead of Other', async () => {
@@ -1300,6 +1397,7 @@ test('Manager metrics use operational tickets times fifteen saved minutes', asyn
         { fields: { ServiceType: 'Maintenance' } },
         { fields: { ServiceType: 'Dining' } },
         { fields: { ServiceType: 'Concierge' } },
+        { fields: { ServiceType: 'Housekeeping', Is_Demo: true } },
       ] });
     }
     throw new Error(`Unexpected request: ${target}`);
@@ -1316,6 +1414,28 @@ test('Manager metrics use operational tickets times fifteen saved minutes', asyn
       minutes_per_ticket: 15,
       formula: 'operational tickets × 15 minutes ÷ 60',
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Airtable rate limiting uses bounded Retry-After retries', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    if (!String(url).includes('/Requests')) throw new Error(`Unexpected request: ${url}`);
+    calls += 1;
+    return new Response(JSON.stringify({ error: { type: 'RATE_LIMITED' } }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': '0' },
+    });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/manager/metrics', {
+      headers: { Origin: 'https://flowarchitect-agency.github.io' },
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    assert.equal(response.status, 502);
+    assert.equal(calls, 3, 'Airtable retries must stop at the configured attempt bound.');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1369,7 +1489,7 @@ test('Post-Checkout Positive: 5-star review returns thank you and Google Review 
   }
 });
 
-test('Post-Checkout Negative: Complaining guest triggers General Manager escalation without public review link', async () => {
+test('Post-Checkout Negative: recovery is prepared without suppressing neutral public review access', async () => {
   const originalFetch = globalThis.fetch;
   const writtenTables = [];
   globalThis.fetch = async (url, options = {}) => {
@@ -1406,11 +1526,12 @@ test('Post-Checkout Negative: Complaining guest triggers General Manager escalat
     await Promise.all(scheduled);
     assert.equal(response.status, 200);
     assert.match(data.reply, /sincerely apologize/i);
-    assert.match(data.reply, /General Manager/i);
-    assert.doesNotMatch(data.reply, /g\.page|tripadvisor|google review/i);
+    assert.match(data.reply, /prepared a private service-recovery request/i);
+    assert.doesNotMatch(data.reply, /escalated|manager.*reviewing|notified/i);
     assert.equal(data.requires_human, true);
     assert.equal(data.escape_hatch_triggered, true);
-    assert.equal(data.media, null);
+    assert.ok(data.media?.url.includes('g.page'));
+    assert.deepEqual(data.quickReplies, ['Leave Google Review', 'Share on TripAdvisor']);
     assert.ok(data.staff_alerts.length > 0);
     assert.equal(data.staff_alerts[0].role, 'General Manager');
     const requestWrite = writtenTables.find((w) => w.url.includes('/Requests'));
@@ -1486,7 +1607,7 @@ test('Booking Intent Negation: Guest refusal with service keyword aborts booking
   }
 });
 
-test('Graceful Failure Handling: Downstream Groq or Airtable failure returns polite delay notice and triggers escape hatch', async () => {
+test('Graceful Failure Handling: downstream failures do not fabricate a staff handoff', async () => {
   const originalFetch = globalThis.fetch;
   const scheduled = [];
   try {
@@ -1515,9 +1636,12 @@ test('Graceful Failure Handling: Downstream Groq or Airtable failure returns pol
     await Promise.all(scheduled);
     assert.equal(response.status, 200);
     assert.match(data.reply, /experiencing a brief system delay/i);
-    assert.equal(data.requires_human, true);
-    assert.equal(data.escape_hatch_triggered, true);
-    assert.ok(data.staff_alerts.length > 0);
+    assert.match(data.reply, /could not prepare your request/i);
+    assert.doesNotMatch(data.reply, /notified the front desk|dispatched|received/i);
+    assert.equal(data.requires_human, false);
+    assert.equal(data.escape_hatch_triggered, false);
+    assert.deepEqual(data.staff_alerts, []);
+    assert.deepEqual(data.requests, []);
   } finally {
     globalThis.fetch = originalFetch;
   }

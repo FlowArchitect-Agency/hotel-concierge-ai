@@ -1,0 +1,15 @@
+# Local Cloudflare Worker secrets. Copy this file to the ignored .dev.vars
+# file and add only private values; never commit .dev.vars.
+AIRTABLE_API_KEY=
+AIRTABLE_BASE_ID=
+GROQ_API_KEY=
+
+# Optional WhatsApp Business Cloud webhook and outbound text replies.
+WA_ACCESS_TOKEN=
+WA_PHONE_NUMBER_ID=
+WA_APP_SECRET=
+WA_WEBHOOK_VERIFY_TOKEN=
+# WA_GRAPH_API_VERSION=v24.0
+
+# Optional Twilio webhook signature verification only.
+TWILIO_AUTH_TOKEN=

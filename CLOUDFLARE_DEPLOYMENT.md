@@ -24,6 +24,9 @@ The deployment adds these as encrypted Worker secrets, never to GitHub or browse
 - `AIRTABLE_API_KEY`
 - `AIRTABLE_BASE_ID`
 - `SCRAPINGBEE_API_KEY` (optional; without it, unavailable external recommendations are safely deferred to the hotel team)
+- `WA_ACCESS_TOKEN`, `WA_PHONE_NUMBER_ID`, `WA_APP_SECRET`, `WA_WEBHOOK_VERIFY_TOKEN` (all required to enable the Meta WhatsApp webhook)
+- `WA_GRAPH_API_VERSION` (optional; the Worker defaults to `v24.0`)
+- `TWILIO_AUTH_TOKEN` (only for Twilio webhook signature verification; no outbound Twilio REST credentials are consumed)
 
 The non-secret settings are `ALLOWED_ORIGIN`, `DEMO_ALLOWED_ORIGIN`, `HOTEL_NAME`, `HOTEL_CITY`, `GROQ_MODEL`, and `GROQ_FALLBACK_MODEL` in `wrangler.jsonc`. Set both origin values to the exact GitHub Pages origin, with no trailing slash.
 
@@ -45,3 +48,7 @@ node --test
 ```
 
 The tests cover the reported cuisine regression, external-result filtering, input validation, strict simulator CORS, and demo record marking. The production deployment test additionally sends the multilingual and Airtable test suite to the Worker endpoint before the public website is switched over.
+
+## Manager metrics limitation
+
+`GET /api/manager/metrics` returns only aggregate operational-ticket counts and calculated time saved; it excludes records marked `Is_Demo`. It intentionally does not return guest names, request text, or Airtable record IDs. The route is not authenticated, so it must be protected with an authenticated staff boundary before a production manager dashboard is exposed outside the trusted hotel environment. This hardening pass does not add that authentication layer.

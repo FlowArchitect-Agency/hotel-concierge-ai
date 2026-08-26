@@ -11,6 +11,7 @@ import {
   isPostCheckoutPositive,
   isPostCheckoutScenario,
   matchingServices,
+  operationalServiceType,
   OPERATIONAL_REPLIES,
   parseExternalResults,
   parseGuestInput,
@@ -275,19 +276,45 @@ function requireLeadsAirtable(env) {
   if (missing.length) throw new Error(`Lead capture configuration is incomplete: ${missing.join(', ')}`);
 }
 
+const AIRTABLE_MAX_ATTEMPTS = 3;
+const AIRTABLE_RETRY_BASE_MS = 250;
+const AIRTABLE_MAX_RETRY_AFTER_MS = 3_000;
+
+function airtableRetryDelayMs(retryAfter, attempt) {
+  const numericSeconds = Number(retryAfter);
+  if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+    return Math.min(Math.round(numericSeconds * 1_000), AIRTABLE_MAX_RETRY_AFTER_MS);
+  }
+  const retryAt = Date.parse(String(retryAfter || ''));
+  if (Number.isFinite(retryAt)) {
+    return Math.min(Math.max(retryAt - Date.now(), 0), AIRTABLE_MAX_RETRY_AFTER_MS);
+  }
+  return Math.min(AIRTABLE_RETRY_BASE_MS * (2 ** attempt), AIRTABLE_MAX_RETRY_AFTER_MS);
+}
+
+function waitForAirtableRetry(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 async function airtable(env, table, { method = 'GET', params, fields, recordId = '', baseId = env.AIRTABLE_BASE_ID } = {}) {
   const recordPath = recordId ? `/${encodeURIComponent(recordId)}` : '';
   const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}${recordPath}`);
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }
-  const result = await fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: fields ? JSON.stringify({ fields, typecast: true }) : undefined,
-  });
-  if (!result.ok) throw new Error(`Airtable ${table} request failed (${result.status}).`);
-  return result.json();
+  for (let attempt = 0; attempt < AIRTABLE_MAX_ATTEMPTS; attempt += 1) {
+    const result = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, 'Content-Type': 'application/json' },
+      body: fields ? JSON.stringify({ fields, typecast: true }) : undefined,
+    });
+    if (result.ok) return result.json();
+    if (result.status !== 429 || attempt === AIRTABLE_MAX_ATTEMPTS - 1) {
+      throw new Error(`Airtable ${table} request failed (${result.status}).`);
+    }
+    await waitForAirtableRetry(airtableRetryDelayMs(result.headers.get('Retry-After'), attempt));
+  }
+  throw new Error(`Airtable ${table} request failed after ${AIRTABLE_MAX_ATTEMPTS} attempts.`);
 }
 
 async function fetchServices(env, { bypassCache = false } = {}) {
@@ -334,13 +361,21 @@ async function fetchManagerMetrics(env) {
   let offset = '';
   do {
     const payload = await airtable(env, 'Requests', {
-      params: { pageSize: 100, ...(offset ? { offset } : {}) },
+      params: {
+        pageSize: 100,
+        // Keep demo traffic out of the production aggregate before it reaches
+        // the response calculation; the in-memory check below remains a
+        // defensive guard for legacy or inconsistent Airtable rows.
+        filterByFormula: 'NOT({Is_Demo})',
+        ...(offset ? { offset } : {}),
+      },
     });
     records.push(...(payload.records || []));
     offset = String(payload.offset || '');
   } while (offset);
 
   const operationalTickets = records.filter((record) => {
+    if (record?.fields?.Is_Demo === true) return false;
     const serviceType = String(record?.fields?.ServiceType || '').trim().toLowerCase();
     return OPERATIONAL_REQUEST_TYPES.has(serviceType);
   }).length;
@@ -1008,25 +1043,10 @@ function hotelCatalogueResponse(input, classification, services) {
   const categoryCount = new Set(collection.map((service) => service.category)).size;
   const isSpaOnly = classification?.category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(input.message);
 
-  const media = isSpaOnly ? {
-    type: 'document',
-    format: 'PDF',
-    title: 'Hôtel Lumière — Spa & Wellness Brochure',
-    filename: 'Lumiere_Spa_Wellness_Menu.pdf',
-    size: '2.4 MB',
-    pages: '12 pages',
-    url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Spa_Wellness_Menu.pdf',
-    thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
-  } : {
-    type: 'document',
-    format: 'PDF',
-    title: 'Hôtel Lumière — Digital Directory & Experiences Brochure 2026',
-    filename: 'Lumiere_Guest_Directory_2026.pdf',
-    size: '4.2 MB',
-    pages: '24 pages',
-    url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Guest_Directory_2026.pdf',
-    thumbnail: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=700&q=84',
-  };
+  // Keep catalogue media on the same verified contract as normal chat media.
+  const media = isSpaOnly
+    ? detectMediaBrochure('spa menu', 'spa')
+    : detectMediaBrochure('hotel directory');
 
   const spaReplies = {
     en: 'Here is our complete Spa & Wellness menu and treatment brochure. Please let me know if you would like to book a treatment.',
@@ -1444,11 +1464,29 @@ function staffRoleFor(serviceType) {
 }
 
 function staffAlertsFromOutcome(outcome) {
+  // Compatibility routing metadata for the simulator and existing clients.
+  // It identifies the intended queue only; it is not evidence that a person
+  // was notified, received the request, or has begun work.
   return (outcome.requests || []).filter((item) => item.summary).slice(0, 3).map((item) => ({
     role: staffRoleFor(outcome.serviceType),
     summary: item.summary,
     service_name: item.serviceName || '',
     service_type: mapServiceTypeForRequests(outcome.serviceType),
+  }));
+}
+
+// This is a presentation-safe reflection of the request objects that are
+// already persisted by persistConversation. It deliberately carries no
+// Airtable record IDs or staff data, and keeps the public chat contract
+// additive for clients that do not use the operational surface.
+function requestSummariesFromOutcome(outcome) {
+  return (outcome?.requests || []).filter((item) => item?.summary).slice(0, 3).map((item) => ({
+    service_name: String(item.serviceName || ''),
+    service_type: mapServiceTypeForRequests(outcome.serviceType),
+    source: item.source === 'external' ? 'external' : 'partner',
+    summary: String(item.summary || ''),
+    est_value_eur: Number.isFinite(Number(item.estValueEur)) ? Number(item.estValueEur) : null,
+    is_upsell: Boolean(item.isUpsell),
   }));
 }
 
@@ -1474,6 +1512,17 @@ function chatResponseFromOutcome(outcome, classification, language, partnerOffer
     escape_hatch_triggered: Boolean(outcome.escapeHatchTriggered),
     media: media || detectMediaBrochure(outcome.reply || '', classification.category),
     staff_alerts: staffAlertsFromOutcome(outcome),
+    requests: requestSummariesFromOutcome(outcome),
+  };
+}
+
+function reviewLinkMedia() {
+  return {
+    type: 'link',
+    title: 'Hôtel Lumière Paris — Google Reviews',
+    url: 'https://g.page/r/hotel-lumiere-paris/review',
+    description: 'Share your experience publicly, if you wish. · Google Maps',
+    thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
   };
 }
 
@@ -1499,7 +1548,9 @@ function postCheckoutResponse(input) {
       externalOptionNames: [],
       recommendations: [],
     };
-    return chatResponseFromOutcome(outcome, { category: 'general_manager', hasEscalation: true }, input.language, [], '', null, input.message);
+    const res = chatResponseFromOutcome(outcome, { category: 'general_manager', hasEscalation: true }, input.language, [], '', reviewLinkMedia(), input.message);
+    res.quickReplies = ['Leave Google Review', 'Share on TripAdvisor'];
+    return res;
   }
 
   if (isPos) {
@@ -1514,14 +1565,7 @@ function postCheckoutResponse(input) {
       externalOptionNames: [],
       recommendations: [],
     };
-    const linkMedia = {
-      type: 'link',
-      title: 'Hôtel Lumière Paris — Google Reviews',
-      url: 'https://g.page/r/hotel-lumiere-paris/review',
-      description: '★★★★★ 4.9 (1,240+ reviews) · Google Maps',
-      thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
-    };
-    const res = chatResponseFromOutcome(outcome, { category: 'review', isPositive: true }, input.language, [], '', linkMedia, input.message);
+    const res = chatResponseFromOutcome(outcome, { category: 'review', isPositive: true }, input.language, [], '', reviewLinkMedia(), input.message);
     res.quickReplies = ['Leave Google Review', 'Share on TripAdvisor'];
     return res;
   }
@@ -1539,7 +1583,7 @@ function escalationResponse(input) {
     requiresHuman: true,
     escapeHatchTriggered: true,
     requests: [{
-      serviceName: 'Duty Manager Escalation',
+      serviceName: 'Guest Service Recovery Request',
       source: 'partner',
       summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
       isUpsell: false,
@@ -1552,22 +1596,23 @@ function escalationResponse(input) {
 
 function operationalResponse(input) {
   if (!isOperationalRequest(input.message)) return null;
+  const serviceType = operationalServiceType(input.message);
   const reply = OPERATIONAL_REPLIES[input.language] ?? OPERATIONAL_REPLIES.en;
   const outcome = {
     reply,
     intent: 'service_request',
-    serviceType: 'housekeeping',
+    serviceType,
     requiresHuman: true,
     requests: [{
-      serviceName: 'Room Delivery / Operational Request',
+      serviceName: serviceType === 'Maintenance' ? 'Maintenance Request' : 'Housekeeping Request',
       source: 'partner',
-      summary: `Room Request: "${input.message}"`,
+      summary: `${serviceType} request: "${input.message}"`,
       isUpsell: false,
     }],
     externalOptionNames: [],
     recommendations: [],
   };
-  return chatResponseFromOutcome(outcome, { category: 'housekeeping', isOperational: true, hasIntent: true }, input.language, [], '', null, input.message);
+  return chatResponseFromOutcome(outcome, { category: serviceType.toLowerCase(), isOperational: true, hasIntent: true }, input.language, [], '', null, input.message);
 }
 
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
@@ -1603,7 +1648,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
           reply: instantEscalation.reply,
           serviceType: 'General Manager',
           requests: [{
-            serviceName: 'Duty Manager Escalation',
+            serviceName: 'Guest Service Recovery Request',
             source: 'partner',
             summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
             isUpsell: false,
@@ -1615,13 +1660,14 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     const instantOperational = operationalResponse(input);
     if (instantOperational) {
       if (!input.testMode || input.testMode === 'write_verified') {
+        const serviceType = operationalServiceType(input.message);
         ctx.waitUntil(persistConversation(env, input, {
           reply: instantOperational.reply,
-          serviceType: 'housekeeping',
+          serviceType,
           requests: [{
-            serviceName: 'Room Delivery / Operational Request',
+            serviceName: serviceType === 'Maintenance' ? 'Maintenance Request' : 'Housekeeping Request',
             source: 'partner',
-            summary: `Room Request: "${input.message}"`,
+            summary: `${serviceType} request: "${input.message}"`,
             isUpsell: false,
           }],
         }).catch(() => undefined));
@@ -1748,19 +1794,14 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message);
   } catch (error) {
     console.error('Graceful fallback in resolveChat:', error);
-    const fallbackReply = 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.';
+    const fallbackReply = 'I apologize, but I am experiencing a brief system delay and could not prepare your request. Please try again shortly or contact the front desk directly for immediate assistance.';
     const fallbackOutcome = {
       reply: fallbackReply,
-      intent: 'service_request',
-      serviceType: 'Front Desk',
-      requiresHuman: true,
-      escapeHatchTriggered: true,
-      requests: [{
-        serviceName: 'Front Desk Assistance',
-        source: 'partner',
-        summary: `System delay fallback for guest message: "${input.message}"`,
-        isUpsell: false,
-      }],
+      intent: 'service_unavailable',
+      serviceType: 'Concierge',
+      requiresHuman: false,
+      escapeHatchTriggered: false,
+      requests: [],
       externalOptionNames: [],
       recommendations: [],
     };
@@ -1770,14 +1811,15 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     return {
       reply: fallbackReply,
       language: input?.language || 'en',
-      intent: 'service_request',
-      service_type: 'Front Desk',
-      requires_human: true,
-      escape_hatch_triggered: true,
+      intent: 'service_unavailable',
+      service_type: 'Concierge',
+      requires_human: false,
+      escape_hatch_triggered: false,
       external_option_names: [],
       recommendations: [],
       partner_offers: [],
-      staff_alerts: [{ role: 'Front Desk', summary: `System delay fallback: ${error instanceof Error ? error.message : 'Backend error'}` }],
+      staff_alerts: [],
+      requests: [],
     };
   }
 }
@@ -1809,13 +1851,14 @@ async function handleDemoChat(request, env, ctx) {
   } catch (error) {
     console.error('Error in handleDemoChat execution:', error);
     return demoResponse({
-      reply: 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.',
+      reply: 'I apologize, but I am experiencing a brief system delay and could not prepare your request. Please try again shortly or contact the front desk directly for immediate assistance.',
       language: input?.language || 'en',
-      intent: 'service_request',
-      serviceType: 'Front Desk',
-      requires_human: true,
-      escape_hatch_triggered: true,
-      staff_alerts: [{ role: 'Front Desk', summary: `System delay fallback: ${error instanceof Error ? error.message : 'Backend error'}` }],
+      intent: 'service_unavailable',
+      serviceType: 'Concierge',
+      requires_human: false,
+      escape_hatch_triggered: false,
+      staff_alerts: [],
+      requests: [],
       demo: true,
       is_demo: true,
     }, 200, request, env);
