@@ -3,222 +3,347 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>H&#xF4;tel Lumi&#xE8;re Paris | Private Concierge</title>
-<meta name="description" content="A composed, multilingual private concierge for H&#xF4;tel Lumi&#xE8;re Paris.">
+<title>ConciergeFlow AI | The operating layer for modern hospitality</title>
+<meta name="description" content="ConciergeFlow is the AI concierge platform that understands guests and coordinates hotel service from pre-arrival to checkout.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=room-picker-v10">
+    <link rel="stylesheet" href="style.css?v=conciergeflow-v2-product-proof-r3">
 </head>
 <body>
 
-<!-- Navigation -->
-<nav id="navbar">
+<!-- Global navigation -->
+<nav id="navbar" class="site-nav" aria-label="Primary navigation">
   <div class="nav-container">
-    <div class="logo" style="display: flex; align-items: center; gap: 1rem; line-height: 1;">
-      <img src="logo-icon.svg" alt="ConciergeFlow AI Logo" style="height: 100px; width: auto;" />
-      <span>ConciergeFlow <span class="gold-accent">AI</span></span>
+    <a class="brand" href="#hero" aria-label="ConciergeFlow home">
+      <img src="logo-icon.svg" alt="" aria-hidden="true" />
+      <span>ConciergeFlow <em>AI</em></span>
+    </a>
+    <div class="nav-links" aria-label="Product sections">
+      <a href="#platform">Product</a>
+      <a href="#chapter-prearrival">Platform</a>
+      <a href="#night-operations">Experience</a>
+      <a href="#discovery">For Hotels</a>
     </div>
-    <a href="#discovery" class="nav-cta discovery-trigger">Book a Discovery Call</a>
+    <div class="nav-actions">
+      <a class="nav-demo" href="#demo">Experience the demo</a>
+      <a href="#discovery" class="nav-discovery discovery-trigger">Book a discovery call</a>
+    </div>
+    <details class="nav-mobile-menu">
+      <summary>Menu <span aria-hidden="true">+</span></summary>
+      <div class="nav-mobile-panel">
+        <a href="#platform">Product</a>
+        <a href="#chapter-prearrival">Platform</a>
+        <a href="#night-operations">Experience</a>
+        <a href="#discovery">For Hotels</a>
+        <a href="#demo">Experience the demo</a>
+        <a href="#discovery" class="discovery-trigger">Book a discovery call</a>
+      </div>
+    </details>
   </div>
 </nav>
 
-<!-- Section A: Hero -->
-<section class="hero" id="hero">
-  <div class="container">
-    <div class="hero-grid">
-      <div class="hero-content reveal">
-        <div class="hero-tag">
-          <i class="fas fa-map-marker-alt"></i>
-          Built for 4-Star Boutique Hotels in Paris
-        </div>
-        <h1>
-          <span class="white">Are You Losing</span> <span class="gold">&#x20AC;5,000+ a Month</span> <span class="white">in Late-Night International Bookings?</span>
-        </h1>
-        <p class="hero-sub">
-          ConciergeFlow AI is a custom multilingual AI assistant that replies instantly to your guests on WhatsApp and your website at 3 AM. It recommends partner experiences and captures high-intent requests while your front desk sleeps; your team confirms every booking.
-        </p>
-        <div class="hero-ctas">
-          <a href="#discovery" class="btn-primary discovery-trigger">
-            <i class="fas fa-calendar-check"></i>
-            Book a 10-Minute Discovery Call
-          </a>
-          <a href="#demo" class="btn-outline">
-            <i class="fas fa-comment-dots"></i>
-            Try the Live AI Demo Below
-          </a>
-        </div>
-        <div class="hero-trust">
-          <span class="stars">&#x2605;&#x2605;&#x2605;&#x2605;&#x2605;</span>
-          <span>Trusted by boutique hotels across the 1st, 6th & 8th arrondissements</span>
-        </div>
+<!-- V2 hero: hospitality outside, operations inside. -->
+<section class="hero hero-v2" id="hero">
+  <div class="container hero-v2-container">
+    <div class="hero-content hero-v2-content">
+      <p class="hero-eyebrow">ConciergeFlow AI</p>
+      <h1><span>Every guest.</span><span>Already understood.</span></h1>
+      <p class="hero-sub">ConciergeFlow is the AI concierge platform for modern hotels &mdash; understanding guests, handling requests and coordinating service from pre-arrival to checkout.</p>
+      <div class="hero-ctas hero-v2-ctas">
+        <a href="#demo" class="btn-primary">Experience ConciergeFlow <span aria-hidden="true">&rarr;</span></a>
+        <a href="#platform" class="btn-outline">See how it works <span aria-hidden="true">&darr;</span></a>
       </div>
+    </div>
 
-      <div class="hero-mockup reveal">
-        <div class="phone-frame">
-          <div class="phone-screen">
-            <div class="phone-header">
-              <div class="phone-avatar">HL</div>
-              <div class="phone-header-info">
-                <h4>H&#xF4;tel Lumi&#xE8;re Paris</h4>
-                <span>AI concierge online</span>
+    <div class="hero-product" aria-label="ConciergeFlow product interface preview">
+      <div class="product-app">
+        <header class="product-app-header">
+          <div class="product-app-brand"><span class="product-mark" aria-hidden="true">&#10022;</span> ConciergeFlow</div>
+          <div class="product-app-status"><span aria-hidden="true"></span> H&ocirc;tel Lumi&egrave;re Paris</div>
+          <div class="product-app-time">Operational view</div>
+        </header>
+
+        <div class="product-app-body">
+          <aside class="product-guests" aria-label="Guest conversations">
+            <div class="product-panel-heading"><span>Guests</span><small>Active</small></div>
+            <ul class="guest-list">
+              <li class="guest-row is-selected">
+                <span class="guest-avatar avatar-alex">AM</span>
+                <span class="guest-row-copy"><strong>Alex Morgan</strong><small>Suite 804 &middot; Pre-arrival</small></span>
+                <span class="guest-status is-warm" aria-label="New activity"></span>
+              </li>
+              <li class="guest-row">
+                <span class="guest-avatar avatar-sofia">SR</span>
+                <span class="guest-row-copy"><strong>Sofia Rossi</strong><small>Room 302 &middot; In-stay</small></span>
+                <span class="guest-status" aria-label="Active"></span>
+              </li>
+              <li class="guest-row">
+                <span class="guest-avatar avatar-yuki">YT</span>
+                <span class="guest-row-copy"><strong>Yuki Tanaka</strong><small>Suite 612 &middot; Arrival</small></span>
+                <span class="guest-status" aria-label="Active"></span>
+              </li>
+              <li class="guest-row">
+                <span class="guest-avatar avatar-james">JW</span>
+                <span class="guest-row-copy"><strong>James Wilson</strong><small>Room 408 &middot; In-stay</small></span>
+              </li>
+            </ul>
+            <div class="guest-list-footer"><span class="live-dot" aria-hidden="true"></span> 14 conversations today</div>
+          </aside>
+
+          <section class="product-conversation" aria-label="Conversation with Alex Morgan">
+            <header class="conversation-header">
+              <div>
+                <p>Guest conversation</p>
+                <h2>Alex Morgan <span>&middot; Suite 804</span></h2>
               </div>
+              <span class="journey-badge">Pre-arrival</span>
+            </header>
+            <div class="conversation-thread">
+              <div class="conversation-day">Today &middot; 18:42</div>
+              <div class="product-message product-message-guest">
+                <p>Hi, our flight lands at CDG around 22:10. Could you arrange transportation?</p>
+              </div>
+              <div class="request-processing" aria-live="polite"><span aria-hidden="true"></span> Understanding request&hellip;</div>
+              <div class="product-message product-message-ai">
+                <span class="message-sender"><i aria-hidden="true">&#10022;</i> ConciergeFlow</span>
+                <p>Absolutely. I&rsquo;ve prepared an airport transfer request for your late arrival. Could you confirm your flight number?</p>
+              </div>
+              <div class="request-prepared"><span aria-hidden="true">&#10003;</span><div><small>Service action</small><strong>Transfer request prepared</strong><em>CDG &rarr; H&ocirc;tel Lumi&egrave;re</em></div></div>
             </div>
-            <div class="phone-messages">
-              <div class="msg-bubble msg-user">
-                Bonjour! Do you have a spa slot for 2 tomorrow at 9 AM?
-                <div class="msg-time">03:14</div>
-              </div>
-              <div class="msg-bubble msg-ai">
-                Bonjour! I can record your couples-massage request for 09:00 and ask our morning team to confirm the final availability. I can also add a private CDG transfer.
-                <div class="msg-time">03:14</div>
-              </div>
-              <div class="msg-bubble msg-user">
-                Yes please. Booking for two.
-                <div class="msg-time">03:15</div>
-              </div>
-              <div class="msg-bubble msg-ai">
-                Your request for a couples massage at 09:00 and a CDG taxi at 14:30 is with our morning team. They will confirm the final details shortly. Bonne nuit!
-                <div class="msg-time">03:15</div>
-              </div>
+            <div class="conversation-composer"><span>Message Alex&hellip;</span><span class="conversation-send" aria-hidden="true">&uarr;</span></div>
+          </section>
+
+          <aside class="product-intelligence" aria-label="Guest intelligence for Alex Morgan">
+            <div class="intelligence-heading"><span>Guest intelligence</span><i aria-hidden="true">&bull;&bull;&bull;</i></div>
+            <div class="guest-summary">
+              <div class="guest-summary-name"><span class="guest-avatar avatar-alex">AM</span><div><strong>Alex Morgan</strong><small>Suite 804</small></div></div>
+              <dl>
+                <div><dt>Stay</dt><dd>3 nights</dd></div>
+                <div><dt>Guests</dt><dd>2</dd></div>
+                <div><dt>Language</dt><dd>English</dd></div>
+              </dl>
+              <p class="guest-arrival"><span>Arrival</span><strong>22:10 &middot; CDG</strong></p>
             </div>
+            <div class="journey-status">
+              <p>Guest journey</p>
+              <ol>
+                <li class="is-complete"><span>&#10003;</span> Booking</li>
+                <li class="is-current"><span></span> Pre-arrival</li>
+                <li><span></span> Arrival</li>
+                <li><span></span> In-stay</li>
+                <li><span></span> Checkout</li>
+              </ol>
+            </div>
+            <div class="ai-activity">
+              <p>AI activity</p>
+              <div class="activity-row activity-intent"><span>Intent detected</span><strong>Airport transfer</strong></div>
+              <div class="activity-row activity-context"><span>Guest context</span><strong>Late arrival</strong></div>
+              <div class="activity-row activity-action"><span>Action</span><strong>Transfer request prepared</strong></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- The first hand-off into the forthcoming guest-journey story. -->
+<section class="journey-intro" id="platform">
+  <div class="container journey-intro-inner">
+    <div>
+      <p class="journey-intro-eyebrow">Built around the stay</p>
+      <h2>One guest journey.<br>One operating layer.</h2>
+    </div>
+    <div class="journey-intro-copy">
+      <p>ConciergeFlow follows the guest experience across pre-arrival, arrival, the stay and checkout&mdash;while keeping hotel staff in control.</p>
+      <ol class="journey-strip" aria-label="Guest journey stages"><li>Pre-arrival</li><li>Arrival</li><li>In-stay</li><li>Checkout</li></ol>
+    </div>
+  </div>
+</section>
+
+<!-- Story chapter 01: pre-arrival service preparation. -->
+<section class="story-chapter chapter-prearrival" id="chapter-prearrival">
+  <div class="container prearrival-composition">
+    <div class="chapter-narrative">
+      <p class="chapter-eyebrow">01 &mdash; Pre-arrival</p>
+      <h2>The stay begins<br>before check-in.</h2>
+      <p>ConciergeFlow understands what the guest needs before they arrive, turns conversation into structured requests, and gives hotel teams context before the guest reaches the property.</p>
+      <dl class="chapter-guest-context">
+        <div><dt>Guest</dt><dd>Sofia Rossi</dd></div>
+        <div><dt>Stay</dt><dd>Friday &middot; Suite 512</dd></div>
+        <div><dt>Profile</dt><dd>2 guests &middot; Italian / English</dd></div>
+      </dl>
+    </div>
+
+    <div class="prearrival-app" aria-label="Pre-arrival service preparation for Sofia Rossi">
+      <header class="prearrival-app-header">
+        <div class="product-app-brand"><span class="product-mark" aria-hidden="true">&#10022;</span> ConciergeFlow</div>
+        <span>Pre-arrival preparation</span>
+      </header>
+      <div class="prearrival-app-body">
+        <section class="prearrival-conversation" aria-label="Conversation with Sofia Rossi">
+          <header class="conversation-header">
+            <div>
+              <p>Guest conversation</p>
+              <h3>Sofia Rossi <span>&middot; Suite 512</span></h3>
+            </div>
+            <span class="journey-badge">Arriving Friday</span>
+          </header>
+          <div class="prearrival-thread">
+            <div class="conversation-day">Thursday &middot; 15:06</div>
+            <div class="product-message product-message-guest">
+              <p>We&rsquo;re celebrating our anniversary. Could you recommend somewhere special for dinner Friday?</p>
+            </div>
+            <div class="product-message product-message-ai">
+              <span class="message-sender"><i aria-hidden="true">&#10022;</i> ConciergeFlow</span>
+              <p>I&rsquo;d be delighted to help. I&rsquo;ve prepared a dining request for two on Friday evening; your hotel team will confirm the best available option.</p>
+            </div>
+            <div class="prearrival-request"><span aria-hidden="true">&#10003;</span><div><small>Service request prepared</small><strong>Dining request prepared</strong><em>Friday evening &middot; 2 guests</em></div></div>
           </div>
-        </div>
-        <div class="floating-badge top">
-          <div class="icon"><i class="fas fa-globe"></i></div>
-          <div>
-            <div class="label">Languages</div>
-            <div class="value">28 supported</div>
+        </section>
+        <aside class="prearrival-intelligence" aria-label="Guest intelligence for Sofia Rossi">
+          <div class="intelligence-heading"><span>Guest intelligence</span><i aria-hidden="true">&bull;&bull;&bull;</i></div>
+          <div class="sofia-summary">
+            <div class="guest-summary-name"><span class="guest-avatar avatar-sofia">SR</span><div><strong>Sofia Rossi</strong><small>Suite 512 &middot; Arriving Friday</small></div></div>
+            <p>Anniversary stay &middot; Italian / English</p>
           </div>
-        </div>
-        <div class="floating-badge bottom">
-          <div class="icon"><i class="fas fa-bolt"></i></div>
-          <div>
-            <div class="label">Response time</div>
-            <div class="value">1.4s average</div>
+          <dl class="prearrival-signals">
+            <div><dt>Occasion</dt><dd>Anniversary</dd></div>
+            <div><dt>Intent</dt><dd>Dinner reservation</dd></div>
+            <div><dt>Guests</dt><dd>2</dd></div>
+            <div><dt>Timing</dt><dd>Friday evening</dd></div>
+          </dl>
+          <div class="staff-context"><span>For hotel team</span><strong>Confirm a suitable dining option before arrival.</strong></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Story chapter 02: the operational system continues overnight. -->
+<section class="night-operations" id="night-operations">
+  <div class="container">
+    <header class="night-intro">
+      <div class="night-time-display"><span>03:14</span><small>Paris</small></div>
+      <div>
+        <p class="chapter-eyebrow">02 &mdash; Night operations</p>
+        <h2>Your guests don&rsquo;t keep office hours.</h2>
+      </div>
+      <p>ConciergeFlow remains available when the front desk is quiet, prepares the appropriate action, and leaves the morning team with context.</p>
+    </header>
+
+    <div class="night-demo" aria-label="Night operations demonstration for Yuki Tanaka">
+      <header class="night-console-header">
+        <div class="product-app-brand"><span class="product-mark" aria-hidden="true">&#10022;</span> ConciergeFlow</div>
+        <span class="night-console-state"><i aria-hidden="true"></i> Overnight operations</span>
+        <span>Demo night</span>
+      </header>
+      <div class="night-workspace">
+        <section class="night-conversation" aria-label="Conversation with Yuki Tanaka">
+          <header class="night-guest-header">
+            <div><p>Guest conversation</p><h3>Yuki Tanaka <span>&middot; Suite 612</span></h3></div>
+            <span>English / Japanese</span>
+          </header>
+          <div class="night-thread">
+            <div class="night-thread-time">03:14</div>
+            <div class="night-message night-guest-message"><p>Hi, is it possible to arrange a spa treatment for two tomorrow morning?</p></div>
+            <div class="night-message night-ai-message"><span class="message-sender"><i aria-hidden="true">&#10022;</i> ConciergeFlow</span><p>I&rsquo;ve captured your request for a treatment for two tomorrow morning. Our morning team will confirm availability.</p></div>
+            <div class="night-action"><span aria-hidden="true">&#10003;</span><div><small>Service request</small><strong>Spa request captured</strong><em>Morning team confirmation required</em></div></div>
           </div>
-        </div>
+        </section>
+
+        <aside class="night-intelligence" aria-label="Request understanding for Yuki Tanaka">
+          <div class="night-panel-heading">Request understood</div>
+          <dl>
+            <div class="night-intent"><dt>Intent</dt><dd>Spa request</dd></div>
+            <div class="night-guests"><dt>Guests</dt><dd>2</dd></div>
+            <div class="night-period"><dt>Preferred period</dt><dd>Tomorrow morning</dd></div>
+          </dl>
+          <div class="night-confirmation"><span>Follow-up</span><strong>Morning team confirmation required</strong></div>
+        </aside>
+
+        <aside class="night-log" aria-label="Operational activity log">
+          <div class="night-panel-heading">Operational activity</div>
+          <ol>
+            <li class="night-log-received"><time>03:14</time><span>Guest message received</span></li>
+            <li class="night-log-understood"><time>03:14</time><span>Request understood &middot; Spa</span></li>
+            <li class="night-log-prepared"><time>03:14</time><span>Service request prepared</span></li>
+            <li class="night-log-followup"><time>03:15</time><span>Morning team follow-up queued</span></li>
+          </ol>
+        </aside>
       </div>
+    </div>
+
+    <div class="night-demo-summary" aria-label="Demonstration night operational summary">
+      <span>Demo night</span><dl><div><dt>14</dt><dd>conversations</dd></div><div><dt>5</dt><dd>service requests</dd></div><div><dt>3</dt><dd>languages</dd></div><div><dt>0</dt><dd>unanswered in this simulation</dd></div></dl>
     </div>
   </div>
 </section>
 
-<!-- Section B: Problem -->
-<section class="problem" id="problem">
+<!-- Story chapter 03: AI prepares the staff-facing handoff when judgement matters. -->
+<section class="human-handoff" id="human-handoff">
   <div class="container">
-    <div class="reveal center">
-      <span class="section-label">The Reality</span>
-      <h2 class="section-title">The Parisian Hotel Revenue Leak</h2>
-      <p class="section-subtitle">You invested millions in your property. Yet every night, high-intent international guests slip away &#x2014; not because of your rooms, but because of your response time.</p>
-    </div>
+    <header class="handoff-intro">
+      <div class="handoff-heading">
+        <p class="chapter-eyebrow">03 &mdash; Human handoff</p>
+        <h2>AI when it can.<br>People when it matters.</h2>
+      </div>
+      <p>ConciergeFlow recognises when staff attention is appropriate and gives the right person a concise operational brief.</p>
+    </header>
 
-    <div class="problem-grid">
-      <div class="problem-card reveal">
-        <div class="problem-icon"><i class="fas fa-clock"></i></div>
-        <h3>Time Zones</h3>
-        <p>Your international guests in Tokyo or New York are awake when your staff is asleep. Unanswered questions mean lost upsells &#x2014; and a competitor who answers first wins the booking.</p>
-      </div>
-      <div class="problem-card reveal">
-        <div class="problem-icon"><i class="fas fa-language"></i></div>
-        <h3>Language Barriers</h3>
-        <p>A confused guest won't book. If your night staff isn't fluent in 10 languages, high-paying guests feel underserved &#x2014; and your TripAdvisor reviews will reflect it.</p>
-      </div>
-      <div class="problem-card reveal">
-        <div class="problem-icon"><i class="fas fa-hourglass-half"></i></div>
-        <h3>Slow Speed-to-Lead</h3>
-        <p>If a VIP guest inquires about a suite and waits 8 hours for a reply, they book your competitor across the Seine. Speed is the new luxury.</p>
-      </div>
+    <div class="handoff-composition">
+      <section class="handoff-guest-view" aria-label="Guest request from Alex Morgan">
+        <div class="handoff-panel-label">Guest conversation</div>
+        <div class="handoff-guest-name"><span class="guest-avatar avatar-alex">AM</span><div><strong>Alex Morgan</strong><small>Suite 804 &middot; VIP anniversary stay</small></div></div>
+        <blockquote>Could you arrange a private Seine cruise tonight? We&rsquo;d like something quiet after 8 PM. Champagne if possible.</blockquote>
+        <dl class="handoff-signals">
+          <div><dt>Intent</dt><dd>Private experience</dd></div>
+          <div><dt>Timing</dt><dd>After 20:00</dd></div>
+          <div><dt>Guests</dt><dd>2</dd></div>
+          <div><dt>Preference</dt><dd>Quiet &middot; Champagne</dd></div>
+        </dl>
+      </section>
+
+      <div class="handoff-bridge" aria-hidden="true"><span>Context prepared for staff</span></div>
+
+      <section class="reception-desk" aria-label="Receptionist handoff for Alex Morgan">
+        <header><div><p>Reception desk</p><h3>Staff handoff</h3></div><span class="handoff-status">Staff attention recommended</span></header>
+        <div class="reception-brief">
+          <div class="reception-brief-guest"><span class="guest-avatar avatar-alex">AM</span><div><strong>Alex Morgan &middot; Suite 804</strong><small>2 guests &middot; VIP / anniversary stay</small></div></div>
+          <dl><div><dt>Request</dt><dd>Private Seine cruise tonight after 20:00</dd></div><div><dt>Preference</dt><dd>Quiet experience &middot; Champagne if available</dd></div></dl>
+          <div class="ai-summary"><span>AI summary</span><p>Guest is requesting a quiet private Seine cruise for two tonight after 20:00. Champagne preferred if available. No budget specified.</p></div>
+        </div>
+        <div class="reception-actions" aria-label="Staff actions shown in the interface preview"><span class="reception-action-primary">Take over</span><span class="reception-action-secondary">Assign</span></div>
+      </section>
     </div>
   </div>
 </section>
 
-<!-- Section C: Solution -->
-<section class="solution" id="solution">
+<!-- Section 04: Experience it -->
+<section class="demo demo-v2" id="demo">
   <div class="container">
-    <div class="solution-intro reveal">
-      <span class="section-label">The Solution</span>
-      <h2 class="section-title">Meet Your New 24/7 AI Concierge</h2>
-      <p class="section-subtitle">We don't just build chatbots. We build a custom AI trained on your hotel's specific services, menus, partnerships, and tone of voice &#x2014; indistinguishable from your best front desk agent.</p>
+    <div class="demo-v2-intro reveal">
+      <div>
+        <p class="product-section-eyebrow">04 &mdash; Experience it</p>
+        <h2>Don&rsquo;t take our word for it.</h2>
+      </div>
+      <div class="demo-v2-copy">
+        <p>Ask ConciergeFlow yourself.</p>
+        <span class="demo-live-status"><i aria-hidden="true"></i> Live product demo</span>
+      </div>
     </div>
 
-    <div class="steps-container">
-      <div class="step reveal">
-        <div class="step-number">
-          01
-          <div class="step-icon"><i class="fas fa-bolt"></i></div>
-        </div>
-        <h3>Instant Reply</h3>
-        <p>Guest messages on WhatsApp or your website. The AI replies in under 2 seconds &#x2014; fluently, in their native language, with the warmth your brand is known for.</p>
-      </div>
-      <div class="step reveal">
-        <div class="step-number">
-          02
-          <div class="step-icon"><i class="fas fa-concierge-bell"></i></div>
-        </div>
-        <h3>Upsell &amp; Capture</h3>
-        <p>The AI recommends a spa package or a private Seine boat tour from the Airtable partner catalog, then captures a clear request for staff to confirm &#x2014; preserving the revenue opportunity your night shift would have missed.</p>
-      </div>
-      <div class="step reveal">
-        <div class="step-number">
-          03
-          <div class="step-icon"><i class="fas fa-envelope"></i></div>
-        </div>
-        <h3>Notify Staff</h3>
-        <p>The AI instantly logs each request and sends a clean summary to your morning shift via email or Slack. Your team walks in already knowing what happened overnight.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Section D: Hotel Moment Showcase -->
-<section class="hotel-moments" id="moments">
-  <div class="container moments-grid">
-    <div class="moments-visual reveal">
-      <div class="moments-image-frame">
-        <img src="assets/hotel-lumiere-salon.jpg" alt="A fictional Parisian salon at H&#xF4;tel Lumi&#xE8;re" class="moments-image" />
-        <div class="moments-image-caption"><i class="fas fa-sparkles" aria-hidden="true"></i> The fictional H&#xF4;tel Lumi&#xE8;re experience</div>
-      </div>
-    </div>
-    <div class="moments-content reveal">
-      <span class="section-label">A hotel in motion</span>
-      <h2 class="section-title">Luxury is the feeling that someone thought ahead.</h2>
-      <p class="section-subtitle">A tailored concierge does more than answer questions. It turns a guest's moment into clear, gracious next steps your team can actually act on.</p>
-      <div class="showcase-scene" aria-live="polite">
-        <div class="showcase-scene-label">Guest moment</div>
-        <p class="showcase-guest" id="showcase-guest">&#x201C;We arrive after midnight. Can everything feel effortless?&#x201D;</p>
-        <div class="showcase-scene-label">The concierge response</div>
-        <p class="showcase-response" id="showcase-response">A chauffeur, in-room supper and a quiet arrival note are prepared as one considered request.</p>
-        <p class="showcase-detail" id="showcase-detail">One guest message &#xB7; three team-ready actions</p>
-      </div>
-      <div class="showcase-triggers" role="group" aria-label="Choose a guest moment">
-        <button class="showcase-trigger is-active" type="button" data-scene="arrival" aria-pressed="true">Midnight arrival</button>
-        <button class="showcase-trigger" type="button" data-scene="finale" aria-pressed="false">Last day in Paris</button>
-        <button class="showcase-trigger" type="button" data-scene="celebration" aria-pressed="false">A celebration</button>
-        <button class="showcase-trigger" type="button" data-scene="rare" aria-pressed="false">A rare request</button>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Section E: Live Demo -->
-<section class="demo" id="demo">
-  <div class="container">
-    <div class="reveal center">
-      <span class="section-label">Public Preview</span>
-      <h2 class="section-title">A private concierge, at your pace.</h2>
-      <p class="section-subtitle">Ask for a hotel service or a Paris address. When a request sits outside our preferred collection, the concierge quietly searches current direct venue sources and presents only considered matches.</p>
-    </div>
-
-    <div class="chat-wrapper reveal">
+    <div class="chat-wrapper demo-v2-shell reveal">
       <div class="chat-widget" aria-label="ConciergeFlow AI live concierge chat">
         <div class="chat-header">
           <img class="chat-avatar chat-avatar-logo" src="logo-icon.svg" alt="ConciergeFlow AI" />
           <div class="chat-header-info">
             <h4>H&#xF4;tel Lumi&#xE8;re Paris</h4>
-            <span><i class="fas fa-circle" aria-hidden="true"></i> Private service, in real time</span>
+            <span>Private concierge &middot; Live demonstration</span>
           </div>
-          <div class="chat-header-assurance" aria-label="Private and secure">
+          <div class="chat-header-assurance" aria-label="Private concierge service">
             <i class="fas fa-lock" aria-hidden="true"></i>
             <span>Private</span>
           </div>
@@ -235,12 +360,19 @@
           </div>
         </div>
 
+        <div class="demo-prompt-starters" aria-label="Example concierge requests">
+          <span>Try asking</span>
+          <button type="button" data-demo-prompt="Dinner near the hotel">Dinner near the hotel</button>
+          <button type="button" data-demo-prompt="Airport transfer tomorrow">Airport transfer tomorrow</button>
+          <button type="button" data-demo-prompt="Something special in Paris">Something special in Paris</button>
+        </div>
+
         <div class="chat-input-area">
           <input
             type="text"
             class="chat-input"
             id="chat-input"
-            placeholder="e.g., Do you have a spa appointment tomorrow at 9 AM for two people? And I need a taxi to CDG airport."
+            placeholder="Ask your private concierge"
             autocomplete="off"
             maxlength="1200"
           />
@@ -248,93 +380,110 @@
             <i class="fas fa-paper-plane"></i>
           </button>
         </div>
-        <div class="chat-footer-note"><i class="fas fa-sparkles" aria-hidden="true"></i> Curated recommendations. Requests are confirmed by our team.</div>
-      </div>
-
-      <div class="demo-note">
-        <i class="fas fa-shield-halved"></i>
-        Live concierge preview. Recommendations are independently sourced; final availability and every reservation remain confirmed by our team.
+        <div class="chat-footer-note">Recommendations may use current venue sources. Reservations and service requests remain subject to confirmation.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Section F: Offer -->
-<section class="offer" id="offer">
+<!-- Section 05: The operating layer -->
+<section class="operating-layer" id="operating-layer">
   <div class="container">
-    <div class="offer-grid">
-      <div class="offer-visual reveal">
-        <div class="offer-card">
-          <span class="offer-card-label">14-Day Free Trial</span>
-          <h3>Zero Risk. Pure Upside.</h3>
-          <p class="price">No credit card required &#xB7; <strong>Cancel anytime</strong></p>
-          <p style="color: var(--text-muted-light); font-size: 0.9rem; line-height: 1.7;">
-            We build your custom AI concierge, integrate it with your systems, and run it live for 14 days. If it doesn't capture more revenue than it costs, you walk away &#x2014; no questions, no invoices.
-          </p>
-          <div class="offer-stats">
-            <div class="offer-stat">
-              <div class="num">&#x20AC;5K+</div>
-              <div class="lbl">Avg. monthly upsell captured</div>
-            </div>
-            <div class="offer-stat">
-              <div class="num">28</div>
-              <div class="lbl">Languages supported</div>
-            </div>
-            <div class="offer-stat">
-              <div class="num">&lt;2s</div>
-              <div class="lbl">Average response time</div>
-            </div>
-            <div class="offer-stat">
-              <div class="num">24/7</div>
-              <div class="lbl">Always-on coverage</div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <header class="product-section-header reveal">
+      <p class="product-section-eyebrow">05 &mdash; The operating layer</p>
+      <h2>One conversation. The right hotel context.</h2>
+      <p>ConciergeFlow organizes a guest conversation into context the hotel can act on &mdash; without representing unsupported systems as integrations.</p>
+    </header>
 
-      <div class="offer-content reveal">
-        <span class="section-label">The Offer</span>
-        <h2 class="section-title">The 14-Day Free Trial</h2>
-        <p class="section-subtitle">We build it. We integrate it. You keep the revenue. No credit card required.</p>
+    <div class="operating-surface reveal" aria-label="ConciergeFlow operating model">
+      <section class="operating-column operating-channels" aria-label="Guest channels">
+        <div class="operating-column-heading"><span>Guest channels</span><small>Incoming</small></div>
+        <div class="operating-row"><span class="operating-mark">01</span><div><strong>Web</strong><small>Guest message received</small></div><time>20:14</time></div>
+        <div class="operating-row"><span class="operating-mark">02</span><div><strong>WhatsApp</strong><small>Guest conversation</small></div><time>20:16</time></div>
+      </section>
 
-        <ul class="offer-list">
-          <li>
-            <span class="check-icon"><i class="fas fa-check"></i></span>
-            <div>
-              <strong>Custom AI trained on your hotel's data</strong>
-              <small>Menus, services, partnerships, room types, FAQs, brand voice &#x2014; all incorporated.</small>
-            </div>
-          </li>
-          <li>
-            <span class="check-icon"><i class="fas fa-check"></i></span>
-            <div>
-              <strong>WhatsApp &amp; Web Chat integration</strong>
-              <small>Live on the channels your guests already use, branded with your hotel's identity.</small>
-            </div>
-          </li>
-          <li>
-            <span class="check-icon"><i class="fas fa-check"></i></span>
-            <div>
-              <strong>Daily automated report of captured leads and upsells</strong>
-              <small>Every morning, your team receives a clean summary of overnight activity and revenue captured.</small>
-            </div>
-          </li>
-        </ul>
+      <section class="operating-core" aria-label="ConciergeFlow operational panel">
+        <header><span class="operating-core-brand">ConciergeFlow</span><span class="operating-state"><i aria-hidden="true"></i> Context prepared</span></header>
+        <div class="operating-core-request"><span>Current conversation</span><strong>Private dinner request &middot; 2 guests</strong><small>Guest preference and timing retained for staff action</small></div>
+        <dl class="operating-capabilities">
+          <div><dt>01</dt><dd>Guest context</dd><span>Stay details and preferences</span></div>
+          <div><dt>02</dt><dd>Request understanding</dd><span>Intent, timing and priority</span></div>
+          <div><dt>03</dt><dd>Service coordination</dd><span>Hotel knowledge and next steps</span></div>
+          <div><dt>04</dt><dd>Staff handoff</dd><span>Clear context for human action</span></div>
+        </dl>
+      </section>
 
-        <button class="btn-primary offer-cta discovery-trigger" type="button">
-          <i class="fas fa-gift"></i>
-          Claim Your 14-Day Free Trial
-        </button>
-        <p class="offer-cta-note">
-          <i class="fas fa-lock"></i>
-          No credit card. No commitment. We build it, you keep the revenue.
-        </p>
-      </div>
+      <section class="operating-column operating-operations" aria-label="Hotel operations">
+        <div class="operating-column-heading"><span>Hotel operations</span><small>Prepared context</small></div>
+        <div class="operating-row"><span class="operating-mark">A</span><div><strong>Reception</strong><small>Staff visibility</small></div><time>Ready</time></div>
+        <div class="operating-row"><span class="operating-mark">B</span><div><strong>Guest services</strong><small>Request follow-up</small></div><time>Ready</time></div>
+        <div class="operating-row"><span class="operating-mark">C</span><div><strong>Hotel knowledge / services</strong><small>Property context</small></div><time>Active</time></div>
+        <div class="operating-row"><span class="operating-mark">D</span><div><strong>Partner recommendations</strong><small>Considered options</small></div><time>Review</time></div>
+      </section>
     </div>
   </div>
 </section>
 
-<!-- Section G: Footer -->
+<!-- Section 06: Implementation -->
+<section class="implementation" id="implementation">
+  <div class="container">
+    <header class="product-section-header implementation-header reveal">
+      <p class="product-section-eyebrow">06 &mdash; Implementation</p>
+      <h2>From hotel knowledge to live concierge.</h2>
+      <p>A considered working sequence, shaped around the property and the way its team already operates.</p>
+    </header>
+
+    <ol class="implementation-track reveal">
+      <li class="implementation-stage stage-learn">
+        <div class="implementation-stage-copy"><span>01</span><h3>Learn the property</h3><p>Services, policies, recommendations, guest information and tone.</p></div>
+        <div class="implementation-artifact knowledge-artifact" aria-label="Property knowledge example"><span>Property knowledge</span><ul><li>Late arrival policy <b>Reviewed</b></li><li>In-room dining <b>Current</b></li><li>Preferred partners <b>Curated</b></li></ul></div>
+      </li>
+      <li class="implementation-stage stage-configure">
+        <div class="implementation-stage-copy"><span>02</span><h3>Configure the concierge</h3><p>Guest channels, operational rules and staff handoff behavior.</p></div>
+        <div class="implementation-artifact config-artifact" aria-label="Concierge configuration example"><span>Concierge settings</span><dl><div><dt>Web concierge</dt><dd>Enabled</dd></div><div><dt>Staff handoff</dt><dd>When needed</dd></div><div><dt>Request review</dt><dd>Hotel controlled</dd></div></dl></div>
+      </li>
+      <li class="implementation-stage stage-review">
+        <div class="implementation-stage-copy"><span>03</span><h3>Review together</h3><p>Hotel team tests representative guest requests and adjusts the experience.</p></div>
+        <div class="implementation-artifact review-artifact" aria-label="Guest request review example"><span>Representative request</span><strong>Airport transfer for Friday</strong><p>Intent recognized &middot; details prepared</p><b>Reviewed with hotel team</b></div>
+      </li>
+      <li class="implementation-stage stage-live">
+        <div class="implementation-stage-copy"><span>04</span><h3>Go live</h3><p>Guest conversations begin with staff visibility and escalation where appropriate.</p></div>
+        <div class="implementation-artifact live-artifact" aria-label="Live concierge status example"><div><i aria-hidden="true"></i><span>Concierge live</span></div><p>Guest request received</p><strong>Staff context ready for review</strong><small>20:16 &middot; Guest services</small></div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- Section 07: Trust and control -->
+<section class="control-section" id="control">
+  <div class="container control-layout">
+    <header class="control-intro reveal">
+      <p class="product-section-eyebrow">07 &mdash; Trust &amp; control</p>
+      <h2>Built to assist the hotel. Not impersonate it.</h2>
+      <p>ConciergeFlow organizes the conversation and keeps the hotel in charge of the moments that require judgement or confirmation.</p>
+    </header>
+    <div class="control-panel reveal" aria-label="Hotel controls">
+      <header><span>Hotel controls</span><small>Operating principles</small></header>
+      <dl>
+        <div><dt>Reservation confirmation</dt><dd>Hotel controlled</dd></div>
+        <div><dt>Human handoff</dt><dd>Available</dd></div>
+        <div><dt>Unconfirmed availability</dt><dd>Never presented as confirmed</dd></div>
+        <div><dt>Guest request context</dt><dd>Passed to staff</dd></div>
+      </dl>
+      <p><i class="fas fa-shield-halved" aria-hidden="true"></i> A concierge that supports the hotel&rsquo;s operating model.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Final conversion -->
+<section class="final-cta" id="discovery">
+  <div class="container final-cta-layout reveal">
+    <div><p class="product-section-eyebrow">For hotels</p><h2>See ConciergeFlow with your hotel in mind.</h2></div>
+    <div class="final-cta-copy"><p>Explore the product around your property, guest journey and operating model in a focused discovery conversation.</p><div class="final-cta-actions"><a class="final-cta-primary discovery-trigger" href="#discovery">Book a discovery call <span aria-hidden="true">&rarr;</span></a><a class="final-cta-secondary" href="#demo">Experience the live demo <span aria-hidden="true">&darr;</span></a></div></div>
+  </div>
+</section>
+
+<!-- Footer -->
 <footer>
   <div class="footer-container">
     <div class="footer-logo" style="display: flex; align-items: center; gap: 1rem; line-height: 1;">
@@ -343,9 +492,10 @@
     </div>
     <div class="footer-links">
       <a href="#demo">Live Demo</a>
-      <a href="#offer">Free Trial</a>
+      <a href="#operating-layer">Operating layer</a>
+      <a href="#implementation">Implementation</a>
       <a href="#" onclick="event.preventDefault(); showToast('Privacy Policy &#x2014; Full document available on request.');">Privacy Policy</a>
-          <a href="#" onclick="event.preventDefault(); showToast('Contact us at flowarchitect.agency@gmail.com');">Contact</a>
+      <a href="#" onclick="event.preventDefault(); showToast('Contact us at flowarchitect.agency@gmail.com');">Contact</a>
     </div>
     <div class="footer-copy">
       ConciergeFlow AI &#xA9; 2024 | Paris, France
@@ -495,6 +645,6 @@
 
 <!-- Browser-safe Cloudflare Worker endpoint configuration. Never place a secret in config.js. -->
 <script src="config.js"></script>
-    <script src="script.js?v=room-picker-v10"></script>
+    <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
 </body>
 </html>
