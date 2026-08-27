@@ -37,3 +37,7 @@ See `CLOUDFLARE_DEPLOYMENT.md` for the one-time account and deployment handoff.
 ## Quality controls
 
 The automated test suite includes multilingual intent checks, cuisine-constraint checks, stale-recommendation prevention, scraper-relevance checks, latency checks, webhook response checks, and Airtable field assertions. See `CONCIERGE_AUTOMATION.md` for the exact regression procedure.
+
+## Demo follow-up contract
+
+For the pre-arrival product simulation, `/api/chat` and `/api/demo-chat` may return an additive `next_step` object describing one short, guest-facing follow-up. The Worker never sends it itself; `demo.js` may present it only while the simulated AI owns an active pre-arrival conversation. A future WhatsApp scheduler may consume the same contract only when the applicable WhatsApp messaging policy and guest-contact window allow it.

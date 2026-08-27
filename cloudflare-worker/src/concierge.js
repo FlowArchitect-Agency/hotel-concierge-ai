@@ -1,10 +1,10 @@
 const CATEGORY_RULES = [
   { category: 'accommodation', words: ['hotel room', 'hotel rooms', 'room booking', 'book a room', 'reserve a room', 'reserve in your hotel', 'book your hotel', 'hotel stay', 'stay at your hotel', 'overnight stay', 'accommodation', 'suite', 'suites', 'guest room', 'guest rooms', 'rooms', 'room', 'nights', 'night', 'chambre', 'chambres', 'habitacion', 'habitaciones', 'habitation', 'camera', 'zimmer', 'check-in', 'check in', 'check-out', 'check out'] },
   { category: 'spa', words: ['spa', 'massage', 'masaje', 'sauna', 'hammam', 'wellness', 'treatment', 'soin', 'facial', '\u6309\u6469', '\u30de\u30c3\u30b5\u30fc\u30b8'] },
-  { category: 'restaurant', words: ['restaurant', 'dinner', 'lunch', 'breakfast', 'table', 'reservation', 'resto', 'd\u00eener', 'd\u00e9jeuner', 'manger', 'food', 'eat', 'cuisine', 'michelin', '\u0645\u0637\u0639\u0645', '\u30ec\u30b9\u30c8\u30e9\u30f3', '\u9910\u5385'] },
+  { category: 'restaurant', words: ['restaurant', 'dining', 'dinner', 'lunch', 'breakfast', 'table', 'reservation', 'resto', 'd\u00eener', 'd\u00e9jeuner', 'manger', 'food', 'eat', 'cuisine', 'michelin', '\u0645\u0637\u0639\u0645', '\u30ec\u30b9\u30c8\u30e9\u30f3', '\u9910\u5385'] },
   { category: 'transport', words: ['taxi', 'uber', 'chauffeur', 'car', 'driver', 'transfer', 'airport', 'cdg', 'orly', 'pick up', 'pickup', 'navette', 'shuttle'] },
   { category: 'tour', words: ['tour', 'eiffel', 'louvre', 'museum', 'mus\u00e9e', 'cruise', 'croisi\u00e8re', 'seine', 'versailles', 'excursion', 'sightsee', 'guide'] },
-  { category: 'experience', words: ['private chef', 'chef', 'sommelier', 'wine tasting', 'd\u00e9gustation', 'after-hours', 'shopping', 'personal shopper', 'photographer', 'proposal', 'anniversary', 'honeymoon'] },
+  { category: 'experience', words: ['private experience', 'private experiences', 'experience', 'experiences', 'private chef', 'chef', 'sommelier', 'wine tasting', 'd\u00e9gustation', 'after-hours', 'shopping', 'personal shopper', 'photographer', 'proposal', 'anniversary', 'honeymoon'] },
 ];
 
 // These requests are not an attempt to book one catalogue item. They need a
@@ -34,7 +34,7 @@ const CUISINES = [
 
 const REQUEST_WORDS = ['book', 'reserve', 'need', 'want', 'arrange', 'organize', 'find', 'looking for', 'can you', 'je voudrais', 'r\u00e9server', 'je cherche'];
 const GREETINGS = new Set(['hi', 'hello', 'hey', 'salut', 'bonjour', 'bonsoir', 'hola', 'ok', 'okay', 'yes', 'no', 'oui', 'non', 'merci', 'thanks', 'thank you', '\u3053\u3093\u306b\u3061\u306f', '\u306f\u3044', '\u3044\u3044\u3048']);
-const CUISINE_FILLER_WORDS = new Set(['i', 'im', 'am', 'looking', 'for', 'a', 'an', 'the', 'some', 'any', 'find', 'need', 'want', 'would', 'like', 'to', 'book', 'reserve', 'reservation', 'fancy', 'best', 'top', 'good', 'great', 'nice', 'authentic', 'excellent', 'your', 'our', 'hotel', 'table', 'restaurant', 'restaurants', 'restaurante', 'restaurantes', 'ristorante', 'ristoranti', 'cuisine', 'food', 'dining', 'place', 'places', 'near', 'close', 'around', 'by', 'in', 'at', 'please', 'show', 'me', 'one', 'only', 'just', 'of', 'is', 'that', 'this', 'with', 'and', 'or']);
+const CUISINE_FILLER_WORDS = new Set(['i', 'im', 'am', 'looking', 'for', 'a', 'an', 'the', 'some', 'any', 'find', 'need', 'want', 'would', 'like', 'to', 'book', 'reserve', 'reservation', 'fancy', 'best', 'top', 'good', 'great', 'nice', 'authentic', 'excellent', 'what', 'which', 'where', 'when', 'do', 'does', 'are', 'your', 'our', 'hotel', 'table', 'restaurant', 'restaurants', 'restaurante', 'restaurantes', 'ristorante', 'ristoranti', 'cuisine', 'food', 'dining', 'experience', 'experiences', 'available', 'place', 'places', 'near', 'close', 'around', 'by', 'in', 'at', 'please', 'show', 'me', 'one', 'only', 'just', 'of', 'is', 'that', 'this', 'with', 'and', 'or']);
 
 export function normalized(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -132,6 +132,83 @@ export function requestedResponseLanguage(message) {
   return '';
 }
 
+// Lightweight language scoring keeps the current turn in control.  It is
+// intentionally small and deterministic: this is not translation, just a
+// reliable way to select the appropriate reply language before the model is
+// called.  Phrases receive a little more weight than isolated function words
+// and a one-character typo is tolerated for useful longer words.
+const LATIN_LANGUAGE_SIGNALS = {
+  en: {
+    phrases: ['what time', 'do you close', 'are you open', 'can you help', 'i would like', 'help me plan', 'hello'],
+    words: ['what', 'time', 'close', 'open', 'please', 'would', 'could', 'thanks', 'hello', 'breakfast', 'stay'],
+  },
+  fr: {
+    phrases: ['a quelle heure', 'vous etes ouverts', 'toute la nuit', 'je voudrais', 'pouvez vous', 'aidez moi', 'bonjour', 'bonsoir'],
+    words: ['quelle', 'heure', 'ferme', 'fermez', 'ouverts', 'ouverte', 'vous', 'bonjour', 'bonsoir', 'demain', 'sejour', 'petit', 'dejeuner', 'merci'],
+  },
+  es: {
+    phrases: ['a que hora', 'pueden ayudarme', 'me gustaria', 'por favor', 'hola'],
+    words: ['que', 'hora', 'cierra', 'abierto', 'abierta', 'hola', 'necesito', 'quiero', 'manana', 'estancia', 'desayuno', 'gracias'],
+  },
+  it: {
+    phrases: ['a che ora', 'mi piacerebbe', 'potete aiutarmi', 'ciao'],
+    words: ['che', 'ora', 'chiude', 'aperto', 'aperta', 'ciao', 'vorrei', 'posso', 'domani', 'soggiorno', 'colazione', 'grazie'],
+  },
+  de: {
+    phrases: ['wie spat', 'haben sie', 'konnen sie helfen', 'hallo', 'guten tag'],
+    words: ['wie', 'spat', 'geschlossen', 'geoffnet', 'hallo', 'bitte', 'danke', 'ihnen', 'morgen', 'aufenthalt', 'fruhstuck'],
+  },
+};
+
+function languageTokens(text) {
+  return normalized(text).match(/[\p{L}]{2,}/gu) || [];
+}
+
+function editDistanceAtMostOne(left, right) {
+  if (left === right) return true;
+  if (Math.abs(left.length - right.length) > 1) return false;
+  let leftIndex = 0;
+  let rightIndex = 0;
+  let edits = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    if (left[leftIndex] === right[rightIndex]) {
+      leftIndex += 1;
+      rightIndex += 1;
+      continue;
+    }
+    edits += 1;
+    if (edits > 1) return false;
+    if (left.length > right.length) leftIndex += 1;
+    else if (right.length > left.length) rightIndex += 1;
+    else {
+      leftIndex += 1;
+      rightIndex += 1;
+    }
+  }
+  return true;
+}
+
+function scoreLatinLanguage(message, language) {
+  const text = normalized(message);
+  const tokens = languageTokens(message);
+  const signals = LATIN_LANGUAGE_SIGNALS[language];
+  let score = 0;
+  for (const phrase of signals.phrases) {
+    if (text.includes(phrase)) score += 3;
+  }
+  for (const word of signals.words) {
+    if (tokens.includes(word)) {
+      score += 1;
+      continue;
+    }
+    // Do not fuzzy-match very short terms: they create false positives across
+    // languages.  Longer conversational words carry enough signal to help a
+    // mobile typo such as "qulle" for "quelle".
+    if (word.length >= 5 && tokens.some((token) => token.length >= 4 && editDistanceAtMostOne(token, word))) score += 0.8;
+  }
+  return score;
+}
+
 export function inferLanguage(message) {
   const requested = requestedResponseLanguage(message);
   if (requested) return requested;
@@ -139,10 +216,13 @@ export function inferLanguage(message) {
   if (/[\u0600-\u06ff]/.test(text)) return 'ar';
   if (/[\u3040-\u30ff]/.test(text)) return 'ja';
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
-  if (/\b(hallo|wie geht|ihnen|bitte|danke|guten tag)\b/.test(text)) return 'de';
-  if (/\b(ciao|avete|disponibilita|cena|stasera|vorrei|prenotare)\b/.test(text)) return 'it';
-  if (/\b(hola|necesito|aeropuerto|manana|quiero|reserva|gracias|por favor)\b/.test(text)) return 'es';
-  if (/\b(quel|prix|demain|bonjour|voudrais|reserver)\b/.test(text)) return 'fr';
+  const scores = Object.fromEntries(Object.keys(LATIN_LANGUAGE_SIGNALS).map((language) => [language, scoreLatinLanguage(message, language)]));
+  const ranked = Object.entries(scores).sort((left, right) => right[1] - left[1]);
+  const [language, score] = ranked[0];
+  const runnerUp = ranked[1]?.[1] ?? 0;
+  // English is the safe default.  A non-English answer needs either several
+  // converging words or a distinctive phrase, never one shared word alone.
+  if (language !== 'en' && score >= 2 && score > runnerUp) return language;
   return 'en';
 }
 
@@ -188,6 +268,7 @@ export function parseGuestInput(body) {
     is_demo: isDemo,
     chatHistory: Array.isArray(raw.chatHistory) ? raw.chatHistory : null,
     scenario: String(raw.scenario ?? '').trim().slice(0, 48),
+    conversationOwner: String(raw.conversationOwner ?? raw.conversation_owner ?? 'ai').trim().toLowerCase() === 'staff' ? 'staff' : 'ai',
     receivedAt: new Date().toISOString(),
   };
 }
@@ -412,14 +493,16 @@ export function classifyRequest(message) {
     }
   }
   if (ITINERARY_WORDS.some((word) => hasTerm(text, word))) scores.set('itinerary', 1);
+  const isStayPlanning = /\b(help\s+(?:me|us)\s+(?:plan|organize)|plan\s+(?:my|our|a)\s+(?:stay|weekend|trip)|organize\s+(?:my|our|a)\s+(?:stay|trip)|before\s+(?:we|i)\s+arrive|during\s+(?:my|our)\s+stay|not\s+sure\s+what\s+to\s+do)\b/i.test(text)
+    || /\b(aidez[- ]moi|organiser\s+(?:mon|notre)\s+sejour|planifier\s+(?:mon|notre)\s+sejour)\b/i.test(text);
   let category = [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
   if (cuisine) category = 'restaurant';
   if (isOperational) category = 'housekeeping';
   const trimmed = text.replace(/[!.?\u00a1\u00bf]+$/g, '');
   const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2;
-  const hasIntent = !isGreeting && Boolean(category || cuisine || hasEscalation || isOperational || wantsExternal || REQUEST_WORDS.some((word) => hasTerm(text, word)));
-  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational, wantsExternal, rawMessage: message };
+  const hasIntent = !isGreeting && Boolean(category || cuisine || isStayPlanning || hasEscalation || isOperational || wantsExternal || REQUEST_WORDS.some((word) => hasTerm(text, word)));
+  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational, wantsExternal, isStayPlanning, route: isStayPlanning ? 'stay_planning' : '', rawMessage: message };
 }
 
 export function inheritConversationContext(classification, history, latestMessage) {
@@ -481,7 +564,7 @@ export function formatServices(services) {
 }
 
 export function shouldSearchExternal(classification, services) {
-  if (!classification.hasIntent || ['greeting', 'hotel_faq', 'partner_catalog'].includes(classification.route)) return false;
+  if (!classification.hasIntent || ['greeting', 'hotel_faq', 'partner_catalog', 'stay_planning'].includes(classification.route)) return false;
   // A semantic route can deliberately prefer current external information
   // even when a broad hotel category happens to contain a partner service.
   return Boolean(classification.externalDiscovery) || Boolean(classification.wantsExternal) || !services.length;
@@ -801,7 +884,8 @@ export function buildPrompt({ input, classification, history, services, external
   return `You are the concierge for ${facts.hotelName}. Return JSON only, never Markdown.
 
 Hard rules:
-- Reply entirely in the guest's latest-message language (${input.language}).
+- Respond in the language of the guest's CURRENT message (${input.language}) unless the guest explicitly requests another language. A saved preference may help only with an ambiguous short turn.
+- Answer the exact question first. Specific hotel categories beat a generic catalogue: Dining means Dining, Rooms means Rooms, and broad planning should be a warm conversation rather than an external-search failure.
 - POST-CHECKOUT REVIEWS:
   * POSITIVE FEEDBACK (e.g. loved it, great stay, 5 stars, wonderful): Thank the guest warmly and offer the simulated Google Review link (https://g.page/r/hotel-lumiere-paris/review). Do NOT create a complaint ticket.
   * NEGATIVE FEEDBACK / COMPLAINTS (e.g. noisy room, poor service, disappointment): Apologize, prepare a private service-recovery request routed to the General Manager, and offer the same neutral public review link without pressure. Do not state that a manager has received or is reviewing the request. Set requires_human: true.
@@ -812,10 +896,10 @@ Hard rules:
 - Use only the facts, partner services, and external search results below.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
 - Partner services are preferred for leisure & hospitality inquiries. State a catalog price only when it is supplied below.
-- Full-catalogue, services, and spa-menu requests are rendered by the Worker as a text-only catalogue. Never create option, card, button, or booking-choice data for those requests.
+- Keep normal replies short and human. Do not dump the hotel database into a chat bubble; structured cards carry service detail where the client supports them.
 - External results are non-partner suggestions. Never invent a price, rating, address, link, or availability. Keep reply_text to one or two elegant sentences; cards are rendered separately by the website.
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
-- Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request.
+- Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request. Ask at most one useful clarifying question at a time. Relationship questions must feel hospitable, never like a sales funnel; human staff retains control.
 
 Return exactly this JSON shape:
 {"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"Housekeeping|Maintenance|Spa & Wellness|Transport|Dining|Concierge|General Manager","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}

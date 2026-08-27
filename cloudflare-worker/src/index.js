@@ -645,13 +645,14 @@ Classify every message using exactly one route:
 - hotel_faq: a question that can be answered only from hotel facts supplied later, such as check-in or hotel amenities.
 - partner_catalog: asking what the hotel offers or who its partners are.
 - partner_request: clearly asking to reserve or arrange a conventional hotel service.
+- stay_planning: asking for broad help to organize a hotel stay, trip, or weekend without asking to find a specific external venue.
 - external_discovery: asking for a recommendation, itinerary, venue, activity, event, shopping, transportation, food, nightlife, or any unusual/new need that requires current information beyond a known hotel catalogue.
 - conversation: only when none of the above applies.
 
 Critical rule: do not require a keyword match. If the guest wants help finding, choosing, suggesting, planning, seeing, buying, celebrating, or doing something in Paris, use external_discovery even if the request is unusual or written in another language. Follow-up requests inherit the earlier guest need from history.
 
 Return exactly:
-{"route":"greeting|hotel_faq|partner_catalog|partner_request|external_discovery|conversation","category":"accommodation|spa|restaurant|transport|tour|experience|itinerary|null","search_query":"a concise Paris web-search query or empty string"}
+{"route":"greeting|hotel_faq|partner_catalog|partner_request|stay_planning|external_discovery|conversation","category":"accommodation|spa|restaurant|transport|tour|experience|itinerary|null","search_query":"a concise Paris web-search query or empty string"}
 
 For external_discovery, search_query must describe the guest's exact need, include Paris when appropriate, and contain no instruction or commentary. Otherwise return an empty search_query.
 
@@ -663,6 +664,7 @@ ${input.message}`;
 }
 
 async function enrichSemanticRoute(env, input, history, classification) {
+  if (classification.route === 'stay_planning') return classification;
   const basicGreeting = !classification.hasIntent && !String(input.message || '').trim().includes(' ');
   if (basicGreeting) return classification;
   const provider = await callGroq(env, routerPrompt(input, history), { maxTokens: 180, router: true });
@@ -924,19 +926,121 @@ function hotelAlternativeReply(language, cuisine, options) {
   return build({ cuisine, options });
 }
 
-function isHotelCollectionQuestion(message) {
+function isHotelCollectionQuestion(message, classification = {}) {
   const text = String(message || '')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-  // Guests frequently transpose the "i" and "v" in "services" on mobile.
-  // Treat this as the same catalogue request rather than sending it through a
-  // slow, generic model route that can return only one category.
-  const catalogueTerm = /\b(?:catalog(?:ue)?|directory|guide|brochure|services?|serivces?|sevrices?|servcies?|amenities|offerings?|collection|partners?|experiences?|servicios?|servizi|view services|our services)\b/;
-  const catalogueQuestion = /\b(?:what|which|show|see|view|browse|open|list|send|can you|do you|quels?|montrez|voir|que)\b/;
+  // A category question must never become a full directory just because it
+  // contains a broad noun such as "experiences".  Only unmistakably broad
+  // phrasing opens the complete collection.
+  const explicitDirectory = /\b(?:complete|full|entire|digital)\s+(?:directory|catalog(?:ue)?|brochure)\b|\b(?:send|show|view)\s+(?:me\s+)?(?:the\s+)?(?:hotel\s+)?(?:directory|brochure)\b/;
+  const explicitEverything = /\b(?:all|every|complete|full|entire)\s+(?:of\s+)?(?:your|the|our)?\s*(?:services?|experiences?|offerings?|collection|catalog(?:ue)?)\b|\bshow\s+me\s+everything\b|\bwhat\s+(?:services?\s+and\s+)?experiences?\s+(?:are|do)\b/;
+  const compactBroad = /^(?:view\s+services?|services?|catalog(?:ue)?|directory|show\s+everything)$/i.test(text.trim());
+  const genericServiceQuestion = /\b(?:what|which|show|see|view|browse|open|list|send|do|does|can)\b[^?.!]{0,72}\b(?:services?|serivces?|sevrices?|servcies?|amenities|offerings?|partners?)\b/;
   const broadHotelOffer = /\bwhat\s+(?:do|can)\s+(?:you|the hotel)\s+(?:offer|arrange|provide)\b/;
-  const spaMenu = /\b(?:spa|wellness|massage|treatments?)\s+(?:menu|catalog(?:ue)?|list|brochure)\b/;
-  return spaMenu.test(text) || (catalogueTerm.test(text) && catalogueQuestion.test(text)) || broadHotelOffer.test(text) || /^(?:view\s+services?|services?|catalog(?:ue)?|directory)$/i.test(text.trim());
+  const categorySpecific = Boolean(classification.category || classification.cuisine);
+  if (categorySpecific && !explicitDirectory.test(text) && !explicitEverything.test(text)) return false;
+  return explicitDirectory.test(text) || explicitEverything.test(text) || genericServiceQuestion.test(text) || broadHotelOffer.test(text) || compactBroad;
+}
+
+function explicitDirectoryRequest(message) {
+  const text = normalized(message);
+  return /\b(?:directory|brochure|digital guide|full catalog(?:ue)?|complete catalog(?:ue)?)\b/i.test(text);
+}
+
+const HOTEL_CATEGORY_LABELS = {
+  accommodation: 'Rooms & Suites',
+  restaurant: 'Dining',
+  spa: 'Spa & Wellness',
+  transport: 'Transport',
+  tour: 'Paris experiences',
+  experience: 'Private experiences',
+};
+
+function hotelCategoryReply(language, category, count) {
+  const label = HOTEL_CATEGORY_LABELS[category] || 'hotel experiences';
+  const copies = {
+    en: `We have ${count} ${label.toLowerCase()} option${count === 1 ? '' : 's'} in the Hôtel Lumière collection. Here ${count === 1 ? 'is' : 'are'} the relevant choice${count === 1 ? '' : 's'}.`,
+    fr: `Nous avons ${count} option${count === 1 ? '' : 's'} ${label === 'Dining' ? 'de restauration' : `dans ${label}`} dans la collection de l’Hôtel Lumière. Voici les choix correspondants.`,
+    es: `Tenemos ${count} opcion${count === 1 ? '' : 'es'} de ${label} en la colección de Hôtel Lumière. Aquí tiene las opciones correspondientes.`,
+    it: `Abbiamo ${count} opzion${count === 1 ? 'e' : 'i'} ${label} nella collezione dell’Hôtel Lumière. Ecco le scelte pertinenti.`,
+    de: `Wir haben ${count} passende ${label}-Option${count === 1 ? '' : 'en'} in der Hôtel-Lumière-Kollektion. Hier sind die relevanten Auswahlmöglichkeiten.`,
+  };
+  return copies[language] || copies.en;
+}
+
+function historyEntries(input) {
+  return Array.isArray(input.chatHistory) ? input.chatHistory : [];
+}
+
+function hasFollowUpKey(input, key) {
+  const pattern = key === 'first_time_paris'
+    ? /first time in paris|premiere fois a paris|primera vez en paris|erste(?:r)? (?:besuch|mal) in paris/i
+    : new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  return historyEntries(input).some((item) => pattern.test(normalized(item?.message || item?.content || '')));
+}
+
+function shouldOfferFirstTimeFollowUp(input) {
+  const scenario = String(input.scenario || '').replace(/_/g, '-').toLowerCase();
+  const text = normalized(input.message);
+  const declined = /\b(?:no thanks|no thank you|not now|busy|later|leave me alone|no,? thank)\b/i.test(text);
+  return scenario === 'pre-arrival'
+    && input.conversationOwner !== 'staff'
+    && !declined
+    && !hasFollowUpKey(input, 'first_time_paris');
+}
+
+function firstTimeParisNextStep(input) {
+  if (!shouldOfferFirstTimeFollowUp(input)) return null;
+  const text = {
+    en: 'By the way, is this your first time in Paris?',
+    fr: 'Au fait, est-ce votre première fois à Paris ?',
+    es: 'Por cierto, ¿es su primera vez en París?',
+    it: 'A proposito, è la sua prima volta a Parigi?',
+    de: 'Darf ich fragen: Ist es Ihr erster Besuch in Paris?',
+  };
+  return { type: 'guest_follow_up', key: 'first_time_paris', text: text[input.language] || text.en, delay_ms: 1800 };
+}
+
+function stayPlanningResponse(input, classification) {
+  if (classification.route !== 'stay_planning') return null;
+  const replies = {
+    en: 'Absolutely. I’d be happy to help plan your stay. Would you like to begin with dining, experiences, wellness, or a little of everything?',
+    fr: 'Bien sûr. Je serais ravi de vous aider à préparer votre séjour. Souhaitez-vous commencer par la gastronomie, les expériences, le bien-être ou un peu de tout ?',
+    es: 'Por supuesto. Estaré encantado de ayudarle a planificar su estancia. ¿Prefiere empezar por gastronomía, experiencias, bienestar o un poco de todo?',
+    it: 'Certamente. Sarò lieto di aiutarla a pianificare il soggiorno. Vuole iniziare da ristorazione, esperienze, benessere o un po’ di tutto?',
+    de: 'Sehr gern. Ich helfe Ihnen bei der Planung Ihres Aufenthalts. Möchten Sie mit Dining, Erlebnissen, Wellness oder einer Mischung beginnen?',
+  };
+  return {
+    reply: replies[input.language] || replies.en,
+    language: input.language,
+    intent: 'stay_planning',
+    external_option_names: [],
+    recommendations: [],
+    partner_offers: [],
+    provider_failure: '',
+    requires_human: false,
+  };
+}
+
+function relationshipFollowUpResponse(input) {
+  const history = historyEntries(input);
+  const wasAskedFirstTime = history.some((item) => /first time in paris|première fois à paris|primera vez en par[ií]s/i.test(String(item?.message || item?.content || '')));
+  if (!wasAskedFirstTime || input.conversationOwner === 'staff') return null;
+  const text = normalized(input.message);
+  if (/\b(?:no|non|nope|not now|busy|later|pas maintenant)\b/i.test(text)) {
+    return { reply: input.language === 'fr' ? 'Bien sûr. Je reste à votre disposition quand vous le souhaiterez.' : 'Of course. I’ll be here whenever you are ready.', language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
+  }
+  if (!/\b(?:yes|yeah|yep|oui|si|sí|certo|ja|first)\b/i.test(text)) return null;
+  const replies = {
+    en: 'Wonderful. Do you already have plans for your stay, or would you like a few ideas from us?',
+    fr: 'Merveilleux. Avez-vous déjà des projets pour votre séjour, ou souhaitez-vous quelques idées de notre part ?',
+    es: 'Qué bien. ¿Ya tiene planes para su estancia o le gustaría recibir algunas ideas?',
+    it: 'Che bello. Ha già dei programmi per il soggiorno o desidera qualche idea da parte nostra?',
+    de: 'Wunderbar. Haben Sie schon Pläne für Ihren Aufenthalt, oder möchten Sie ein paar Ideen von uns?',
+  };
+  return { reply: replies[input.language] || replies.en, language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
 }
 
 function guestInsistsOnExternal(message) {
@@ -1041,38 +1145,29 @@ async function cancellationOutcome(env, input, classification, services) {
 function hotelCatalogueResponse(input, classification, services) {
   const collection = partnerOffers(services, { limit: null });
   const categoryCount = new Set(collection.map((service) => service.category)).size;
-  const isSpaOnly = classification?.category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(input.message);
-
-  // Keep catalogue media on the same verified contract as normal chat media.
-  const media = isSpaOnly
-    ? detectMediaBrochure('spa menu', 'spa')
-    : detectMediaBrochure('hotel directory');
-
-  const spaReplies = {
-    en: 'Here is our complete Spa & Wellness menu and treatment brochure. Please let me know if you would like to book a treatment.',
-    fr: 'Voici notre carte complète du Spa & Bien-être. N’hésitez pas à me faire savoir si vous souhaitez réserver un soin.',
-    es: 'Aquí tiene nuestro menú completo de Spa & Bienestar. Por favor avíseme si desea reservar algún tratamiento.',
-    it: 'Ecco il nostro menu completo di Spa & Benessere. Mi faccia sapere se desidera prenotare un trattamento.',
-    de: 'Hier finden Sie unser vollständiges Spa & Wellness-Menü. Bitte lassen Sie mich wissen, wenn Sie eine Behandlung buchen möchten.',
-    ar: 'إليكم قائمة السبا والعافية الكاملة وكتيب العلاجات. يرجى إعلامي إذا كنتم ترغبون في حجز علاج.',
-    ja: '当ホテルのスパ＆ウェルネスのメニューおよび施術案内をお届けいたします。施術のご予約をご希望の際はお申し付けください。',
-    zh: '这是我们的完整水疗与健康护理手册。如果您想预约任何项目，请随时告知我。',
+  const replies = {
+    en: 'Of course. We can help with rooms, dining, spa & wellness, transfers, and private Paris experiences. What would you like to explore first?',
+    fr: 'Bien sûr. Nous pouvons vous aider avec les chambres, la gastronomie, le spa & bien-être, les transferts et les expériences privées à Paris. Que souhaitez-vous découvrir en premier ?',
+    es: 'Por supuesto. Podemos ayudarle con habitaciones, gastronomía, spa y bienestar, traslados y experiencias privadas en París. ¿Qué le gustaría explorar primero?',
+    it: 'Certamente. Possiamo aiutarla con camere, ristorazione, spa e benessere, trasferimenti ed esperienze private a Parigi. Cosa desidera esplorare per primo?',
+    de: 'Sehr gern. Wir helfen mit Zimmern, Dining, Spa & Wellness, Transfers und privaten Pariser Erlebnissen. Was möchten Sie zuerst entdecken?',
   };
-  const reply = isSpaOnly ? (spaReplies[input.language] || spaReplies.en) : catalogueText(collection);
 
   return {
-    reply,
+    reply: replies[input.language] || replies.en,
     language: input.language,
     intent: 'partner_catalog',
     external_option_names: [],
     recommendations: [],
     partner_offers: [],
-    hotel_collection: [],
+    hotel_collection: collection,
     catalogue_count: collection.length,
     catalogue_categories: categoryCount,
     provider_failure: '',
     requires_human: false,
-    media,
+    media: explicitDirectoryRequest(input.message) ? detectMediaBrochure('hotel directory') : null,
+    quickReplies: ['Rooms & Suites', 'Dining', 'Spa & Wellness'],
+    next_step: firstTimeParisNextStep(input),
   };
 }
 
@@ -1084,8 +1179,7 @@ function hotelFirstResponse(input, classification, services) {
   if (classification?.wantsExternal || guestInsistsOnExternal(input.message)) {
     return null;
   }
-  const media = detectMediaBrochure(input.message, classification.category);
-  if (isHotelCollectionQuestion(input.message)) {
+  if (isHotelCollectionQuestion(input.message, classification)) {
     return hotelCatalogueResponse(input, classification, services);
   }
 
@@ -1093,6 +1187,10 @@ function hotelFirstResponse(input, classification, services) {
   if (!hotelServiceCategories.has(classification.category)) return null;
   const hotelOptions = categoryPartnerServices(services, classification.category);
   if (!hotelOptions.length) return null;
+  // A spa menu can use its own verified brochure. Narrow dining and room
+  // questions deliberately stay card-first and never receive the general
+  // directory as a side effect.
+  const media = classification.category === 'spa' ? detectMediaBrochure(input.message, classification.category) : null;
 
   if (classification.cuisine && !guestInsistsOnExternal(input.message)) {
     const offeredNames = hotelOptions.slice(0, 2).map((service) => service.name).join(' / ');
@@ -1111,7 +1209,7 @@ function hotelFirstResponse(input, classification, services) {
 
   if (classification.cuisine && guestInsistsOnExternal(input.message)) return null;
   return {
-    reply: hotelPartnerReply(input.language),
+    reply: hotelCategoryReply(input.language, classification.category, hotelOptions.length),
     language: input.language,
     intent: 'partner_request',
     external_option_names: [],
@@ -1246,6 +1344,7 @@ function parseDemoChatPayload(body) {
     scenario,
     is_demo: true,
     chatHistory,
+    conversationOwner: compactText(body.conversationOwner, 'Conversation owner', { max: 24 }).toLowerCase() === 'staff' ? 'staff' : 'ai',
   };
 }
 
@@ -1492,6 +1591,14 @@ function requestSummariesFromOutcome(outcome) {
 
 function chatResponseFromOutcome(outcome, classification, language, partnerOfferList = [], providerFailure = '', customMedia = null, inputMessage = '') {
   const media = customMedia || detectMediaBrochure(inputMessage || outcome?.reply || classification?.category || '', classification?.category);
+  const nextStep = outcome?.nextStep && outcome.nextStep.type === 'guest_follow_up' && typeof outcome.nextStep.text === 'string'
+    ? {
+      type: 'guest_follow_up',
+      key: String(outcome.nextStep.key || '').slice(0, 80),
+      text: outcome.nextStep.text.slice(0, 220),
+      delay_ms: Math.min(3_000, Math.max(1_500, Number(outcome.nextStep.delayMs || outcome.nextStep.delay_ms || 1_800))),
+    }
+    : null;
   return {
     reply: outcome.reply,
     language,
@@ -1513,6 +1620,7 @@ function chatResponseFromOutcome(outcome, classification, language, partnerOffer
     media: media || detectMediaBrochure(outcome.reply || '', classification.category),
     staff_alerts: staffAlertsFromOutcome(outcome),
     requests: requestSummariesFromOutcome(outcome),
+    ...(nextStep ? { next_step: nextStep } : {}),
   };
 }
 
@@ -1689,6 +1797,20 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
         ctx.waitUntil(persistConversation(env, input, { reply: languagePreference.reply, requests: [] }).catch(() => undefined));
       }
       return languagePreference;
+    }
+    const relationshipFollowUp = relationshipFollowUpResponse(input);
+    if (relationshipFollowUp) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: relationshipFollowUp.reply, requests: [] }).catch(() => undefined));
+      }
+      return relationshipFollowUp;
+    }
+    const instantStayPlanning = stayPlanningResponse(input, classification);
+    if (instantStayPlanning) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: instantStayPlanning.reply, requests: [] }).catch(() => undefined));
+      }
+      return instantStayPlanning;
     }
     requireSecrets(env);
     const serviceRecords = await fetchServices(env, { bypassCache: Boolean(input.testMode) }).catch((err) => {
