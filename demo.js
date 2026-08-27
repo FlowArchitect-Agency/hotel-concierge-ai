@@ -69,6 +69,7 @@
   let humanHandoff = false;
   let lastFocusedElement = null;
   let activeController = null;
+  let pendingProactiveFollowUp = null;
   let workspaceState = { intent: "", requestStatus: "", owner: "ConciergeFlow" };
   let requestState = { items: [], activeId: "", filter: "open", degraded: false };
 
@@ -744,7 +745,7 @@
   }
 
   // Render WhatsApp chat bubble with optional rich media
-  function addMessage({ sender, text, quickReplies = [], listMessage = false, media = null, state = "" }) {
+  function addMessage({ sender, text, quickReplies = [], listMessage = false, serviceSheet = false, media = null, state = "" }) {
     // Remove any initial empty / starter helper cards
     const promptCard = dom.chatMessages.querySelector(".chat-prompt-card");
     if (promptCard) promptCard.remove();
@@ -892,11 +893,12 @@
       message.append(body);
     }
 
-    if (sender === "ai" && (quickReplies.length || listMessage)) {
+    if (sender === "ai" && (quickReplies.length || listMessage || serviceSheet)) {
       const actions = document.createElement("div");
       actions.className = "message-actions";
       quickReplies.slice(0, 3).forEach((reply) => actions.append(buildActionButton(reply, "quick-reply", "quick-reply")));
       if (listMessage) actions.append(buildActionButton("View Services", "list-message", "view-services"));
+      if (serviceSheet) actions.append(buildActionButton("Explore all services", "list-message", "open-services"));
       message.append(actions);
     }
 
@@ -990,8 +992,58 @@
     if (session) updateWorkspaceContext({ owner: "ConciergeFlow" });
   }
 
+  function cancelProactiveFollowUp() {
+    if (!pendingProactiveFollowUp) return;
+    window.clearTimeout(pendingProactiveFollowUp.timer);
+    pendingProactiveFollowUp = null;
+  }
+
+  function validGuestFollowUp(step) {
+    if (!step || typeof step !== "object") return null;
+    if (step.type !== "guest_follow_up" || !String(step.key || "").trim() || !String(step.text || "").trim()) return null;
+    const delay = Number(step.delay_ms);
+    return {
+      key: String(step.key).trim().slice(0, 80),
+      text: String(step.text).trim().slice(0, 220),
+      delay: Number.isFinite(delay) ? Math.min(3000, Math.max(1500, delay)) : 1800,
+    };
+  }
+
+  function scheduleProactiveFollowUp(step) {
+    const followUp = validGuestFollowUp(step);
+    if (!followUp || !session || session.scenario !== "pre-arrival" || humanHandoff || pendingProactiveFollowUp) return;
+    if (session.chatHistory.some((item) => item.role === "assistant" && item.content === followUp.text)) return;
+    const historyLength = session.chatHistory.length;
+    pendingProactiveFollowUp = {
+      key: followUp.key,
+      timer: window.setTimeout(() => {
+        const stillEligible = session
+          && session.scenario === "pre-arrival"
+          && !humanHandoff
+          && session.chatHistory.length === historyLength;
+        pendingProactiveFollowUp = null;
+        if (!stillEligible) return;
+        session.chatHistory.push({ role: "assistant", content: followUp.text });
+        addMessage({ sender: "ai", text: followUp.text });
+        addTranscript("ConciergeFlow", "A thoughtful guest follow-up is visible in the WhatsApp conversation.", "ai");
+        addActivity("Guest follow-up prepared", "A short concierge question continues the pre-arrival conversation.", { status: "Conversation continued", level: "transition" });
+      }, followUp.delay),
+    };
+  }
+
+  function rememberGuestFact(message) {
+    if (!session) return;
+    session.guestFacts ||= {};
+    const lastAssistant = [...session.chatHistory].reverse().find((item) => item.role === "assistant")?.content || "";
+    if (/first time in paris|première fois à paris|primera vez en par[ií]s/i.test(lastAssistant)) {
+      if (/\b(?:yes|yeah|yep|oui|si|sí|certo|ja|first)\b/i.test(message)) session.guestFacts.first_time_paris = true;
+      if (/\b(?:no|non|nope)\b/i.test(message)) session.guestFacts.first_time_paris = false;
+    }
+  }
+
   // Trigger Human Handoff (Escape Hatch / Sentiment Override Reaction / General Manager Service Recovery)
   function triggerEscalationHandoff(reason = "Guest requested manager / severe complaint", role = "General Manager") {
+    cancelProactiveFollowUp();
     humanHandoff = true;
     dom.handoffButton.classList.add("is-human");
     dom.handoffButton.textContent = "Resume AI Concierge";
@@ -1052,6 +1104,7 @@
   function launchSimulation() {
     activeController?.abort();
     activeController = null;
+    cancelProactiveFollowUp();
     session = {
       id: getDemoSessionId(),
       name: dom.guestName.value.trim() || "Guest",
@@ -1148,6 +1201,7 @@
           scenario: session.scenario,
           is_demo: true,
           sessionId: session.id,
+          conversationOwner: humanHandoff ? "staff" : "ai",
           chatHistory: session.chatHistory.map((item) => ({ role: item.role, content: item.content }))
         })
       });
@@ -1165,7 +1219,8 @@
         sender: "ai",
         text: reply,
         quickReplies,
-        listMessage: session.scenario !== "post_checkout" && session.scenario !== "checkout",
+        listMessage: session.scenario !== "post_checkout" && session.scenario !== "checkout" && !(Array.isArray(result.hotel_collection) && result.hotel_collection.length > 0),
+        serviceSheet: Array.isArray(result.hotel_collection) && result.hotel_collection.length > 0,
         media,
       });
 
@@ -1197,6 +1252,7 @@
         const role = result.staff_alerts?.[0]?.role || (session.scenario === "post_checkout" || session.scenario === "checkout" ? "General Manager" : "Duty Manager");
         triggerEscalationHandoff(`Guest complaint / Review recovery: "${lastUserMsg}"`, role);
       }
+      if (!humanHandoff) scheduleProactiveFollowUp(result.next_step);
     } finally {
       window.clearTimeout(timeout);
       typing.remove();
@@ -1208,6 +1264,8 @@
   async function sendGuestMessage(text) {
     const cleanText = text.trim();
     if (!cleanText || !session || activeController) return;
+    cancelProactiveFollowUp();
+    rememberGuestFact(cleanText);
     addMessage({ sender: "guest", text: cleanText });
     session.chatHistory.push({ role: "user", content: cleanText });
     const intent = inferIntent(cleanText);
@@ -1386,6 +1444,7 @@
 
   function toggleHandoff() {
     humanHandoff = !humanHandoff;
+    if (humanHandoff) cancelProactiveFollowUp();
     dom.handoffButton.classList.toggle("is-human", humanHandoff);
     dom.handoffButton.textContent = humanHandoff ? "Resume AI Concierge" : "Take over chat";
     dom.handoffButton.setAttribute("aria-pressed", String(humanHandoff));
@@ -1456,12 +1515,12 @@
     try {
       const stored = JSON.parse(window.sessionStorage.getItem(WEBSITE_SESSION_KEY) || "null");
       if (stored && /^web_[A-Za-z0-9_-]{4,110}$/.test(String(stored.sessionId || "")) && Array.isArray(stored.messages)) {
-        return { sessionId: stored.sessionId, preferredLanguage: String(stored.preferredLanguage || ""), messages: stored.messages.slice(-WEBSITE_MAX_MESSAGES) };
+        return { sessionId: stored.sessionId, preferredLanguage: String(stored.preferredLanguage || ""), messages: stored.messages.slice(-WEBSITE_MAX_MESSAGES), scrollTop: Number.isFinite(Number(stored.scrollTop)) ? Math.max(0, Number(stored.scrollTop)) : 0 };
       }
     } catch {
       // Storage is an enhancement; the anonymous chat still works without it.
     }
-    return { sessionId: createWebsiteSessionId(), preferredLanguage: "", messages: [] };
+    return { sessionId: createWebsiteSessionId(), preferredLanguage: "", messages: [], scrollTop: 0 };
   }
 
   function saveWebsiteState() {
@@ -1523,12 +1582,19 @@
     });
   }
 
-  function scrollWebsiteToLatest() {
-    websiteDom.messages?.scrollTo({ top: websiteDom.messages.scrollHeight, behavior: "smooth" });
+  function scrollWebsiteToLatest({ behavior = "smooth" } = {}) {
+    if (!websiteDom.messages) return;
+    websiteDom.messages.scrollTo({ top: websiteDom.messages.scrollHeight, behavior });
+    if (websiteState) websiteState.scrollTop = websiteDom.messages.scrollHeight;
   }
 
   function setWebsiteStatus(message) {
     if (websiteDom.status) websiteDom.status.textContent = message;
+  }
+
+  function updateWebsiteLauncherCopy() {
+    const caption = websiteDom.launcher?.querySelector("small");
+    if (caption) caption.textContent = websiteState?.messages?.length ? "Continue conversation" : "Ask our concierge";
   }
 
   function setWebsiteBusy(busy) {
@@ -1859,7 +1925,7 @@
       return;
     }
     websiteState.messages.forEach((message) => renderWebsiteMessage(message, false));
-    scrollWebsiteToLatest();
+    websiteDom.messages.scrollTop = Math.min(websiteState.scrollTop || 0, websiteDom.messages.scrollHeight);
   }
 
   function appendWebsiteMessage(text, sender, result = {}, persist = true) {
@@ -1878,6 +1944,7 @@
     if (persist && websiteState) {
       websiteState.messages.push(message);
       saveWebsiteState();
+      updateWebsiteLauncherCopy();
     }
     scrollWebsiteToLatest();
   }
@@ -1990,11 +2057,18 @@
     websiteDom.panel.hidden = false;
     websiteDom.panel.setAttribute("aria-hidden", "false");
     websiteDom.launcher.setAttribute("aria-expanded", "true");
+    window.requestAnimationFrame(() => {
+      if (websiteDom.messages) websiteDom.messages.scrollTop = Math.min(websiteState?.scrollTop || 0, websiteDom.messages.scrollHeight);
+    });
     if (focus) window.setTimeout(() => websiteDom.input?.focus(), 80);
   }
 
   function closeWebsiteConcierge({ restoreFocus = true } = {}) {
     if (!websiteDom.panel || websiteDom.panel.hidden) return false;
+    if (websiteState && websiteDom.messages) {
+      websiteState.scrollTop = websiteDom.messages.scrollTop;
+      saveWebsiteState();
+    }
     websiteDom.panel.hidden = true;
     websiteDom.panel.setAttribute("aria-hidden", "true");
     websiteDom.launcher?.setAttribute("aria-expanded", "false");
@@ -2106,7 +2180,7 @@
 
   function resetWebsiteConcierge() {
     try { window.sessionStorage.removeItem(WEBSITE_SESSION_KEY); } catch { /* Storage may be unavailable. */ }
-    websiteState = { sessionId: createWebsiteSessionId(), preferredLanguage: "", messages: [] };
+    websiteState = { sessionId: createWebsiteSessionId(), preferredLanguage: "", messages: [], scrollTop: 0 };
     if (websiteDom.input) websiteDom.input.value = "";
     clearWebsiteLoading();
     closeWebsiteEnquiries({ restoreFocus: false });
@@ -2114,6 +2188,7 @@
     setWebsiteBusy(false);
     setWebsiteStatus("Private website conversation");
     renderWebsiteConversation();
+    updateWebsiteLauncherCopy();
   }
 
   function handleWebsiteEscape() {
@@ -2125,6 +2200,12 @@
     if (!websiteDom.launcher || !websiteDom.panel) return;
     websiteState = readWebsiteState();
     renderWebsiteConversation();
+    updateWebsiteLauncherCopy();
+    websiteDom.messages?.addEventListener("scroll", () => {
+      if (!websiteState || !websiteDom.messages) return;
+      websiteState.scrollTop = websiteDom.messages.scrollTop;
+      saveWebsiteState();
+    }, { passive: true });
     websiteDom.launcher.addEventListener("click", () => openWebsiteConcierge());
     websiteDom.close?.addEventListener("click", () => closeWebsiteConcierge());
     document.querySelectorAll("[data-website-open]").forEach((button) => button.addEventListener("click", () => openWebsiteConcierge()));
@@ -2370,6 +2451,11 @@
     if (button.dataset.action === "view-services") {
       disableMessageActions(button);
       sendGuestMessage("View Services");
+      return;
+    }
+    if (button.dataset.action === "open-services") {
+      disableMessageActions(button);
+      openServices();
       return;
     }
     if (button.dataset.action === "quick-reply") {
