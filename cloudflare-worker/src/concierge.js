@@ -11,12 +11,12 @@ const CATEGORY_RULES = [
 // real Paris recommendation assembled from current web results.
 const ITINERARY_WORDS = [
   'last day', 'final day', 'one day in paris', 'day in paris', 'itinerary',
-  'things to do', 'what should i do', 'what do you suggest', 'suggestion',
-  'recommendation', 'ideas for today', 'today in paris', 'tonight in paris',
+  'things to do in paris', 'what should i do in paris', 'what should i do tomorrow',
+  'ideas for today', 'today in paris', 'tonight in paris',
   'dernier jour', 'derniere journee', 'une journee a paris', 'itineraire',
-  'que me conseillez-vous', 'que suggerez-vous', 'que faire', 'ultimo dia',
-  'ultimo dia en paris', 'itinerario', 'que me recomiendas', 'letzter tag',
-  'ein tag in paris', 'reiseroute', 'was empfehlen sie',
+  'que faire a paris', 'que faire demain', 'ultimo dia', 'ultimo dia en paris',
+  'itinerario', 'que hacer en paris', 'que hacer manana', 'letzter tag',
+  'ein tag in paris', 'reiseroute', 'was kann ich in paris tun',
 ];
 
 const CUISINES = [
@@ -143,12 +143,12 @@ const LATIN_LANGUAGE_SIGNALS = {
     words: ['what', 'time', 'close', 'open', 'please', 'would', 'could', 'thanks', 'hello', 'breakfast', 'stay'],
   },
   fr: {
-    phrases: ['a quelle heure', 'vous etes ouverts', 'toute la nuit', 'je voudrais', 'pouvez vous', 'aidez moi', 'bonjour', 'bonsoir'],
-    words: ['quelle', 'heure', 'ferme', 'fermez', 'ouverts', 'ouverte', 'vous', 'bonjour', 'bonsoir', 'demain', 'sejour', 'petit', 'dejeuner', 'merci'],
+    phrases: ['a quelle heure', 'vous etes ouverts', 'toute la nuit', 'je voudrais', 'pouvez vous', 'aidez moi', 'montrez moi', 'que suggerez vous', 'que recommandez vous', 'non pourquoi', 'bonjour', 'bonsoir'],
+    words: ['quelle', 'heure', 'ferme', 'fermez', 'ouverts', 'ouverte', 'vous', 'montrez', 'options', 'suggerez', 'recommandez', 'pourquoi', 'bonjour', 'bonsoir', 'demain', 'sejour', 'petit', 'dejeuner', 'merci'],
   },
   es: {
-    phrases: ['a que hora', 'pueden ayudarme', 'me gustaria', 'por favor', 'hola'],
-    words: ['que', 'hora', 'cierra', 'abierto', 'abierta', 'hola', 'necesito', 'quiero', 'manana', 'estancia', 'desayuno', 'gracias'],
+    phrases: ['a que hora', 'pueden ayudarme', 'me gustaria', 'muestrame las opciones', 'que sugieres', 'que recomiendas', 'no por que', 'por que', 'por favor', 'hola'],
+    words: ['que', 'hora', 'cierra', 'abierto', 'abierta', 'muestrame', 'opciones', 'servicios', 'restaurante', 'cual', 'sugieres', 'recomiendas', 'hola', 'necesito', 'quiero', 'masaje', 'manana', 'estancia', 'desayuno', 'gracias'],
   },
   it: {
     phrases: ['a che ora', 'mi piacerebbe', 'potete aiutarmi', 'ciao'],
@@ -190,11 +190,12 @@ function editDistanceAtMostOne(left, right) {
 
 function scoreLatinLanguage(message, language) {
   const text = normalized(message);
+  const phraseText = text.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   const tokens = languageTokens(message);
   const signals = LATIN_LANGUAGE_SIGNALS[language];
   let score = 0;
   for (const phrase of signals.phrases) {
-    if (text.includes(phrase)) score += 3;
+    if (phraseText.includes(phrase)) score += 3;
   }
   for (const word of signals.words) {
     if (tokens.includes(word)) {
@@ -235,6 +236,15 @@ function hasExplicitEnglishSignal(message) {
   return /\b(?:hello|hi|hey|what|which|where|when|why|how|can|could|would|should|do|does|did|is|are|am|i|we|you|my|your|please|thanks|thank)\b/.test(text);
 }
 
+function recentHistoryLanguage(history) {
+  if (!Array.isArray(history)) return '';
+  for (const item of [...history].reverse().slice(0, 8)) {
+    const language = inferLanguage(item?.message ?? item?.content ?? '');
+    if (language !== 'en') return language;
+  }
+  return '';
+}
+
 export function parseGuestInput(body) {
   const raw = body && typeof body === 'object' ? body : {};
   const message = String(raw.message ?? raw.text ?? '').trim();
@@ -246,9 +256,10 @@ export function parseGuestInput(body) {
   const requestedLanguage = requestedResponseLanguage(message);
   const detectedLanguage = inferLanguage(message);
   const preferredLanguage = String(raw.preferredLanguage ?? '').trim().toLowerCase();
+  const historyLanguage = recentHistoryLanguage(raw.chatHistory);
   const language = requestedLanguage || (detectedLanguage !== 'en' || hasExplicitEnglishSignal(message)
     ? detectedLanguage
-    : (SUPPORTED_REPLY_LANGUAGES.has(preferredLanguage) ? preferredLanguage : detectedLanguage));
+    : (SUPPORTED_REPLY_LANGUAGES.has(preferredLanguage) ? preferredLanguage : (historyLanguage || detectedLanguage)));
   const guestName = String(raw.guestName ?? raw.guest_name ?? raw.name ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 100);
   const isDemo = raw.is_demo === true || raw.isDemo === true || raw.demo === true;
   return {
@@ -465,8 +476,14 @@ export function postCheckoutNegativeReply(guestName, language) {
 
 export function guestInsistsOnExternal(message) {
   const text = String(message || '').trim().toLowerCase();
-  return /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text)
-    || /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text);
+  const startsCorrection = /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text);
+  const namesSpecificCuisine = CUISINES.some((cuisine) => cuisine.words.some((word) => hasTerm(text, word)));
+  // A conversational correction often starts with "no", "actually", or
+  // "instead". It is only an external preference when the guest names an
+  // outside-the-hotel option or preserves a specific cuisine constraint;
+  // otherwise history can retain the hotel context.
+  return /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text)
+    || startsCorrection && (namesSpecificCuisine || /\b(?:keep|find|search|recommend)\b[^.!?]{0,80}\b(?:restaurant|cuisine|venue|address|place|bar|club)\b/i.test(text));
 }
 
 export function hasNegation(message) {
@@ -508,20 +525,53 @@ export function classifyRequest(message) {
 export function inheritConversationContext(classification, history, latestMessage) {
   if (classification.cuisine && classification.category) return classification;
   const latest = normalized(latestMessage);
-  const isContinuation = classification.hasIntent || /\b(pictures?|photos?|images?|show|attach|one|best|which|that|details?|more)\b/i.test(latest);
+  const hasRecentCatalogueContext = [...(history || [])].slice(-8).some((item) => {
+    const text = normalized(item?.message || item?.content || '');
+    return /\b(?:view|show|all|what)\b[^.!?]{0,48}\b(?:services?|collection|offerings?)\b/.test(text)
+      || /\b(?:rooms?|dining|spa|wellness|transfers?|private experiences?)\b/.test(text) && /\b(?:explore|offer|help)\b/.test(text);
+  });
+  // A short reply only becomes actionable when it has a nearby conversational
+  // anchor. This deliberately keeps generic wording such as "what do you
+  // suggest?" out of the external-search path until we know what it refers to.
+  const isContinuation = classification.hasIntent
+    || /\b(pictures?|photos?|images?|show|attach|one|best|which|that|details?|more|suggest|recommend|what about|something else|another|different|yes please|not that|flight|lands?|landing|arrival|arrive|quel(?:le)?|quels?|quelle?\s+option|quoi d autre|autre chose|suggerez|recommandez|cual|cu[aá]l|que sugieres|que recomienda|otra cosa|algo mas|si por favor)\b/i.test(latest)
+    || (hasRecentCatalogueContext && !classification.category && !classification.cuisine && !classification.wantsExternal);
   if (!isContinuation || GREETINGS.has(latest.replace(/[!.?\u00a1\u00bf]+$/g, ''))) return classification;
-  const previousGuestMessage = [...(history || [])].reverse().find((item) => item?.role === 'user' && item?.message);
-  if (!previousGuestMessage) return classification;
-  const prior = classifyRequest(previousGuestMessage.message);
+  const priorGuestMessages = [...(history || [])]
+    .reverse()
+    .filter((item) => item?.role === 'user' && String(item?.message || item?.content || '').trim());
+  const prior = priorGuestMessages
+    .map((item) => classifyRequest(item.message || item.content))
+    .find((item) => item.category || item.cuisine);
   // Short confirmations such as "yes, book it" must retain any recently
   // established service category, including transport and wellness.
-  if (!prior.category && !prior.cuisine) return classification;
+  if (prior?.category || prior?.cuisine) {
+    // "No, something else" is a conversational refinement, not a request to
+    // search outside the hotel. Keep an explicit outside-the-hotel request as
+    // an external preference, but do not infer one from a vague negative.
+    const vagueAlternative = /^(?:no[,\s]+)?(?:something|anything|another|different)\s+else[!.?]*$/i.test(String(latestMessage || '').trim());
+    return {
+      ...classification,
+      category: classification.category || prior.category,
+      cuisine: classification.cuisine || prior.cuisine,
+      location: classification.location || prior.location,
+      wantsExternal: vagueAlternative ? false : classification.wantsExternal,
+      hasIntent: true,
+      contextualFollowUp: true,
+    };
+  }
+
+  // A follow-up after a broad hotel catalogue should remain a hotel
+  // conversation even when it names no category yet (for example, "something
+  // romantic"). The model receives the verified collection and can ask one
+  // useful question rather than sending the guest to a web search.
+  if (!hasRecentCatalogueContext) return classification;
   return {
     ...classification,
-    category: classification.category || prior.category,
-    cuisine: classification.cuisine || prior.cuisine,
-    location: classification.location || prior.location,
     hasIntent: true,
+    wantsExternal: false,
+    contextualFollowUp: true,
+    contextualHotelCatalogue: true,
   };
 }
 
@@ -565,6 +615,10 @@ export function formatServices(services) {
 
 export function shouldSearchExternal(classification, services) {
   if (!classification.hasIntent || ['greeting', 'hotel_faq', 'partner_catalog', 'stay_planning'].includes(classification.route)) return false;
+  // A vague continuation of a known hotel discussion stays hotel-first. A
+  // later semantic step can still use the full verified collection to answer
+  // naturally, but it must not invent an unrelated external-search intent.
+  if (classification.contextualFollowUp && !classification.wantsExternal) return false;
   // A semantic route can deliberately prefer current external information
   // even when a broad hotel category happens to contain a partner service.
   return Boolean(classification.externalDiscovery) || Boolean(classification.wantsExternal) || !services.length;

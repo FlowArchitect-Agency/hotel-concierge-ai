@@ -684,7 +684,7 @@ Classify every message using exactly one route:
 - external_discovery: asking for a recommendation, itinerary, venue, activity, event, shopping, transportation, food, nightlife, or any unusual/new need that requires current information beyond a known hotel catalogue.
 - conversation: only when none of the above applies.
 
-Critical rule: do not require a keyword match. If the guest wants help finding, choosing, suggesting, planning, seeing, buying, celebrating, or doing something in Paris, use external_discovery even if the request is unusual or written in another language. Follow-up requests inherit the earlier guest need from history.
+Critical rule: do not require a keyword match for a clearly external need. Use external_discovery for a specific external venue, activity, event, nightlife, shopping, or current Paris itinerary. Do not treat a vague follow-up such as "what do you suggest?", "which one?", or "something else" as external on its own: first resolve it against the immediately preceding hotel conversation. Follow-up requests inherit the earlier guest need from history.
 
 Return exactly:
 {"route":"greeting|hotel_faq|partner_catalog|partner_request|stay_planning|external_discovery|conversation","category":"accommodation|spa|restaurant|transport|tour|experience|itinerary|null","search_query":"a concise Paris web-search query or empty string"}
@@ -700,6 +700,17 @@ ${input.message}`;
 
 async function enrichSemanticRoute(env, input, history, classification) {
   if (classification.route === 'stay_planning') return classification;
+  // The deterministic history pass has already established that this is a
+  // continuation of a hotel discussion. Preserve that context instead of
+  // asking the router to infer an unrelated external search from a few words.
+  if (classification.contextualFollowUp && !classification.wantsExternal) {
+    return {
+      ...classification,
+      route: classification.category ? 'partner_request' : 'conversation',
+      externalDiscovery: false,
+      searchQuery: '',
+    };
+  }
   const basicGreeting = !classification.hasIntent && !String(input.message || '').trim().includes(' ');
   if (basicGreeting) return classification;
   const provider = await callGroq(env, routerPrompt(input, history), { maxTokens: 180, router: true });
@@ -1061,27 +1072,81 @@ function stayPlanningResponse(input, classification) {
 
 function relationshipFollowUpResponse(input) {
   const history = historyEntries(input);
-  const wasAskedFirstTime = history.some((item) => /first time in paris|première fois à paris|primera vez en par[ií]s/i.test(String(item?.message || item?.content || '')));
-  if (!wasAskedFirstTime || input.conversationOwner === 'staff') return null;
+  const messages = history.map((item) => ({
+    role: String(item?.role || '').toLowerCase(),
+    text: String(item?.message || item?.content || ''),
+  }));
+  const firstTimeQuestionIndex = messages.map((item) => item.text).reduce((last, text, index) => (
+    /first time in paris|première fois à paris|primera vez en par[ií]s/i.test(text) ? index : last
+  ), -1);
+  const hasActiveFirstTimeThread = firstTimeQuestionIndex >= 0 && firstTimeQuestionIndex >= messages.length - 8;
+  if (!hasActiveFirstTimeThread || input.conversationOwner === 'staff') return null;
   const text = normalized(input.message);
-  if (/\b(?:no|non|nope|not now|busy|later|pas maintenant)\b/i.test(text)) {
-    return { reply: input.language === 'fr' ? 'Bien sûr. Je reste à votre disposition quand vous le souhaiterez.' : 'Of course. I’ll be here whenever you are ready.', language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
+  const declined = /\b(?:no thanks|no thank you|not now|busy|later|leave me alone|please stop|pas maintenant|non merci)\b/i.test(text);
+  if (declined) {
+    const declineReply = input.language === 'fr'
+      ? 'Bien sûr. Je reste à votre disposition quand vous le souhaiterez.'
+      : input.language === 'es'
+        ? 'Por supuesto. Estaré a su disposición cuando lo desee.'
+        : 'Of course. I’ll be here whenever you are ready.';
+    return { reply: declineReply, language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
   }
-  if (!/\b(?:yes|yeah|yep|oui|si|sí|certo|ja|first)\b/i.test(text)) return null;
-  const replies = {
-    en: 'Wonderful. Do you already have plans for your stay, or would you like a few ideas from us?',
-    fr: 'Merveilleux. Avez-vous déjà des projets pour votre séjour, ou souhaitez-vous quelques idées de notre part ?',
-    es: 'Qué bien. ¿Ya tiene planes para su estancia o le gustaría recibir algunas ideas?',
-    it: 'Che bello. Ha già dei programmi per il soggiorno o desidera qualche idea da parte nostra?',
-    de: 'Wunderbar. Haben Sie schon Pläne für Ihren Aufenthalt, oder möchten Sie ein paar Ideen von uns?',
+  const isReturningVisitor = /^(?:no|non|nope)\b|\b(?:already|been|visited|visit[ée]e?|five times|several times|deja|déjà|venu|venue|visite|veces|estado)\b/i.test(text);
+  const asksWhy = /\b(?:why|pourquoi|por que|porque|how come)\b/i.test(text);
+  const asksForSuggestion = /\b(?:what do you suggest|what would you suggest|what do you recommend|what should we do|what about|suggest|recommend|conseillez|sugger|recomiend)\b/i.test(text);
+  const needsClarification = /^(?:what|what\?|which one|and|really|how come|why)\s*[!??.]*$/i.test(text);
+  const returningReplies = {
+    en: asksWhy
+      ? 'Only so I can tailor the ideas. Since you already know Paris, I can skip the obvious first-time sights and focus on something more local, restorative, or celebratory. What sounds right?'
+      : 'That is helpful to know. Since you already know Paris, I can skip the obvious first-time sights and help with something more local, restorative, or celebratory. What are you in the mood for?',
+    fr: asksWhy
+      ? 'C’est simplement pour adapter mes idées. Puisque vous connaissez déjà Paris, je peux éviter les incontournables de première visite et privilégier une suggestion plus locale, reposante ou festive. Qu’est-ce qui vous ferait plaisir ?'
+      : 'C’est utile à savoir. Puisque vous connaissez déjà Paris, je peux éviter les incontournables de première visite et privilégier une suggestion plus locale, reposante ou festive. Qu’est-ce qui vous ferait plaisir ?',
+    es: asksWhy
+      ? 'Solo para adaptar mejor las ideas. Como ya conoce París, puedo dejar de lado los lugares más evidentes y proponer algo más local, relajante o especial. ¿Qué le apetece?'
+      : 'Es útil saberlo. Como ya conoce París, puedo dejar de lado los lugares más evidentes y proponer algo más local, relajante o especial. ¿Qué le apetece?',
   };
-  return { reply: replies[input.language] || replies.en, language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
+  const firstVisitReplies = {
+    en: asksWhy
+      ? 'I ask only so I can tailor the ideas. For a first visit, I can help you balance Paris classics with time to enjoy the hotel. Would you prefer dining, wellness, or a Paris experience?'
+      : 'Wonderful. Do you already have plans for your stay, or would you like a few ideas from us?',
+    fr: asksWhy
+      ? 'Je vous le demande simplement pour adapter mes idées. Pour une première visite, je peux vous aider à équilibrer les incontournables de Paris et le plaisir de l’hôtel. Préférez-vous la gastronomie, le bien-être ou une expérience parisienne ?'
+      : 'Merveilleux. Avez-vous déjà des projets pour votre séjour, ou souhaitez-vous quelques idées de notre part ?',
+    es: asksWhy
+      ? 'Lo pregunto solo para adaptar las ideas. Para una primera visita, puedo ayudarle a equilibrar los clásicos de París con tiempo para disfrutar del hotel. ¿Prefiere gastronomía, bienestar o una experiencia parisina?'
+      : 'Qué bien. ¿Ya tiene planes para su estancia o le gustaría recibir algunas ideas?',
+  };
+  const clarificationReplies = {
+    en: 'I only meant that a returning guest may prefer something beyond the usual first-time sights. I can help you choose between a hotel experience, dining, wellness, or a more local Paris idea.',
+    fr: 'Je voulais simplement dire qu’un habitué de Paris peut préférer autre chose que les incontournables d’une première visite. Je peux vous orienter vers une expérience à l’hôtel, la gastronomie, le bien-être ou une idée plus locale à Paris.',
+    es: 'Solo quería decir que quien ya conoce París quizá prefiera algo distinto de los lugares típicos de una primera visita. Puedo orientarle hacia una experiencia del hotel, gastronomía, bienestar o una idea más local en París.',
+  };
+  const suggestionReplies = {
+    en: 'For a returning visit, I would begin with something that feels considered rather than obligatory: a relaxed wellness moment, a memorable dinner, or a private Paris experience. Which direction appeals most?',
+    fr: 'Pour un nouveau séjour à Paris, je commencerais par quelque chose de choisi plutôt que convenu : un moment de bien-être, un dîner mémorable ou une expérience parisienne privée. Quelle direction vous attire le plus ?',
+    es: 'Para una nueva visita a París, empezaría por algo pensado y no obligatorio: un momento de bienestar, una cena memorable o una experiencia privada en París. ¿Qué opción le atrae más?',
+  };
+  const isFirstVisit = /^(?:yes|yeah|yep|oui|si|sí|certo|ja)\b/i.test(text);
+  let reply = null;
+  if (isReturningVisitor) reply = returningReplies[input.language] || returningReplies.en;
+  else if (isFirstVisit) reply = firstVisitReplies[input.language] || firstVisitReplies.en;
+  else if (asksForSuggestion) reply = suggestionReplies[input.language] || suggestionReplies.en;
+  else if (needsClarification) reply = clarificationReplies[input.language] || clarificationReplies.en;
+  if (!reply) return null;
+  return { reply, language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
 }
 
 function guestInsistsOnExternal(message) {
   const text = String(message || '').trim().toLowerCase();
-  return /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text)
-    || /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text);
+  const startsCorrection = /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text);
+  const namesSpecificCuisine = /\b(?:indian|indien|indienne|indiano|indiana|japanese|japonais|japonaise|giapponese|japones|sushi|italian|italien|italienne|italiano|italiana|pizza|spanish|espagnol|espagnole|espanol|espanola|tapas|paella|bakery|boulangerie|patisserie|viennoiserie|croissant|vegan|vegetalien|vegano)\b/i.test(text);
+  // A conversational correction often starts with "no", "actually", or
+  // "instead". It is only an external preference when the guest names an
+  // outside-the-hotel option or preserves a specific cuisine constraint;
+  // otherwise history can retain the hotel context.
+  return /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text)
+    || startsCorrection && (namesSpecificCuisine || /\b(?:keep|find|search|recommend)\b[^.!?]{0,80}\b(?:restaurant|cuisine|venue|address|place|bar|club)\b/i.test(text));
 }
 
 function categoryPartnerServices(services, category) {
@@ -2060,6 +2125,15 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     }
     let classification = classifyRequest(input.message);
     reportStatus('Reviewing the details of your request\u2026');
+    // Context comes before generic one-word greeting handling. A plain "no"
+    // after a question is an answer, not a new conversation or a decline.
+    const relationshipFollowUp = relationshipFollowUpResponse(input);
+    if (relationshipFollowUp) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: relationshipFollowUp.reply, requests: [] }).catch(() => undefined));
+      }
+      return relationshipFollowUp;
+    }
     const instantGreeting = simpleGreetingResponse(input);
     if (instantGreeting) {
       if (!input.testMode || input.testMode === 'write_verified') {
@@ -2073,13 +2147,6 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
         ctx.waitUntil(persistConversation(env, input, { reply: languagePreference.reply, requests: [] }).catch(() => undefined));
       }
       return languagePreference;
-    }
-    const relationshipFollowUp = relationshipFollowUpResponse(input);
-    if (relationshipFollowUp) {
-      if (!input.testMode || input.testMode === 'write_verified') {
-        ctx.waitUntil(persistConversation(env, input, { reply: relationshipFollowUp.reply, requests: [] }).catch(() => undefined));
-      }
-      return relationshipFollowUp;
     }
     const instantStayPlanning = stayPlanningResponse(input, classification);
     if (instantStayPlanning) {
@@ -2130,6 +2197,18 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     reportStatus('Considering the most suitable next step\u2026');
     classification = await enrichSemanticRoute(env, input, history, classification).catch(() => classification);
     const serviceSet = matchingServices(serviceRecords, classification);
+    // Some short replies only acquire a category after history is considered.
+    // Re-run the same hotel-first response with that resolved context before
+    // handing a vague continuation to the model or any external search.
+    const contextualHotelFirst = classification.externalDiscovery
+      ? null
+      : hotelFirstResponse(input, classification, serviceSet.all);
+    if (contextualHotelFirst) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: contextualHotelFirst.reply, requests: [] }).catch(() => undefined));
+      }
+      return contextualHotelFirst;
+    }
     // Semantic routing can recognize catalogue wording that the fast phrase
     // matcher did not. Keep this path deterministic as well, so it returns the
     // complete collection rather than a model-selected subset.
@@ -2150,7 +2229,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       return chatResponseFromOutcome(directBooking, classification, input.language);
     }
     const partnerMatches = serviceSet.matching.filter((service) => service.isPartner);
-    const promptServices = classification.route === 'partner_catalog'
+    const promptServices = classification.route === 'partner_catalog' || classification.contextualHotelCatalogue
       ? serviceSet.all.filter((service) => service.isPartner)
       : partnerMatches;
     let externalOptions = [];
