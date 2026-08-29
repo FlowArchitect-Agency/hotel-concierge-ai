@@ -562,7 +562,7 @@ function locationSearchHint(location) {
 }
 
 async function googleSearch(env, query, classification) {
-  const url = new URL('https://app.scrapingbee.com/api/v1/store/google');
+  const url = new URL('https://app.scrapingbee.com/api/v1/google');
   url.searchParams.set('search', query);
   url.searchParams.set('country_code', 'fr');
   url.searchParams.set('language', 'en');
