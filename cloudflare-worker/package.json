@@ -5,5 +5,8 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "test:live": "node test/live-smoke.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
   }
 }

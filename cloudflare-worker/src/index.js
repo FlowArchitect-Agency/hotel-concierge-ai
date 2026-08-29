@@ -22,6 +22,7 @@ import {
   postCheckoutPositiveReply,
   shouldSearchExternal,
 } from './concierge.js';
+import { buildDiscoveryBriefPdf } from './discovery-brief-pdf.js';
 
 const RECENT_REQUESTS = new Map();
 const RECENT_WHATSAPP_MESSAGES = new Map();
@@ -315,6 +316,40 @@ async function airtable(env, table, { method = 'GET', params, fields, recordId =
     await waitForAirtableRetry(airtableRetryDelayMs(result.headers.get('Retry-After'), attempt));
   }
   throw new Error(`Airtable ${table} request failed after ${AIRTABLE_MAX_ATTEMPTS} attempts.`);
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function uploadAirtableAttachment(env, { recordId, fieldId, filename, bytes, baseId = env.LEADS_AIRTABLE_BASE_ID }) {
+  if (!fieldId) throw new Error('Discovery Brief PDF field configuration is incomplete.');
+  const url = `https://content.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(recordId)}/${encodeURIComponent(fieldId)}/uploadAttachment`;
+  for (let attempt = 0; attempt < AIRTABLE_MAX_ATTEMPTS; attempt += 1) {
+    const result = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        filename,
+        contentType: 'application/pdf',
+        file: bytesToBase64(bytes),
+      }),
+    });
+    if (result.ok) return result.json();
+    if (result.status !== 429 || attempt === AIRTABLE_MAX_ATTEMPTS - 1) {
+      throw new Error(`Airtable discovery brief attachment upload failed (${result.status}).`);
+    }
+    await waitForAirtableRetry(airtableRetryDelayMs(result.headers.get('Retry-After'), attempt));
+  }
+  throw new Error(`Airtable discovery brief attachment upload failed after ${AIRTABLE_MAX_ATTEMPTS} attempts.`);
 }
 
 async function fetchServices(env, { bypassCache = false } = {}) {
@@ -1297,6 +1332,117 @@ function compactText(value, field, { required = false, max = 500 } = {}) {
   return text;
 }
 
+const HOTEL_DISCOVERY_OPTIONS = Object.freeze({
+  pms: ['Mews', 'OPERA / OPERA Cloud', 'FOLS', 'Misterbooking', 'Infhotik', 'Cloudbeds', 'Amenitiz', 'Thaïs', 'Other', 'Not sure'],
+  yesNoNotSure: ['Yes', 'No', 'Not sure'],
+  serviceUsage: ['Less than 10%', '10–25%', '25–50%', 'More than 50%', 'Not sure'],
+  requestedServices: ['Airport transfers', 'Restaurant / dining', 'Spa & wellness', 'Room upgrades', 'Early check-in / late checkout', 'Tours & local experiences', 'Room service', 'Other'],
+  lowServiceReasons: ['Guests may not know the services exist', 'Guests discover them too late', 'Staff do not always have time to promote them', 'Most communication happens by email', 'Language barriers', 'Guests prefer arranging things independently', 'Other'],
+  preArrivalContact: ['Yes', 'Sometimes', 'No'],
+  contactMethods: ['Email', 'Booking.com / OTA messaging', 'WhatsApp', 'SMS', 'Phone', 'Hotel app', 'Other'],
+  discoveryChannels: ['Reception staff', 'Hotel website', 'Booking confirmation email', 'Pre-arrival emails', 'Printed brochures', 'In-room materials / QR codes', 'WhatsApp / SMS', 'Hotel app', 'Guests usually ask themselves', 'Other'],
+  languageDifficulty: ['Never', 'Occasionally', 'Regularly', 'Very often'],
+  repeatedQuestions: ['Breakfast hours', 'Wi-Fi', 'Check-in / checkout', 'Transport / airport', 'Restaurant recommendations', 'Hotel services', 'Spa', 'Directions / local recommendations', 'Room questions', 'Other'],
+  requestHandling: ['Reception handles them directly', 'Reception calls the appropriate department', 'Internal phone / radio', 'WhatsApp staff group', 'Hotel/PMS task-management system', 'Written notes', 'Other'],
+  responseSpeed: ['Almost immediately', 'Under 5 minutes', '5–15 minutes', 'More than 15 minutes', 'It varies significantly'],
+  managementInsights: ['Most common guest questions', 'Most requested services', 'Guest complaints', 'Response times', 'Service / ancillary revenue', 'Guest preferences', 'Staff workload', 'Other'],
+  improvementGoals: ['Increase ancillary-service revenue', 'Reduce repetitive reception work', 'Improve guest response time', 'Improve multilingual communication', 'Improve guest satisfaction', 'Generate more guest feedback / reviews', 'Better understand guest needs', 'Improve pre-arrival communication', 'Other'],
+});
+
+function discoveryChoice(value, field, options, { required = false } = {}) {
+  const choice = compactText(value, field, { required, max: 120 });
+  if (choice && !options.includes(choice)) throw new Error(`Invalid ${field.toLowerCase()}.`);
+  return choice;
+}
+
+function discoveryList(value, field, options, { maxItems = 12 } = {}) {
+  if (value === undefined || value === null || value === '') return [];
+  if (!Array.isArray(value)) throw new Error(`${field} must be a list.`);
+  if (value.length > maxItems) throw new Error(`${field} has too many selections.`);
+  const selections = [...new Set(value.map((item) => compactText(item, field, { max: 120 })).filter(Boolean))];
+  if (selections.some((item) => !options.includes(item))) throw new Error(`Invalid ${field.toLowerCase()} selection.`);
+  return selections;
+}
+
+function discoveryInteger(value, field, { max = 5000 } = {}) {
+  const text = compactText(value, field, { max: 6 });
+  if (!text) return null;
+  const numeric = Number(text);
+  if (!Number.isInteger(numeric) || numeric < 1 || numeric > max) throw new Error(`${field} must be between 1 and ${max}.`);
+  return numeric;
+}
+
+function discoveryPercentage(value, field) {
+  const text = compactText(value, field, { max: 6 });
+  if (!text) return null;
+  const numeric = Number(text);
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 100) throw new Error(`${field} must be between 0 and 100.`);
+  return Math.round(numeric * 10) / 10;
+}
+
+function salesBriefLines(label, value) {
+  if (Array.isArray(value)) return value.length ? `${label}: ${value.join(', ')}` : '';
+  if (value === null || value === undefined || value === '') return '';
+  return `${label}: ${value}`;
+}
+
+function buildHotelDiscoverySalesBrief(lead) {
+  const { discovery } = lead;
+  const shares = Object.entries(discovery.bookingSources)
+    .filter(([, value]) => value !== null)
+    .map(([source, value]) => `${source}: ${value}%`);
+  const groups = [
+    ['Hotel Discovery Brief', [
+      `Hotel: ${lead.hotelName}`,
+      `Contact: ${lead.contactName}${lead.role ? ` · ${lead.role}` : ''}`,
+      `Email: ${lead.email}`,
+      salesBriefLines('Phone', lead.phone),
+      salesBriefLines('Website', lead.website),
+      salesBriefLines('Rooms', lead.roomCount),
+      salesBriefLines('Properties operated', discovery.propertyCount),
+      salesBriefLines('PMS / reservation system', discovery.pmsSystem === 'Other' && discovery.pmsOther ? `Other — ${discovery.pmsOther}` : discovery.pmsSystem),
+      salesBriefLines('WhatsApp Business', discovery.whatsAppBusiness),
+    ]],
+    ['Guest services & revenue', [
+      salesBriefLines('Guests using additional services', discovery.serviceUsage),
+      salesBriefLines('Most requested services', discovery.requestedServices),
+      salesBriefLines('Other frequent requests', discovery.requestedServicesOther),
+      salesBriefLines('Reasons for lower service usage', discovery.lowServiceReasons),
+      salesBriefLines('Other reason', discovery.lowServiceReasonsOther),
+    ]],
+    ['Bookings & communication', [
+      salesBriefLines('Reservation mix', shares),
+      discovery.bookingSourcesNotSure ? 'Reservation mix: Not sure' : '',
+      salesBriefLines('Proactive pre-arrival contact', discovery.preArrivalContact),
+      salesBriefLines('Pre-arrival channels', discovery.preArrivalMethods),
+      salesBriefLines('How paid services are discovered', discovery.discoveryChannels),
+      salesBriefLines('Services to promote more often', discovery.servicesToPromote),
+    ]],
+    ['Guests & language', [
+      salesBriefLines('International guest origins', discovery.internationalOrigins),
+      salesBriefLines('Language difficulty', discovery.languageDifficulty),
+      salesBriefLines('Languages creating difficulty', discovery.difficultLanguages),
+    ]],
+    ['Front desk & operations', [
+      salesBriefLines('Repeated reception questions', discovery.repeatedQuestions),
+      salesBriefLines('How requests are handled', discovery.requestHandling),
+      salesBriefLines('Response time during busy periods', discovery.responseSpeed),
+      salesBriefLines('Complaint / VIP escalation', discovery.escalationProcess),
+      salesBriefLines('Post-checkout feedback contact', discovery.postCheckoutContact),
+      salesBriefLines('Post-checkout channels', discovery.postCheckoutMethods),
+    ]],
+    ['Management goals', [
+      salesBriefLines('Management wants to understand', discovery.managementInsights),
+      salesBriefLines('Priorities to improve', discovery.improvementGoals),
+      salesBriefLines('Presentation focus requested', discovery.presentationFocus),
+    ]],
+  ];
+  return groups.map(([heading, lines]) => {
+    const content = lines.filter(Boolean).map((line) => `• ${line}`).join('\n');
+    return content ? `${heading}\n${content}` : '';
+  }).filter(Boolean).join('\n\n').slice(0, 12_000);
+}
+
 const DEMO_LANGUAGES = new Map([
   ['english', 'en'], ['en', 'en'],
   ['french', 'fr'], ['français', 'fr'], ['francais', 'fr'], ['fr', 'fr'],
@@ -1494,8 +1640,7 @@ async function persistRoomEnquiry(env, enquiry) {
   });
 }
 
-function parseDiscoveryLead(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid discovery request.');
+function parseLegacyDiscoveryLead(body) {
   const contactName = compactText(body.contactName, 'Your name', { required: true, max: 100 });
   const hotelName = compactText(body.hotelName, 'Hotel name', { required: true, max: 160 });
   const email = compactText(body.email, 'Work email', { required: true, max: 160 }).toLowerCase();
@@ -1530,6 +1675,89 @@ function parseDiscoveryLead(body) {
   };
 }
 
+function parseHotelDiscoveryBrief(body) {
+  const contactName = compactText(body.contactName, 'Contact name', { required: true, max: 100 });
+  const role = compactText(body.role, 'Role / job title', { required: true, max: 100 });
+  const hotelName = compactText(body.hotelName, 'Hotel name', { required: true, max: 160 });
+  const email = compactText(body.email, 'Work email', { required: true, max: 160 }).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please provide a valid work email.');
+  const phone = compactText(body.phone, 'Phone number', { max: 60 });
+  const website = compactText(body.website, 'Hotel website', { max: 240 });
+  if (website) {
+    try {
+      const parsed = new URL(website);
+      if (!/^https?:$/.test(parsed.protocol)) throw new Error('protocol');
+    } catch {
+      throw new Error('Please provide a valid hotel website URL.');
+    }
+  }
+  const sessionId = compactText(body.sessionId, 'Session', { max: 110 });
+  if (sessionId && !/^[a-zA-Z0-9_-]{4,110}$/.test(sessionId)) throw new Error('Invalid session identifier.');
+  if (body.consent !== true) throw new Error('Consent is required to send a hotel discovery brief.');
+  const answers = body.discovery;
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw new Error('Invalid hotel discovery answers.');
+
+  const bookingSources = {
+    'Direct hotel website': discoveryPercentage(answers.bookingSources?.directWebsite, 'Direct hotel website share'),
+    'Booking.com': discoveryPercentage(answers.bookingSources?.bookingCom, 'Booking.com share'),
+    'Expedia / Hotels.com': discoveryPercentage(answers.bookingSources?.expedia, 'Expedia / Hotels.com share'),
+    'Other OTAs': discoveryPercentage(answers.bookingSources?.otherOtas, 'Other OTAs share'),
+    'Travel agencies / corporate': discoveryPercentage(answers.bookingSources?.agenciesCorporate, 'Travel agencies / corporate share'),
+    Other: discoveryPercentage(answers.bookingSources?.other, 'Other reservations share'),
+  };
+  const discovery = {
+    propertyCount: discoveryInteger(body.propertyCount, 'Number of properties operated', { max: 1000 }),
+    pmsSystem: discoveryChoice(body.pmsSystem, 'PMS / reservation system', HOTEL_DISCOVERY_OPTIONS.pms),
+    pmsOther: compactText(body.pmsOther, 'Other PMS / reservation system', { max: 100 }),
+    whatsAppBusiness: discoveryChoice(body.whatsAppBusiness, 'WhatsApp Business', HOTEL_DISCOVERY_OPTIONS.yesNoNotSure),
+    serviceUsage: discoveryChoice(answers.serviceUsage, 'Service usage', HOTEL_DISCOVERY_OPTIONS.serviceUsage),
+    requestedServices: discoveryList(answers.requestedServices, 'Requested services', HOTEL_DISCOVERY_OPTIONS.requestedServices, { maxItems: 8 }),
+    requestedServicesOther: compactText(answers.requestedServicesOther, 'Other requested services', { max: 300 }),
+    lowServiceReasons: discoveryList(answers.lowServiceReasons, 'Service usage reasons', HOTEL_DISCOVERY_OPTIONS.lowServiceReasons, { maxItems: 7 }),
+    lowServiceReasonsOther: compactText(answers.lowServiceReasonsOther, 'Other service usage reason', { max: 300 }),
+    bookingSources,
+    bookingSourcesNotSure: answers.bookingSourcesNotSure === true,
+    preArrivalContact: discoveryChoice(answers.preArrivalContact, 'Pre-arrival contact', HOTEL_DISCOVERY_OPTIONS.preArrivalContact),
+    preArrivalMethods: discoveryList(answers.preArrivalMethods, 'Pre-arrival contact methods', HOTEL_DISCOVERY_OPTIONS.contactMethods, { maxItems: 7 }),
+    discoveryChannels: discoveryList(answers.discoveryChannels, 'Service discovery channels', HOTEL_DISCOVERY_OPTIONS.discoveryChannels, { maxItems: 10 }),
+    servicesToPromote: compactText(answers.servicesToPromote, 'Services to promote', { max: 500 }),
+    internationalOrigins: discoveryList(answers.internationalOrigins, 'International guest origins', Array.isArray(answers.internationalOrigins) ? answers.internationalOrigins : [], { maxItems: 12 }),
+    languageDifficulty: discoveryChoice(answers.languageDifficulty, 'Language difficulty', HOTEL_DISCOVERY_OPTIONS.languageDifficulty),
+    difficultLanguages: compactText(answers.difficultLanguages, 'Languages creating difficulty', { max: 300 }),
+    repeatedQuestions: discoveryList(answers.repeatedQuestions, 'Repeated reception questions', HOTEL_DISCOVERY_OPTIONS.repeatedQuestions, { maxItems: 10 }),
+    requestHandling: discoveryList(answers.requestHandling, 'Request handling methods', HOTEL_DISCOVERY_OPTIONS.requestHandling, { maxItems: 7 }),
+    responseSpeed: discoveryChoice(answers.responseSpeed, 'Response time', HOTEL_DISCOVERY_OPTIONS.responseSpeed),
+    escalationProcess: compactText(answers.escalationProcess, 'Complaint / VIP escalation', { max: 600 }),
+    postCheckoutContact: discoveryChoice(answers.postCheckoutContact, 'Post-checkout contact', HOTEL_DISCOVERY_OPTIONS.preArrivalContact),
+    postCheckoutMethods: discoveryList(answers.postCheckoutMethods, 'Post-checkout contact methods', HOTEL_DISCOVERY_OPTIONS.contactMethods.concat(['OTA platform', 'Review platform link']), { maxItems: 7 }),
+    managementInsights: discoveryList(answers.managementInsights, 'Management insights', HOTEL_DISCOVERY_OPTIONS.managementInsights, { maxItems: 8 }),
+    improvementGoals: discoveryList(answers.improvementGoals, 'Improvement priorities', HOTEL_DISCOVERY_OPTIONS.improvementGoals, { maxItems: 3 }),
+    presentationFocus: compactText(answers.presentationFocus, 'Presentation focus', { max: 900 }),
+  };
+  if (discovery.pmsSystem !== 'Other') discovery.pmsOther = '';
+  if (!['Yes', 'Sometimes'].includes(discovery.preArrivalContact)) discovery.preArrivalMethods = [];
+  if (!['Yes', 'Sometimes'].includes(discovery.postCheckoutContact)) discovery.postCheckoutMethods = [];
+  return {
+    contactName,
+    role,
+    hotelName,
+    email,
+    phone,
+    city: '',
+    website,
+    roomCount: discoveryInteger(body.roomCount, 'Number of rooms', { max: 5000 }),
+    message: discovery.presentationFocus,
+    discovery,
+    userId: `web:${sessionId || `hotel_brief_${crypto.randomUUID()}`}`,
+  };
+}
+
+function parseDiscoveryLead(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid discovery request.');
+  if (body.submissionType === 'hotel_discovery_brief') return parseHotelDiscoveryBrief(body);
+  return parseLegacyDiscoveryLead(body);
+}
+
 async function persistDiscoveryLead(env, lead) {
   return airtable(env, 'Hotel Leads', {
     method: 'POST',
@@ -1539,11 +1767,15 @@ async function persistDiscoveryLead(env, lead) {
       'Contact Name': lead.contactName,
       'Work Email': lead.email,
       'Hotel Name': lead.hotelName,
-      'Phone Number': lead.phone,
-      City: lead.city,
+      'Phone Number': lead.phone || undefined,
+      City: lead.city || undefined,
       'Number of Rooms': lead.roomCount ?? undefined,
       'Hotel Website': lead.website || undefined,
-      'Concierge Service Needs': lead.message || undefined,
+      // Hotel Leads already has a long-text field for service needs. For the
+      // extended brief it holds the complete, human-readable Sales Brief so an
+      // Airtable Automation can email the exact submitted context without a
+      // second lead pipeline or unverified schema fields.
+      'Concierge Service Needs': lead.discovery ? buildHotelDiscoverySalesBrief(lead) : (lead.message || undefined),
       'Lead Status': 'New',
     },
   });
@@ -2010,7 +2242,22 @@ async function handleRoomEnquiry(request, env) {
 async function handleDiscoveryLead(request, env) {
   requireLeadsAirtable(env);
   const lead = parseDiscoveryLead(await request.json());
-  await persistDiscoveryLead(env, lead);
+  const record = await persistDiscoveryLead(env, lead);
+  if (lead.discovery) {
+    try {
+      if (!record?.id) throw new Error('Airtable did not return the new lead record ID.');
+      const pdf = await buildDiscoveryBriefPdf(lead);
+      await uploadAirtableAttachment(env, {
+        recordId: record.id,
+        fieldId: env.DISCOVERY_BRIEF_PDF_FIELD_ID,
+        filename: pdf.filename,
+        bytes: pdf.bytes,
+      });
+    } catch (error) {
+      console.error('Hotel Discovery Brief PDF attachment failed after lead persistence.', error);
+      throw new Error('Your discovery brief was recorded, but the PDF could not be attached. Please contact FlowArchitect Agency.');
+    }
+  }
   return response({
     ok: true,
     message: 'Your discovery request has been recorded.',

@@ -4,6 +4,9 @@ AIRTABLE_API_KEY=
 AIRTABLE_BASE_ID=
 GROQ_API_KEY=
 
+# Airtable attachment field ID for Hotel Leads -> Discovery Brief PDF.
+DISCOVERY_BRIEF_PDF_FIELD_ID=
+
 # Optional WhatsApp Business Cloud webhook and outbound text replies.
 WA_ACCESS_TOKEN=
 WA_PHONE_NUMBER_ID=

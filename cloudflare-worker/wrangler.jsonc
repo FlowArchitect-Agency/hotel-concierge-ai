@@ -10,6 +10,7 @@
     "HOTEL_NAME": "H\u00f4tel Lumi\u00e8re Paris",
     "HOTEL_CITY": "Paris",
     "LEADS_AIRTABLE_BASE_ID": "app5IahpKr1nBhU8O",
+    "DISCOVERY_BRIEF_PDF_FIELD_ID": "fld9dACylrANXzOS8",
     "GROQ_MODEL": "qwen/qwen3.6-27b",
     "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b"
   }

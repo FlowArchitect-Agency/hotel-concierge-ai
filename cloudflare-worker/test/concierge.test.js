@@ -19,6 +19,11 @@ import {
   postCheckoutNegativeReply,
   shouldSearchExternal,
 } from '../src/concierge.js';
+import {
+  buildDiscoveryBriefDocumentModel,
+  buildDiscoveryBriefPdf,
+  sanitizeDiscoveryBriefFilename,
+} from '../src/discovery-brief-pdf.js';
 import worker from '../src/index.js';
 
 const records = [
@@ -571,6 +576,238 @@ test('Discovery call form records the hotel and contact details in Airtable', as
     assert.equal(writtenFields['Hotel Name'], 'Maison Etoile');
     assert.equal(writtenFields['Number of Rooms'], 63);
     assert.equal(writtenFields['Lead Status'], 'New');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function hotelDiscoveryBriefPayload(overrides = {}) {
+  const base = {
+    submissionType: 'hotel_discovery_brief',
+    contactName: 'Claire Martin',
+    role: 'General Manager',
+    email: 'claire@maison-etoile.example',
+    phone: '+33 1 44 55 66 77',
+    hotelName: 'Maison Étoile',
+    website: 'https://maison-etoile.example',
+    roomCount: 63,
+    propertyCount: 2,
+    pmsSystem: 'Mews',
+    whatsAppBusiness: 'Not sure',
+    sessionId: 'web_hotel-brief-test',
+    consent: true,
+    discovery: {
+      serviceUsage: '10–25%',
+      requestedServices: ['Airport transfers', 'Spa & wellness'],
+      requestedServicesOther: '',
+      lowServiceReasons: ['Guests may not know the services exist'],
+      lowServiceReasonsOther: '',
+      bookingSources: { directWebsite: 35, bookingCom: 40, expedia: '', otherOtas: 10, agenciesCorporate: 10, other: 5 },
+      bookingSourcesNotSure: false,
+      preArrivalContact: 'Sometimes',
+      preArrivalMethods: ['Email', 'WhatsApp'],
+      discoveryChannels: ['Reception staff', 'Hotel website'],
+      servicesToPromote: 'Spa rituals and airport transfers.',
+      internationalOrigins: ['United Kingdom', 'United States'],
+      languageDifficulty: 'Regularly',
+      difficultLanguages: 'English and Mandarin',
+      repeatedQuestions: ['Breakfast hours', 'Transport / airport'],
+      requestHandling: ['Reception calls the appropriate department', 'WhatsApp staff group'],
+      responseSpeed: '5–15 minutes',
+      escalationProcess: 'The duty manager is called for VIP requests.',
+      postCheckoutContact: 'Sometimes',
+      postCheckoutMethods: ['Email', 'Review platform link'],
+      managementInsights: ['Most requested services', 'Staff workload'],
+      improvementGoals: ['Increase ancillary-service revenue', 'Improve multilingual communication'],
+      presentationFocus: 'Please show how ConciergeFlow handles pre-arrival service discovery.',
+    },
+  };
+  return { ...base, ...overrides, discovery: { ...base.discovery, ...(overrides.discovery || {}) } };
+}
+
+test('Hotel Discovery Brief serializes the full Sales Brief into the existing Airtable lead field', async () => {
+  const originalFetch = globalThis.fetch;
+  let writtenFields;
+  let upload;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writtenFields = JSON.parse(options.body).fields;
+      return Response.json({ id: 'rec_hotel_discovery_brief', fields: writtenFields });
+    }
+    if (String(url).includes('/rec_hotel_discovery_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') {
+      upload = JSON.parse(options.body);
+      return Response.json({ id: 'rec_hotel_discovery_brief', fields: { 'Discovery Brief PDF': [{ filename: upload.filename }] } });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload()),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'project', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 201);
+    assert.equal(writtenFields['Hotel Lead Name'], 'Maison Étoile - Claire Martin');
+    assert.equal(writtenFields['Number of Rooms'], 63);
+    assert.match(writtenFields['Concierge Service Needs'], /^Hotel Discovery Brief/m);
+    assert.match(writtenFields['Concierge Service Needs'], /Contact: Claire Martin · General Manager/);
+    assert.match(writtenFields['Concierge Service Needs'], /Airport transfers, Spa & wellness/);
+    assert.match(writtenFields['Concierge Service Needs'], /Please show how ConciergeFlow handles pre-arrival service discovery/);
+    assert.equal(upload.filename, 'ConciergeFlow_Discovery_Brief_Maison_Etoile.pdf');
+    assert.equal(upload.contentType, 'application/pdf');
+    assert.match(upload.file, /^[A-Za-z0-9+/]+=*$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief validates required work email before Airtable is called', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; throw new Error('Airtable must not be called.'); };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ email: 'not-an-email' })),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads' }, { waitUntil() {} });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /valid work email/i);
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief rejects oversized free text and accepts empty conditional answers', async () => {
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writes.push(JSON.parse(options.body).fields);
+      return Response.json({ id: 'rec_optional_brief' });
+    }
+    if (String(url).includes('/rec_optional_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') {
+      return Response.json({ id: 'rec_optional_brief', fields: {} });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const env = { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' };
+  try {
+    const oversized = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ discovery: { presentationFocus: 'x'.repeat(901) } })),
+    }), env, { waitUntil() {} });
+    assert.equal(oversized.status, 400);
+    assert.match((await oversized.json()).error, /Presentation focus is too long/i);
+
+    const optional = hotelDiscoveryBriefPayload({ phone: '', website: '', roomCount: '', propertyCount: '', pmsSystem: '', whatsAppBusiness: '', discovery: {
+      serviceUsage: '', requestedServices: [], lowServiceReasons: [], bookingSources: {}, preArrivalContact: 'No', preArrivalMethods: ['Email'], discoveryChannels: [], internationalOrigins: [], languageDifficulty: '', repeatedQuestions: [], requestHandling: [], responseSpeed: '', postCheckoutContact: 'No', postCheckoutMethods: ['Email'], managementInsights: [], improvementGoals: [], presentationFocus: '',
+    } });
+    const accepted = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(optional),
+    }), env, { waitUntil() {} });
+    assert.equal(accepted.status, 201);
+    assert.equal(writes.length, 1);
+    assert.doesNotMatch(writes[0]['Concierge Service Needs'], /Pre-arrival channels/);
+    assert.doesNotMatch(writes[0]['Concierge Service Needs'], /Post-checkout channels/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief PDF creates a sanitized, multi-page internal sales document from the extended brief', async () => {
+  const payload = hotelDiscoveryBriefPayload({
+    hotelName: 'Hôtel Lumière / Paris',
+    discovery: {
+      presentationFocus: `Demonstrate the full ConciergeFlow journey. ${'Detailed operational context '.repeat(900)}`,
+    },
+  });
+  const lead = {
+    ...payload,
+    roomCount: Number(payload.roomCount),
+    discovery: {
+      ...payload.discovery,
+      bookingSources: {
+        'Direct hotel website': 35,
+        'Booking.com': 40,
+        'Expedia / Hotels.com': null,
+        'Other OTAs': 10,
+        'Travel agencies / corporate': 10,
+        Other: 5,
+      },
+    },
+  };
+  const pdf = await buildDiscoveryBriefPdf(lead, { submittedAt: new Date('2026-08-28T19:06:00Z') });
+  assert.equal(pdf.filename, 'ConciergeFlow_Discovery_Brief_Hotel_Lumiere_Paris.pdf');
+  assert.ok(pdf.bytes.length > 2_000);
+  assert.equal(new TextDecoder().decode(pdf.bytes.slice(0, 4)), '%PDF');
+  assert.ok(pdf.pageCount > 1);
+  assert.ok(pdf.model.sections.some((section) => section.title === '5. OPERATIONS'));
+  assert.match(pdf.model.notes.join('\n'), /multilingual guest communication/i);
+  assert.match(pdf.model.notes.join('\n'), /post-stay feedback/i);
+});
+
+test('Hotel Discovery Brief PDF omits inapplicable conditional questions and preserves multi-select answers', () => {
+  const payload = hotelDiscoveryBriefPayload({ discovery: {
+    preArrivalContact: 'No',
+    preArrivalMethods: ['Email'],
+    postCheckoutContact: 'No',
+    postCheckoutMethods: ['Email'],
+    requestedServices: ['Airport transfers', 'Spa & wellness'],
+  } });
+  const model = buildDiscoveryBriefDocumentModel({ ...payload, discovery: { ...payload.discovery, bookingSources: {} } }, new Date('2026-08-28T19:06:00Z'));
+  const booking = model.sections.find((section) => section.title === '3. BOOKINGS & COMMUNICATION');
+  const operations = model.sections.find((section) => section.title === '5. OPERATIONS');
+  const revenue = model.sections.find((section) => section.title === '2. GUEST SERVICES & REVENUE');
+  assert.ok(!booking.questions.some((item) => item.question === 'Pre-arrival communication channels'));
+  assert.ok(!operations.questions.some((item) => item.question === 'Post-checkout contact methods'));
+  assert.deepEqual(revenue.questions.find((item) => item.question === 'Most requested services').answer, ['Airport transfers', 'Spa & wellness']);
+  assert.equal(sanitizeDiscoveryBriefFilename('Maison Étoile TEST'), 'ConciergeFlow_Discovery_Brief_Maison_Etoile_TEST.pdf');
+});
+
+test('Hotel Discovery Brief preserves the lead if direct attachment upload fails', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalConsoleError = console.error;
+  let leadWrites = 0;
+  let uploadAttempts = 0;
+  console.error = () => {};
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      leadWrites += 1;
+      return Response.json({ id: 'rec_attachment_failure' });
+    }
+    if (target.includes('/rec_attachment_failure/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') {
+      uploadAttempts += 1;
+      return new Response('Attachment storage rejected the upload.', { status: 500 });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload()),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 502);
+    assert.match((await response.json()).error, /recorded, but the PDF could not be attached/i);
+    assert.equal(leadWrites, 1);
+    assert.equal(uploadAttempts, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
+  }
+});
+
+test('Legacy discovery submissions remain compatible and do not create PDFs', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push(String(url));
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') return Response.json({ id: 'rec_legacy_discovery' });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ contactName: 'Legacy Contact', hotelName: 'Legacy Hotel', email: 'legacy@example.test', phone: '+33 1 00 00 00 00', city: 'Paris', roomCount: 40, message: 'Please contact us.', consent: true, sessionId: 'legacy_discovery_test' }),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 201);
+    assert.equal(calls.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
