@@ -9,9 +9,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=conciergeflow-v2-product-proof-r3">
+    <link rel="stylesheet" href="style.css?v=task-10">
 </head>
-<body>
+<body data-page="index">
 
 <!-- Global navigation -->
 <nav id="navbar" class="site-nav" aria-label="Primary navigation">
@@ -26,9 +26,14 @@
       <a href="#night-operations">Experience</a>
       <a href="#discovery">For Hotels</a>
     </div>
+    <div class="locale-switcher locale-switcher--site" role="group" aria-label="Language selector" data-i18n-aria-label="locale.label">
+      <button type="button" data-locale="en" aria-pressed="true">EN</button>
+      <button type="button" data-locale="fr" aria-pressed="false">FR</button>
+      <button type="button" data-locale="es" aria-pressed="false">ES</button>
+    </div>
     <div class="nav-actions">
       <a class="nav-demo" href="demo.html">Experience the demo</a>
-      <a href="#discovery" class="nav-discovery discovery-trigger">Book a discovery call</a>
+      <a href="hotel-discovery.html" class="nav-discovery">Book a discovery call</a>
     </div>
     <details class="nav-mobile-menu">
       <summary>Menu <span aria-hidden="true">+</span></summary>
@@ -38,7 +43,12 @@
         <a href="#night-operations">Experience</a>
         <a href="#discovery">For Hotels</a>
         <a href="demo.html">Experience the demo</a>
-        <a href="#discovery" class="discovery-trigger">Book a discovery call</a>
+        <a href="hotel-discovery.html">Book a discovery call</a>
+        <div class="locale-switcher locale-switcher--mobile" role="group" aria-label="Language selector" data-i18n-aria-label="locale.label">
+          <button type="button" data-locale="en" aria-pressed="true">EN</button>
+          <button type="button" data-locale="fr" aria-pressed="false">FR</button>
+          <button type="button" data-locale="es" aria-pressed="false">ES</button>
+        </div>
       </div>
     </details>
   </div>
@@ -478,8 +488,8 @@
 <!-- Final conversion -->
 <section class="final-cta" id="discovery">
   <div class="container final-cta-layout reveal">
-    <div><p class="product-section-eyebrow">For hotels</p><h2>See ConciergeFlow with your hotel in mind.</h2></div>
-    <div class="final-cta-copy"><p>Explore the product around your property, guest journey and operating model in a focused discovery conversation.</p><div class="final-cta-actions"><a class="final-cta-primary discovery-trigger" href="#discovery">Book a discovery call <span aria-hidden="true">&rarr;</span></a><a class="final-cta-secondary" href="#demo">Try the concierge <span aria-hidden="true">&darr;</span></a></div></div>
+    <div><p class="product-section-eyebrow final-cta-eyebrow">For hotels</p><h2>See ConciergeFlow with your hotel in mind.</h2></div>
+    <div class="final-cta-copy"><p>Explore the product around your property, guest journey and operating model in a focused discovery conversation.</p><div class="final-cta-actions"><a class="final-cta-primary" href="hotel-discovery.html">Book a discovery call <span aria-hidden="true">&rarr;</span></a><a class="final-cta-secondary" href="#demo">Try the concierge <span aria-hidden="true">&darr;</span></a></div></div>
   </div>
 </section>
 
@@ -645,7 +655,8 @@
 </div>
 
 <!-- Browser-safe Cloudflare Worker endpoint configuration. Never place a secret in config.js. -->
-<script src="config.js"></script>
+<script src="config.js?v=task-10"></script>
+    <script src="i18n.js?v=task-10b"></script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
 </body>
 </html>

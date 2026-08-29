@@ -1380,6 +1380,19 @@ function discoveryPercentage(value, field) {
   return Math.round(numeric * 10) / 10;
 }
 
+function discoveryOtherDetail(selections, detail, field) {
+  const hasOther = Array.isArray(selections) ? selections.includes('Other') : selections === 'Other';
+  if (hasOther && !detail) throw new Error(`${field} is required when Other is selected.`);
+  return hasOther ? detail : '';
+}
+
+function salesBriefListWithOther(label, selections, detail) {
+  const values = Array.isArray(selections)
+    ? selections.map((item) => item === 'Other' && detail ? `Other — ${detail}` : item)
+    : selections;
+  return salesBriefLines(label, values);
+}
+
 function salesBriefLines(label, value) {
   if (Array.isArray(value)) return value.length ? `${label}: ${value.join(', ')}` : '';
   if (value === null || value === undefined || value === '') return '';
@@ -1388,14 +1401,16 @@ function salesBriefLines(label, value) {
 
 function buildHotelDiscoverySalesBrief(lead) {
   const { discovery } = lead;
+  const localeLabel = { en: 'English', fr: 'French', es: 'Spanish' }[lead.locale] || 'English';
   const shares = Object.entries(discovery.bookingSources)
     .filter(([, value]) => value !== null)
-    .map(([source, value]) => `${source}: ${value}%`);
+    .map(([source, value]) => `${source === 'Other' && discovery.bookingOtherDetail ? `Other — ${discovery.bookingOtherDetail}` : source}: ${value}%`);
   const groups = [
     ['Hotel Discovery Brief', [
       `Hotel: ${lead.hotelName}`,
       `Contact: ${lead.contactName}${lead.role ? ` · ${lead.role}` : ''}`,
       `Email: ${lead.email}`,
+      `Brief language: ${localeLabel}`,
       salesBriefLines('Phone', lead.phone),
       salesBriefLines('Website', lead.website),
       salesBriefLines('Rooms', lead.roomCount),
@@ -1405,17 +1420,15 @@ function buildHotelDiscoverySalesBrief(lead) {
     ]],
     ['Guest services & revenue', [
       salesBriefLines('Guests using additional services', discovery.serviceUsage),
-      salesBriefLines('Most requested services', discovery.requestedServices),
-      salesBriefLines('Other frequent requests', discovery.requestedServicesOther),
-      salesBriefLines('Reasons for lower service usage', discovery.lowServiceReasons),
-      salesBriefLines('Other reason', discovery.lowServiceReasonsOther),
+      salesBriefListWithOther('Most requested services', discovery.requestedServices, discovery.requestedServicesOther),
+      salesBriefListWithOther('Reasons for lower service usage', discovery.lowServiceReasons, discovery.lowServiceReasonsOther),
     ]],
     ['Bookings & communication', [
       salesBriefLines('Reservation mix', shares),
       discovery.bookingSourcesNotSure ? 'Reservation mix: Not sure' : '',
       salesBriefLines('Proactive pre-arrival contact', discovery.preArrivalContact),
-      salesBriefLines('Pre-arrival channels', discovery.preArrivalMethods),
-      salesBriefLines('How paid services are discovered', discovery.discoveryChannels),
+      salesBriefListWithOther('Pre-arrival channels', discovery.preArrivalMethods, discovery.preArrivalMethodsOther),
+      salesBriefListWithOther('How paid services are discovered', discovery.discoveryChannels, discovery.discoveryChannelsOther),
       salesBriefLines('Services to promote more often', discovery.servicesToPromote),
     ]],
     ['Guests & language', [
@@ -1424,16 +1437,16 @@ function buildHotelDiscoverySalesBrief(lead) {
       salesBriefLines('Languages creating difficulty', discovery.difficultLanguages),
     ]],
     ['Front desk & operations', [
-      salesBriefLines('Repeated reception questions', discovery.repeatedQuestions),
-      salesBriefLines('How requests are handled', discovery.requestHandling),
+      salesBriefListWithOther('Repeated reception questions', discovery.repeatedQuestions, discovery.repeatedQuestionsOther),
+      salesBriefListWithOther('How requests are handled', discovery.requestHandling, discovery.requestHandlingOther),
       salesBriefLines('Response time during busy periods', discovery.responseSpeed),
       salesBriefLines('Complaint / VIP escalation', discovery.escalationProcess),
       salesBriefLines('Post-checkout feedback contact', discovery.postCheckoutContact),
-      salesBriefLines('Post-checkout channels', discovery.postCheckoutMethods),
+      salesBriefListWithOther('Post-checkout channels', discovery.postCheckoutMethods, discovery.postCheckoutMethodsOther),
     ]],
     ['Management goals', [
-      salesBriefLines('Management wants to understand', discovery.managementInsights),
-      salesBriefLines('Priorities to improve', discovery.improvementGoals),
+      salesBriefListWithOther('Management wants to understand', discovery.managementInsights, discovery.managementInsightsOther),
+      salesBriefListWithOther('Priorities to improve', discovery.improvementGoals, discovery.improvementGoalsOther),
       salesBriefLines('Presentation focus requested', discovery.presentationFocus),
     ]],
   ];
@@ -1693,6 +1706,8 @@ function parseHotelDiscoveryBrief(body) {
   }
   const sessionId = compactText(body.sessionId, 'Session', { max: 110 });
   if (sessionId && !/^[a-zA-Z0-9_-]{4,110}$/.test(sessionId)) throw new Error('Invalid session identifier.');
+  const locale = compactText(body.locale, 'Locale', { max: 2 }).toLowerCase() || 'en';
+  if (!['en', 'fr', 'es'].includes(locale)) throw new Error('Locale must be en, fr, or es.');
   if (body.consent !== true) throw new Error('Consent is required to send a hotel discovery brief.');
   const answers = body.discovery;
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw new Error('Invalid hotel discovery answers.');
@@ -1717,26 +1732,54 @@ function parseHotelDiscoveryBrief(body) {
     lowServiceReasonsOther: compactText(answers.lowServiceReasonsOther, 'Other service usage reason', { max: 300 }),
     bookingSources,
     bookingSourcesNotSure: answers.bookingSourcesNotSure === true,
+    bookingOtherDetail: compactText(answers.bookingOtherDetail, 'Other booking source', { max: 300 }),
     preArrivalContact: discoveryChoice(answers.preArrivalContact, 'Pre-arrival contact', HOTEL_DISCOVERY_OPTIONS.preArrivalContact),
     preArrivalMethods: discoveryList(answers.preArrivalMethods, 'Pre-arrival contact methods', HOTEL_DISCOVERY_OPTIONS.contactMethods, { maxItems: 7 }),
+    preArrivalMethodsOther: compactText(answers.preArrivalMethodsOther, 'Other pre-arrival contact method', { max: 300 }),
     discoveryChannels: discoveryList(answers.discoveryChannels, 'Service discovery channels', HOTEL_DISCOVERY_OPTIONS.discoveryChannels, { maxItems: 10 }),
+    discoveryChannelsOther: compactText(answers.discoveryChannelsOther, 'Other service discovery channel', { max: 300 }),
     servicesToPromote: compactText(answers.servicesToPromote, 'Services to promote', { max: 500 }),
     internationalOrigins: discoveryList(answers.internationalOrigins, 'International guest origins', Array.isArray(answers.internationalOrigins) ? answers.internationalOrigins : [], { maxItems: 12 }),
     languageDifficulty: discoveryChoice(answers.languageDifficulty, 'Language difficulty', HOTEL_DISCOVERY_OPTIONS.languageDifficulty),
     difficultLanguages: compactText(answers.difficultLanguages, 'Languages creating difficulty', { max: 300 }),
     repeatedQuestions: discoveryList(answers.repeatedQuestions, 'Repeated reception questions', HOTEL_DISCOVERY_OPTIONS.repeatedQuestions, { maxItems: 10 }),
+    repeatedQuestionsOther: compactText(answers.repeatedQuestionsOther, 'Other repeated reception question', { max: 300 }),
     requestHandling: discoveryList(answers.requestHandling, 'Request handling methods', HOTEL_DISCOVERY_OPTIONS.requestHandling, { maxItems: 7 }),
+    requestHandlingOther: compactText(answers.requestHandlingOther, 'Other request handling method', { max: 300 }),
     responseSpeed: discoveryChoice(answers.responseSpeed, 'Response time', HOTEL_DISCOVERY_OPTIONS.responseSpeed),
     escalationProcess: compactText(answers.escalationProcess, 'Complaint / VIP escalation', { max: 600 }),
     postCheckoutContact: discoveryChoice(answers.postCheckoutContact, 'Post-checkout contact', HOTEL_DISCOVERY_OPTIONS.preArrivalContact),
     postCheckoutMethods: discoveryList(answers.postCheckoutMethods, 'Post-checkout contact methods', HOTEL_DISCOVERY_OPTIONS.contactMethods.concat(['OTA platform', 'Review platform link']), { maxItems: 7 }),
+    postCheckoutMethodsOther: compactText(answers.postCheckoutMethodsOther, 'Other post-checkout contact method', { max: 300 }),
     managementInsights: discoveryList(answers.managementInsights, 'Management insights', HOTEL_DISCOVERY_OPTIONS.managementInsights, { maxItems: 8 }),
+    managementInsightsOther: compactText(answers.managementInsightsOther, 'Other management insight', { max: 300 }),
     improvementGoals: discoveryList(answers.improvementGoals, 'Improvement priorities', HOTEL_DISCOVERY_OPTIONS.improvementGoals, { maxItems: 3 }),
+    improvementGoalsOther: compactText(answers.improvementGoalsOther, 'Other improvement priority', { max: 300 }),
     presentationFocus: compactText(answers.presentationFocus, 'Presentation focus', { max: 900 }),
   };
-  if (discovery.pmsSystem !== 'Other') discovery.pmsOther = '';
-  if (!['Yes', 'Sometimes'].includes(discovery.preArrivalContact)) discovery.preArrivalMethods = [];
-  if (!['Yes', 'Sometimes'].includes(discovery.postCheckoutContact)) discovery.postCheckoutMethods = [];
+  discovery.pmsOther = discoveryOtherDetail(discovery.pmsSystem, discovery.pmsOther, 'Other PMS / reservation system');
+  discovery.requestedServicesOther = discoveryOtherDetail(discovery.requestedServices, discovery.requestedServicesOther, 'Other requested services');
+  discovery.lowServiceReasonsOther = discoveryOtherDetail(discovery.lowServiceReasons, discovery.lowServiceReasonsOther, 'Other service usage reason');
+  discovery.bookingOtherDetail = discovery.bookingSources.Other > 0
+    ? discoveryOtherDetail('Other', discovery.bookingOtherDetail, 'Other booking source')
+    : '';
+  if (!['Yes', 'Sometimes'].includes(discovery.preArrivalContact)) {
+    discovery.preArrivalMethods = [];
+    discovery.preArrivalMethodsOther = '';
+  } else {
+    discovery.preArrivalMethodsOther = discoveryOtherDetail(discovery.preArrivalMethods, discovery.preArrivalMethodsOther, 'Other pre-arrival contact method');
+  }
+  discovery.discoveryChannelsOther = discoveryOtherDetail(discovery.discoveryChannels, discovery.discoveryChannelsOther, 'Other service discovery channel');
+  discovery.repeatedQuestionsOther = discoveryOtherDetail(discovery.repeatedQuestions, discovery.repeatedQuestionsOther, 'Other repeated reception question');
+  discovery.requestHandlingOther = discoveryOtherDetail(discovery.requestHandling, discovery.requestHandlingOther, 'Other request handling method');
+  if (!['Yes', 'Sometimes'].includes(discovery.postCheckoutContact)) {
+    discovery.postCheckoutMethods = [];
+    discovery.postCheckoutMethodsOther = '';
+  } else {
+    discovery.postCheckoutMethodsOther = discoveryOtherDetail(discovery.postCheckoutMethods, discovery.postCheckoutMethodsOther, 'Other post-checkout contact method');
+  }
+  discovery.managementInsightsOther = discoveryOtherDetail(discovery.managementInsights, discovery.managementInsightsOther, 'Other management insight');
+  discovery.improvementGoalsOther = discoveryOtherDetail(discovery.improvementGoals, discovery.improvementGoalsOther, 'Other improvement priority');
   return {
     contactName,
     role,
@@ -1746,6 +1789,7 @@ function parseHotelDiscoveryBrief(body) {
     city: '',
     website,
     roomCount: discoveryInteger(body.roomCount, 'Number of rooms', { max: 5000 }),
+    locale,
     message: discovery.presentationFocus,
     discovery,
     userId: `web:${sessionId || `hotel_brief_${crypto.randomUUID()}`}`,
@@ -2440,7 +2484,7 @@ export default {
         return await handleDiscoveryLead(request, env);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|valid|long|Consent|between/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, /required|Invalid|valid|long|Consent|between|Locale/i.test(message) ? 400 : 502, request, env);
       }
     }
     return response({ error: 'Not found.' }, 404, request, env);

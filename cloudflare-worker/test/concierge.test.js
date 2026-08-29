@@ -604,21 +604,29 @@ function hotelDiscoveryBriefPayload(overrides = {}) {
       lowServiceReasonsOther: '',
       bookingSources: { directWebsite: 35, bookingCom: 40, expedia: '', otherOtas: 10, agenciesCorporate: 10, other: 5 },
       bookingSourcesNotSure: false,
+      bookingOtherDetail: 'Other travel partners',
       preArrivalContact: 'Sometimes',
       preArrivalMethods: ['Email', 'WhatsApp'],
+      preArrivalMethodsOther: '',
       discoveryChannels: ['Reception staff', 'Hotel website'],
+      discoveryChannelsOther: '',
       servicesToPromote: 'Spa rituals and airport transfers.',
       internationalOrigins: ['United Kingdom', 'United States'],
       languageDifficulty: 'Regularly',
       difficultLanguages: 'English and Mandarin',
       repeatedQuestions: ['Breakfast hours', 'Transport / airport'],
+      repeatedQuestionsOther: '',
       requestHandling: ['Reception calls the appropriate department', 'WhatsApp staff group'],
+      requestHandlingOther: '',
       responseSpeed: '5–15 minutes',
       escalationProcess: 'The duty manager is called for VIP requests.',
       postCheckoutContact: 'Sometimes',
       postCheckoutMethods: ['Email', 'Review platform link'],
+      postCheckoutMethodsOther: '',
       managementInsights: ['Most requested services', 'Staff workload'],
+      managementInsightsOther: '',
       improvementGoals: ['Increase ancillary-service revenue', 'Improve multilingual communication'],
+      improvementGoalsOther: '',
       presentationFocus: 'Please show how ConciergeFlow handles pre-arrival service discovery.',
     },
   };
@@ -648,6 +656,7 @@ test('Hotel Discovery Brief serializes the full Sales Brief into the existing Ai
     assert.equal(writtenFields['Hotel Lead Name'], 'Maison Étoile - Claire Martin');
     assert.equal(writtenFields['Number of Rooms'], 63);
     assert.match(writtenFields['Concierge Service Needs'], /^Hotel Discovery Brief/m);
+    assert.match(writtenFields['Concierge Service Needs'], /Brief language: English/);
     assert.match(writtenFields['Concierge Service Needs'], /Contact: Claire Martin · General Manager/);
     assert.match(writtenFields['Concierge Service Needs'], /Airport transfers, Spa & wellness/);
     assert.match(writtenFields['Concierge Service Needs'], /Please show how ConciergeFlow handles pre-arrival service discovery/);
@@ -670,6 +679,113 @@ test('Hotel Discovery Brief validates required work email before Airtable is cal
     assert.equal(response.status, 400);
     assert.match((await response.json()).error, /valid work email/i);
     assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief rejects every selected Other value without its specification before Airtable is called', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; throw new Error('Airtable must not be called.'); };
+  const incompleteAnswers = [
+    { pmsSystem: 'Other', pmsOther: '' },
+    { discovery: { requestedServices: ['Other'], requestedServicesOther: '' } },
+    { discovery: { lowServiceReasons: ['Other'], lowServiceReasonsOther: '' } },
+    { discovery: { bookingSources: { other: 15 }, bookingOtherDetail: '' } },
+    { discovery: { preArrivalContact: 'Yes', preArrivalMethods: ['Other'], preArrivalMethodsOther: '' } },
+    { discovery: { discoveryChannels: ['Other'], discoveryChannelsOther: '' } },
+    { discovery: { repeatedQuestions: ['Other'], repeatedQuestionsOther: '' } },
+    { discovery: { requestHandling: ['Other'], requestHandlingOther: '' } },
+    { discovery: { postCheckoutContact: 'Yes', postCheckoutMethods: ['Other'], postCheckoutMethodsOther: '' } },
+    { discovery: { managementInsights: ['Other'], managementInsightsOther: '' } },
+    { discovery: { improvementGoals: ['Other'], improvementGoalsOther: '' } },
+  ];
+  try {
+    for (const overrides of incompleteAnswers) {
+      const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload(overrides)),
+      }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads' }, { waitUntil() {} });
+      assert.equal(response.status, 400);
+      assert.match((await response.json()).error, /required when Other is selected/i);
+    }
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief serializes multiple Other specifications without changing canonical choices', async () => {
+  const originalFetch = globalThis.fetch;
+  let writtenFields;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writtenFields = JSON.parse(options.body).fields;
+      return Response.json({ id: 'rec_other_brief' });
+    }
+    if (target.includes('/rec_other_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') return Response.json({ id: 'rec_other_brief', fields: {} });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  const payload = hotelDiscoveryBriefPayload({
+    locale: 'fr',
+    pmsSystem: 'Other',
+    pmsOther: 'Custom PMS',
+    discovery: {
+      requestedServices: ['Airport transfers', 'Other'], requestedServicesOther: 'Private chauffeur service',
+      lowServiceReasons: ['Other'], lowServiceReasonsOther: 'Seasonal guest mix',
+      bookingSources: { other: 15 }, bookingOtherDetail: 'Luxury travel advisors',
+      preArrivalContact: 'Yes', preArrivalMethods: ['Other'], preArrivalMethodsOther: 'Guest portal',
+      discoveryChannels: ['Other'], discoveryChannelsOther: 'Concierge QR card',
+      repeatedQuestions: ['Other'], repeatedQuestionsOther: 'Luggage storage',
+      requestHandling: ['Other'], requestHandlingOther: 'Internal radio system',
+      postCheckoutContact: 'Yes', postCheckoutMethods: ['Other'], postCheckoutMethodsOther: 'CRM journey',
+      managementInsights: ['Other'], managementInsightsOther: 'Return guest conversion',
+      improvementGoals: ['Other'], improvementGoalsOther: 'Strengthen VIP recognition',
+    },
+  });
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(payload),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 201);
+    assert.match(writtenFields['Concierge Service Needs'], /Other — Private chauffeur service/);
+    assert.match(writtenFields['Concierge Service Needs'], /Other — Internal radio system/);
+    assert.match(writtenFields['Concierge Service Needs'], /Other — Strengthen VIP recognition/);
+    const lead = { ...payload, roomCount: Number(payload.roomCount), discovery: { ...payload.discovery, bookingSources: { Other: 15 } } };
+    const model = buildDiscoveryBriefDocumentModel(lead);
+    const operations = model.sections.find((section) => section.title === '5. OPERATIONS');
+    assert.ok(operations.questions.some((item) => Array.isArray(item.answer) && item.answer.includes('Other - Internal radio system')));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief accepts supported locales and rejects invalid locale values before Airtable is called', async () => {
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writes.push(JSON.parse(options.body).fields);
+      return Response.json({ id: 'rec_locale_brief' });
+    }
+    if (String(url).includes('/rec_locale_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') return Response.json({ id: 'rec_locale_brief', fields: {} });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const env = { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' };
+  try {
+    const french = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ locale: 'fr' })),
+    }), env, { waitUntil() {} });
+    assert.equal(french.status, 201);
+    assert.match(writes[0]['Concierge Service Needs'], /Brief language: French/);
+
+    globalThis.fetch = async () => { throw new Error('Airtable must not be called for an invalid locale.'); };
+    const invalid = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ locale: 'de' })),
+    }), env, { waitUntil() {} });
+    assert.equal(invalid.status, 400);
+    assert.match((await invalid.json()).error, /Locale must be en, fr, or es/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -739,6 +855,9 @@ test('Hotel Discovery Brief PDF creates a sanitized, multi-page internal sales d
   assert.equal(new TextDecoder().decode(pdf.bytes.slice(0, 4)), '%PDF');
   assert.ok(pdf.pageCount > 1);
   assert.ok(pdf.model.sections.some((section) => section.title === '5. OPERATIONS'));
+  assert.ok(pdf.model.sections[0].questions.some((item) => item.question === 'Brief language' && item.answer === 'English'));
+  const frenchModel = buildDiscoveryBriefDocumentModel({ ...lead, locale: 'fr' }, new Date('2026-08-28T19:06:00Z'));
+  assert.ok(frenchModel.sections[0].questions.some((item) => item.question === 'Brief language' && item.answer === 'French'));
   assert.match(pdf.model.notes.join('\n'), /multilingual guest communication/i);
   assert.match(pdf.model.notes.join('\n'), /post-stay feedback/i);
 });

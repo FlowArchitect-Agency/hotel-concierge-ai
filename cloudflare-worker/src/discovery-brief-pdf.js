@@ -37,10 +37,15 @@ function nonEmptyQuestion(question, value) {
   return { question, answer };
 }
 
-function bookingShareLines(shares) {
+function bookingShareLines(shares, otherDetail = '') {
   return Object.entries(shares || {})
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
-    .map(([source, value]) => `${source}: ${value}%`);
+    .map(([source, value]) => `${source === 'Other' && otherDetail ? `Other - ${otherDetail}` : source}: ${value}%`);
+}
+
+function formatOtherSelections(value, otherDetail = '') {
+  if (!Array.isArray(value)) return value;
+  return value.map((item) => item === 'Other' && otherDetail ? `Other - ${otherDetail}` : item);
 }
 
 function formatPms(discovery) {
@@ -103,11 +108,13 @@ export function deriveInternalPresentationNotes(lead) {
 
 export function buildDiscoveryBriefDocumentModel(lead, submittedAt = new Date()) {
   const discovery = lead?.discovery || {};
+  const localeLabel = { en: 'English', fr: 'French', es: 'Spanish' }[lead?.locale] || 'English';
   const sections = [
     {
       title: '1. PROPERTY',
       questions: [
         nonEmptyQuestion('Hotel', lead.hotelName),
+        nonEmptyQuestion('Brief language', localeLabel),
         nonEmptyQuestion('Number of rooms', lead.roomCount ? `${lead.roomCount}` : ''),
         nonEmptyQuestion('Properties operated', discovery.propertyCount ? `${discovery.propertyCount}` : ''),
         nonEmptyQuestion('PMS / reservation system', formatPms(discovery)),
@@ -119,39 +126,37 @@ export function buildDiscoveryBriefDocumentModel(lead, submittedAt = new Date())
       title: '2. GUEST SERVICES & REVENUE',
       questions: [
         nonEmptyQuestion('Estimated additional-service usage', discovery.serviceUsage),
-        nonEmptyQuestion('Most requested services', discovery.requestedServices),
-        nonEmptyQuestion('Reasons for lower service usage', discovery.lowServiceReasons),
-        nonEmptyQuestion('Additional requests', discovery.requestedServicesOther),
-        nonEmptyQuestion('Other reason', discovery.lowServiceReasonsOther),
+        nonEmptyQuestion('Most requested services', formatOtherSelections(discovery.requestedServices, discovery.requestedServicesOther)),
+        nonEmptyQuestion('Reasons for lower service usage', formatOtherSelections(discovery.lowServiceReasons, discovery.lowServiceReasonsOther)),
       ].filter(Boolean),
     },
     {
       title: '3. BOOKINGS & COMMUNICATION',
       questions: [
-        nonEmptyQuestion('Reservation source shares', discovery.bookingSourcesNotSure ? 'Not sure' : bookingShareLines(discovery.bookingSources)),
+        nonEmptyQuestion('Reservation source shares', discovery.bookingSourcesNotSure ? 'Not sure' : bookingShareLines(discovery.bookingSources, discovery.bookingOtherDetail)),
         nonEmptyQuestion('Pre-arrival contact', discovery.preArrivalContact),
         ...(['Yes', 'Sometimes'].includes(discovery.preArrivalContact)
-          ? [nonEmptyQuestion('Pre-arrival communication channels', discovery.preArrivalMethods)]
+          ? [nonEmptyQuestion('Pre-arrival communication channels', formatOtherSelections(discovery.preArrivalMethods, discovery.preArrivalMethodsOther))]
           : []),
       ].filter(Boolean),
     },
     {
       title: '4. SERVICE DISCOVERY',
       questions: [
-        nonEmptyQuestion('How guests discover hotel services', discovery.discoveryChannels),
+        nonEmptyQuestion('How guests discover hotel services', formatOtherSelections(discovery.discoveryChannels, discovery.discoveryChannelsOther)),
         nonEmptyQuestion('Services the hotel wants guests to discover more often', discovery.servicesToPromote),
       ].filter(Boolean),
     },
     {
       title: '5. OPERATIONS',
       questions: [
-        nonEmptyQuestion('Repeated reception questions', discovery.repeatedQuestions),
-        nonEmptyQuestion('How requests are currently handled', discovery.requestHandling),
+        nonEmptyQuestion('Repeated reception questions', formatOtherSelections(discovery.repeatedQuestions, discovery.repeatedQuestionsOther)),
+        nonEmptyQuestion('How requests are currently handled', formatOtherSelections(discovery.requestHandling, discovery.requestHandlingOther)),
         nonEmptyQuestion('Response time during busy periods', discovery.responseSpeed),
         nonEmptyQuestion('Complaint / VIP escalation', discovery.escalationProcess),
         nonEmptyQuestion('Post-checkout feedback contact', discovery.postCheckoutContact),
         ...(['Yes', 'Sometimes'].includes(discovery.postCheckoutContact)
-          ? [nonEmptyQuestion('Post-checkout contact methods', discovery.postCheckoutMethods)]
+          ? [nonEmptyQuestion('Post-checkout contact methods', formatOtherSelections(discovery.postCheckoutMethods, discovery.postCheckoutMethodsOther))]
           : []),
       ].filter(Boolean),
     },
@@ -166,8 +171,8 @@ export function buildDiscoveryBriefDocumentModel(lead, submittedAt = new Date())
     {
       title: '7. MANAGEMENT GOALS',
       questions: [
-        nonEmptyQuestion('Information management wants', discovery.managementInsights),
-        nonEmptyQuestion('Top improvement goals', discovery.improvementGoals),
+        nonEmptyQuestion('Information management wants', formatOtherSelections(discovery.managementInsights, discovery.managementInsightsOther)),
+        nonEmptyQuestion('Top improvement goals', formatOtherSelections(discovery.improvementGoals, discovery.improvementGoalsOther)),
         nonEmptyQuestion('Presentation focus requested', discovery.presentationFocus),
       ].filter(Boolean),
     },
@@ -294,7 +299,9 @@ function drawFirstPageHeader(composer, lead, model) {
 
 function drawPropertySnapshot(composer, lead) {
   const discovery = lead.discovery || {};
+  const localeLabel = { en: 'English', fr: 'French', es: 'Spanish' }[lead.locale] || 'English';
   const rows = [
+    ['Brief language', localeLabel],
     ['Rooms', lead.roomCount || 'Not provided'],
     ['Properties', discovery.propertyCount || 'Not provided'],
     ['PMS', formatPms(discovery) || 'Not provided'],

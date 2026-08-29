@@ -2256,6 +2256,13 @@ body,
 .product-nav-button:hover { color: var(--ops-copy); background: #21251f; }
 .product-nav-button.is-active { color: var(--ops-copy); background: #252921; border-color: #393e35; }
 .masthead-actions { display: inline-flex; gap: .42rem; align-items: center; justify-content: flex-end; }
+.locale-switcher { display: inline-flex; gap: 1px; align-items: center; padding: 2px; border: 1px solid #363a32; border-radius: 3px; }
+.locale-switcher button { min-width: 25px; min-height: 27px; padding: 0 .28rem; background: transparent; border: 0; border-radius: 2px; font-size: .54rem; font-weight: 750; letter-spacing: .06em; line-height: 1; }
+.locale-switcher--demo { border-color: #363a32; background: #181b16; }
+.locale-switcher--demo button { color: var(--ops-muted); }
+.locale-switcher--demo button:hover { color: var(--ops-copy); background: #292d25; }
+.locale-switcher--demo button.is-active { color: #191a16; background: var(--ops-brass); }
+.locale-switcher--entry { width: fit-content; margin: -1.2rem 0 1.35rem; border-color: #4a4e44; background: #181b16; }.locale-switcher--entry button { color: var(--ops-muted); }.locale-switcher--entry button:hover { color: var(--ops-copy); background: #292d25; }.locale-switcher--entry button.is-active { color: #191a16; background: var(--ops-brass); }
 .masthead-actions .connection-state { display: inline-flex; gap: .36rem; align-items: center; padding: .35rem .44rem; color: var(--ops-muted); background: transparent; border: 0; font-size: .61rem; }
 .masthead-actions .connection-state i { width: 6px; height: 6px; background: var(--ops-green); border-radius: 50%; }
 .masthead-action,
