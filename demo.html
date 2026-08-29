@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="ConciergeFlow hospitality AI product simulation." />
     <title>ConciergeFlow | Product simulation</title>
-    <link rel="stylesheet" href="demo.css?v=conciergeflow-v2-requests-r10" />
+    <link rel="stylesheet" href="demo.css?v=task-10" />
   </head>
-  <body class="demo-locked">
+  <body class="demo-locked" data-page="demo">
     <div class="demo-application">
       <div class="app-content">
         <header class="product-masthead">
@@ -21,7 +21,7 @@
             <button class="product-nav-button" type="button" data-nav="requests">Requests</button>
             <button class="product-nav-button" type="button" data-nav="mission">Mission Control</button>
           </nav>
-          <div class="masthead-actions"><span class="connection-state" title="This environment simulates selected guest journeys using demo data."><i aria-hidden="true"></i>Demo</span><button id="resetDemo" class="masthead-action" type="button">Reset</button><a class="masthead-exit" href="index.html">Exit</a></div>
+          <div class="masthead-actions"><div class="locale-switcher locale-switcher--demo" role="group" aria-label="Language selector" data-i18n-aria-label="locale.label"><button type="button" data-locale="en" aria-pressed="true">EN</button><button type="button" data-locale="fr" aria-pressed="false">FR</button><button type="button" data-locale="es" aria-pressed="false">ES</button></div><span class="connection-state" title="This environment simulates selected guest journeys using demo data."><i aria-hidden="true"></i>Demo</span><button id="resetDemo" class="masthead-action" type="button">Reset</button><a class="masthead-exit" href="index.html">Exit</a></div>
         </header>
 
         <div id="screenAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
@@ -30,6 +30,7 @@
           <section id="screen-entry" class="app-screen is-active" data-screen="entry" aria-labelledby="entry-title" role="region">
             <div class="entry-card">
               <div class="entry-brand"><span class="brand-mark entry-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" fill="currentColor"/></svg></span><span class="brand-name">ConciergeFlow</span><span class="brand-context">Private product demonstration</span></div>
+              <div class="locale-switcher locale-switcher--entry" role="group" aria-label="Language selector" data-i18n-aria-label="locale.label"><button type="button" data-locale="en" aria-pressed="true">EN</button><button type="button" data-locale="fr" aria-pressed="false">FR</button><button type="button" data-locale="es" aria-pressed="false">ES</button></div>
               <div class="entry-body">
                 <p class="entry-kicker">Hôtel Lumière Paris</p>
                 <h1 id="entry-title">Experience ConciergeFlow as a hotel team would.</h1>
@@ -138,7 +139,8 @@
 
     <div id="sheetBackdrop" class="sheet-backdrop" hidden></div>
     <section id="serviceSheet" class="service-sheet" role="dialog" aria-modal="true" aria-labelledby="serviceSheetTitle" hidden><div class="sheet-handle" aria-hidden="true"></div><div class="sheet-heading"><div><p class="eyebrow">Hotel services</p><h2 id="serviceSheetTitle">Available services</h2></div><button id="closeSheet" class="icon-button sheet-close" type="button" aria-label="Close services menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><div class="service-list"><button class="service-option" type="button" data-service="Private airport transfer"><span class="service-icon" aria-hidden="true">01</span><span><strong>Private airport transfer</strong><small>Mercedes transfer from CDG or Orly</small></span><em>€180</em></button><button class="service-option" type="button" data-service="Lumière spa ritual"><span class="service-icon" aria-hidden="true">02</span><span><strong>Lumière spa ritual</strong><small>90-minute restorative treatment</small></span><em>€220</em></button><button class="service-option" type="button" data-service="Eiffel View rooftop dining"><span class="service-icon" aria-hidden="true">03</span><span><strong>Eiffel View rooftop dining</strong><small>Seven-course seasonal tasting menu</small></span><em>€240</em></button></div></section>
-    <script src="config.js"></script>
+    <script src="config.js?v=task-10"></script>
+    <script src="i18n.js?v=task-10b"></script>
     <script src="demo.js?v=conciergeflow-v2-requests-r11"></script>
   </body>
 </html>
