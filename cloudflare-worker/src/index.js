@@ -28,6 +28,7 @@ import {
 } from './semantic-controller.js';
 import { buildToolRequests, createToolExecutor, toolResultMap } from './tools/index.js';
 import { buildDiscoveryBriefPdf } from './discovery-brief-pdf.js';
+import { completeStructured, llmConfigurationStatus } from './llm/index.js';
 
 const RECENT_REQUESTS = new Map();
 const RECENT_WHATSAPP_MESSAGES = new Map();
@@ -268,7 +269,8 @@ async function sendWhatsAppText(env, recipient, text) {
 }
 
 function requireSecrets(env) {
-  const missing = ['GROQ_API_KEY', 'AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID'].filter((name) => !env[name]);
+  const missing = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID'].filter((name) => !env[name]);
+  if (!llmConfigurationStatus(env).configured) missing.push('LLM provider configuration');
   if (missing.length) throw new Error(`Service configuration is incomplete: ${missing.join(', ')}`);
 }
 
@@ -606,47 +608,6 @@ function attachReadOnlyObservability(result, input, metadata) {
   return observability ? { ...result, observability } : result;
 }
 
-async function callGroq(env, prompt, { maxTokens = 350, router = false, jsonMode = true, validateContent = null } = {}) {
-  const models = [
-    router ? (env.GROQ_ROUTER_MODEL || env.GROQ_MODEL || 'qwen/qwen3.6-27b') : (env.GROQ_MODEL || 'qwen/qwen3.6-27b'),
-    env.GROQ_FALLBACK_MODEL || 'openai/gpt-oss-20b',
-  ].filter((model, index, values) => model && values.indexOf(model) === index);
-  let failure = '';
-  for (const model of models) {
-    try {
-      const body = {
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: maxTokens,
-        // The response generator needs strict JSON. The primary controller
-        // model is more reliable when allowed to emit plain JSON text, while
-        // a fallback reasoning model needs JSON mode to reserve tokens for a
-        // usable answer rather than hidden reasoning. Both are still passed
-        // through the same strict controller parser below.
-        ...(jsonMode === true || (jsonMode === 'controller' && !model.startsWith('qwen/')) ? { response_format: { type: 'json_object' } } : {}),
-        ...(model.startsWith('qwen/') ? { reasoning_effort: 'none', reasoning_format: 'hidden' } : {}),
-      };
-      const result = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!result.ok) {
-        failure = `http_${result.status}`;
-        continue;
-      }
-      const data = await result.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (content && (!validateContent || validateContent(content))) return { content, providerFailure: '' };
-      failure = content ? 'invalid_response' : 'empty_response';
-    } catch {
-      failure = 'request_error';
-    }
-  }
-  return { content: '', providerFailure: failure || 'provider_unavailable' };
-}
-
 async function semanticConversationController(env, input, history, { facts, pendingContext = '', hint = {} } = {}) {
   const prompt = buildSemanticControllerPrompt({
     input,
@@ -660,22 +621,22 @@ async function semanticConversationController(env, input, history, { facts, pend
   // The validated controller contract is deliberately compact. Keeping this
   // within the existing router budget avoids spending latency on explanation
   // the controller is not allowed to provide.
-  const provider = await callGroq(env, prompt, {
-    maxTokens: 320,
-    // The controller needs the same capable conversational model as response
-    // composition. Keep the legacy lightweight router model only for the
-    // conservative outage fallback below.
-    router: false,
-    jsonMode: 'controller',
-    // A syntactically successful provider response is not enough to direct
-    // the app. Retry the configured fallback model when the controller did
-    // not produce a validated machine plan.
-    validateContent: (content) => parseSemanticControllerOutput(content, { language: input.language, hint }).valid,
+  const provider = await completeStructured(env, {
+    purpose: 'semantic_controller',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 320,
+    conversation_id: input.userId,
+  }, {
+    parse: (content) => {
+      const plan = parseSemanticControllerOutput(content, { language: input.language, hint });
+      return plan.valid ? plan : null;
+    },
   });
-  const plan = parseSemanticControllerOutput(provider.content, { language: input.language, hint });
+  const plan = provider.structured || parseSemanticControllerOutput('', { language: input.language, hint });
   return {
-    plan: { ...plan, providerFailure: provider.providerFailure || plan.providerFailure },
-    providerFailure: provider.providerFailure || plan.providerFailure,
+    plan: { ...plan, providerFailure: provider.status === 'success' ? '' : provider.status },
+    providerFailure: provider.status === 'success' ? '' : provider.status,
+    llm: provider,
   };
 }
 
@@ -739,8 +700,13 @@ async function enrichSemanticRoute(env, input, history, classification) {
   }
   const basicGreeting = !classification.hasIntent && !String(input.message || '').trim().includes(' ');
   if (basicGreeting) return classification;
-  const provider = await callGroq(env, routerPrompt(input, history), { maxTokens: 180, router: true });
-  const route = routerJson(provider.content);
+  const provider = await completeStructured(env, {
+    purpose: 'intent_router',
+    messages: [{ role: 'user', content: routerPrompt(input, history) }],
+    max_tokens: 180,
+    conversation_id: input.userId,
+  }, { parse: routerJson });
+  const route = provider.structured;
   if (!route) return classification;
   const externalDiscovery = route.route === 'external_discovery';
   const actionable = !['greeting', 'conversation'].includes(route.route);
@@ -2277,8 +2243,14 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
         tool_statuses: Object.fromEntries(presentationResults.map((result) => [result.tool, result.status])),
         controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
         response_model_calls: 0,
+        llm_provider: semantic.llm?.provider || null,
+        llm_model: semantic.llm?.model || null,
+        llm_purpose: 'semantic_controller',
+        llm_status: semantic.llm?.status || 'provider_error',
+        llm_latency_ms: semantic.llm?.latency_ms || 0,
+        llm_attempt_count: semantic.llm?.attempts || 0,
         provider_used: null,
-        fallback_used: false,
+        fallback_used: Boolean(semantic.llm?.fallback_used),
         latency_ms: Date.now() - turnStartedAt,
       });
     }
@@ -2366,15 +2338,34 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
         tool_statuses: Object.fromEntries(Object.entries(toolResults).map(([tool, result]) => [tool, result.status])),
         controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
         response_model_calls: 0,
+        llm_provider: semantic.llm?.provider || null,
+        llm_model: semantic.llm?.model || null,
+        llm_purpose: 'semantic_controller',
+        llm_status: semantic.llm?.status || 'provider_error',
+        llm_latency_ms: semantic.llm?.latency_ms || 0,
+        llm_attempt_count: semantic.llm?.attempts || 0,
         provider_used: toolResults.external_search?.meta?.provider_used || null,
-        fallback_used: Boolean(toolResults.external_search?.meta?.fallback_used),
+        fallback_used: Boolean(semantic.llm?.fallback_used || toolResults.external_search?.meta?.fallback_used),
         latency_ms: Date.now() - turnStartedAt,
       });
     }
     reportStatus('Preparing a considered recommendation\u2026');
     const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts, semanticPlan: semantic.plan, toolResults });
-    const provider = await callGroq(env, prompt).catch((err) => ({ content: '', providerFailure: err.message || 'groq_error' }));
-    const model = parseModelJson(provider.content);
+    const provider = await completeStructured(env, {
+      purpose: 'response_generator',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 350,
+      conversation_id: input.userId,
+    }, {
+      // A reply is the minimum response-generator contract. ConciergeFlow's
+      // existing final guardrail remains responsible for factual/action truth.
+      parse: (content) => {
+        const model = parseModelJson(content);
+        return model.reply ? model : null;
+      },
+    }).catch(() => ({ status: 'provider_error', content: '', structured: null, provider: '', model: '', latency_ms: 0, attempts: 1, fallback_used: false }));
+    const model = provider.structured || parseModelJson('');
+    const providerFailure = provider.status === 'success' ? '' : provider.status;
     const outcome = enforceContract(model, {
       language: input.language,
       classification,
@@ -2382,22 +2373,28 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       excluded: serviceSet.excluded,
       externalOptions,
       inputMessage: input.message,
-      providerFailure: provider.providerFailure,
+      providerFailure,
       toolResults,
     });
 
     if (!input.testMode || input.testMode === 'write_verified') {
       ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
     }
-    return attachReadOnlyObservability(chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message), input, {
+    return attachReadOnlyObservability(chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), providerFailure, null, input.message), input, {
       semantic_route: semantic.plan?.interactionType || classification.route || 'conversation',
       tools_requested: toolRequests.map((request) => request.tool),
       tools_executed: executedTools.map((result) => result.tool),
       tool_statuses: Object.fromEntries(Object.entries(toolResults).map(([tool, result]) => [tool, result.status])),
       controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
-      response_model_calls: provider.content ? 1 : 0,
+      response_model_calls: provider.status === 'success' ? 1 : 0,
+      llm_provider: provider.provider || semantic.llm?.provider || null,
+      llm_model: provider.model || semantic.llm?.model || null,
+      llm_purpose: 'response_generator',
+      llm_status: provider.status,
+      llm_latency_ms: provider.latency_ms,
+      llm_attempt_count: provider.attempts,
       provider_used: toolResults.external_search?.meta?.provider_used || null,
-      fallback_used: Boolean(toolResults.external_search?.meta?.fallback_used),
+      fallback_used: Boolean(provider.fallback_used || toolResults.external_search?.meta?.fallback_used),
       latency_ms: Date.now() - turnStartedAt,
     });
   } catch (error) {

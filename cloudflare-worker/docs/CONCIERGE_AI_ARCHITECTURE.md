@@ -7,6 +7,8 @@ Context (recent transcript, prior assistant turn, guest/stay state, owner, langu
   ↓
 Semantic Controller (LLM)
   ↓
+LLM Gateway → qualified provider/model
+  ↓
 Validated Tool Plan
   ↓
 Validated Tool Executor
@@ -14,6 +16,8 @@ Validated Tool Executor
 Provider Adapter → Normalized Verified Results
   ↓
 Response Generator (LLM)
+  ↓
+LLM Gateway → qualified provider/model
   ↓
 Guardrail Validation
   ↓
@@ -43,6 +47,22 @@ The controller decides meaning. It can resolve a reply such as “No, why?”
 against the prior assistant question, detect a topic reset, retain constraints
 from an earlier request, or decide that a vague recommendation should remain
 within a hotel conversation. It requests `external_search`, not a provider.
+
+## 1.5 LLM gateway (separate from tools)
+
+`src/llm/` is the provider-neutral model boundary. Both the semantic
+controller and response generator use its stable structured-completion
+operation. The gateway normalizes provider outcomes to `success`,
+`rate_limited`, `timeout`, `provider_error`, or `invalid_output`, retaining
+only safe telemetry such as provider, model, purpose, latency and attempt
+count.
+
+The gateway is intentionally not a business tool and does not see an
+executable request, Airtable record ID, notification target, or arbitrary
+vendor URL. It can choose only the configured primary provider and one
+explicitly qualified fallback. A malformed provider response never becomes a
+semantic plan: the controller parser must validate every allowlisted enum and
+capability boolean first.
 
 ## 2. Validated intent and tools
 
