@@ -23,6 +23,14 @@ function jsonResponse(content, status = 200) {
   return Response.json({ choices: [{ message: { content } }] }, { status });
 }
 
+function openAiCompatibleEnv(overrides = {}) {
+  return env({
+    LLM_PROVIDER: 'openai-compatible', LLM_BASE_URL: 'https://provider.example/v1',
+    LLM_API_KEY: 'provider-test-key', LLM_MODEL: 'provider-test-model',
+    ...overrides,
+  });
+}
+
 function semanticRequest(message = 'No, why?') {
   return {
     purpose: 'semantic_controller',
@@ -59,6 +67,73 @@ test('response generator is validated through the same gateway contract', async 
   });
   assert.equal(result.status, 'success');
   assert.match(result.structured.reply, /verified collection/i);
+});
+
+test('OpenAI-compatible gateway accepts ordinary string assistant content', async () => {
+  const result = await completeText(openAiCompatibleEnv(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply exactly: OK' }],
+  }, { fetchImpl: async () => jsonResponse('OK') });
+  assert.equal(result.status, 'success');
+  assert.equal(result.content, 'OK');
+});
+
+test('OpenAI-compatible gateway normalizes a typed text content array', async () => {
+  const result = await completeText(openAiCompatibleEnv(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply' }],
+  }, { fetchImpl: async () => jsonResponse([{ type: 'text', text: 'A verified option.' }]) });
+  assert.equal(result.status, 'success');
+  assert.equal(result.content, 'A verified option.');
+});
+
+test('OpenAI-compatible gateway concatenates multiple typed text chunks only', async () => {
+  const result = await completeText(openAiCompatibleEnv(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply' }],
+  }, {
+    fetchImpl: async () => jsonResponse([
+      { type: 'text', text: 'First verified detail.' },
+      { type: 'citation', reference: 'internal metadata only' },
+      { type: 'text', text: 'Second verified detail.' },
+    ]),
+  });
+  assert.equal(result.status, 'success');
+  assert.equal(result.content, 'First verified detail.\nSecond verified detail.');
+});
+
+test('OpenAI-compatible gateway rejects typed arrays without usable text', async () => {
+  for (const content of [
+    [{ type: 'tool_call', arguments: '{"query":"private"}' }],
+    null,
+  ]) {
+    const result = await completeText(openAiCompatibleEnv(), {
+      purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply' }],
+    }, { fetchImpl: async () => jsonResponse(content) });
+    assert.equal(result.status, 'invalid_output');
+    assert.equal(result.content, '');
+  }
+});
+
+test('OpenAI-compatible gateway rejects malformed choices safely', async () => {
+  const result = await completeText(openAiCompatibleEnv(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply' }],
+  }, { fetchImpl: async () => Response.json({ choices: [{ message: null }] }) });
+  assert.equal(result.status, 'invalid_output');
+  assert.equal(result.content, '');
+});
+
+test('structured JSON remains strictly parsed after typed-text normalization', async () => {
+  const result = await completeStructured(openAiCompatibleEnv(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Return JSON only.' }],
+  }, {
+    parse: (content) => {
+      try {
+        const parsed = JSON.parse(content);
+        return typeof parsed.reply === 'string' ? parsed : null;
+      } catch { return null; }
+    },
+    fetchImpl: async () => jsonResponse([{ type: 'text', text: JSON.stringify({ reply: 'Verified JSON.' }) }]),
+  });
+  assert.equal(result.status, 'success');
+  assert.equal(result.structured.reply, 'Verified JSON.');
 });
 
 test('Groq adapter preserves the known Qwen transport shape', async () => {

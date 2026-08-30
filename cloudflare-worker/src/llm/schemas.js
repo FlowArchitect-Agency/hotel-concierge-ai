@@ -14,6 +14,9 @@ export const LLM_STATUSES = Object.freeze([
 
 const MAX_MESSAGES = 12;
 const MAX_MESSAGE_CHARS = 18_000;
+// The dynamic generator can explicitly opt into a longer offline-evaluation
+// timeout. Production callers retain the existing 30-second default.
+const MAX_REQUEST_TIMEOUT_MS = 90_000;
 
 function compact(value, max = MAX_MESSAGE_CHARS) {
   return String(value ?? '').replace(/\r\n/g, '\n').trim().slice(0, max);
@@ -39,7 +42,7 @@ export function normalizeLlmRequest(request = {}) {
     messages,
     temperature: Number.isFinite(Number(request.temperature)) ? Math.max(0, Math.min(2, Number(request.temperature))) : 0.2,
     max_tokens: Number.isFinite(maxTokens) ? Math.max(1, Math.min(4_096, Math.floor(maxTokens))) : 350,
-    timeout_ms: Number.isFinite(timeoutMs) ? Math.max(1_000, Math.min(60_000, Math.floor(timeoutMs))) : 30_000,
+    timeout_ms: Number.isFinite(timeoutMs) ? Math.max(1_000, Math.min(MAX_REQUEST_TIMEOUT_MS, Math.floor(timeoutMs))) : 30_000,
     structured_schema: request.structured_schema || null,
     conversation_id: compact(request.conversation_id, 160),
   };

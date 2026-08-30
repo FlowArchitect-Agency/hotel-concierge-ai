@@ -6,9 +6,22 @@ function endpointFor(baseUrl) {
   return value.endsWith('/chat/completions') ? value : `${value}/chat/completions`;
 }
 
+function textFromContent(content) {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  // OpenAI-compatible APIs may represent an assistant response as typed
+  // content chunks. Only explicit text chunks become conversational output:
+  // tool arguments, citations, reasoning, and other metadata stay out of the
+  // normalized assistant message.
+  return content
+    .map((chunk) => (chunk?.type === 'text' && typeof chunk.text === 'string' ? chunk.text.trim() : ''))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
 function contentFrom(data) {
-  const content = data?.choices?.[0]?.message?.content;
-  return typeof content === 'string' ? content.trim() : '';
+  return textFromContent(data?.choices?.[0]?.message?.content);
 }
 
 export async function completeOpenAICompatible({
