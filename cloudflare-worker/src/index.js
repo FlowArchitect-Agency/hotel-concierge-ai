@@ -13,7 +13,6 @@ import {
   matchingServices,
   operationalServiceType,
   OPERATIONAL_REPLIES,
-  parseExternalResults,
   parseGuestInput,
   parseModelJson,
   normalizeServiceType,
@@ -22,6 +21,12 @@ import {
   postCheckoutPositiveReply,
   shouldSearchExternal,
 } from './concierge.js';
+import {
+  applySemanticPlan,
+  buildSemanticControllerPrompt,
+  parseSemanticControllerOutput,
+} from './semantic-controller.js';
+import { buildToolRequests, createToolExecutor, toolResultMap } from './tools/index.js';
 import { buildDiscoveryBriefPdf } from './discovery-brief-pdf.js';
 
 const RECENT_REQUESTS = new Map();
@@ -496,13 +501,14 @@ async function fetchFacts(env) {
   const fallback = `- Hotel: ${env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris'}\n- City: ${env.HOTEL_CITY || 'Paris'}`;
   try {
     const payload = await airtable(env, 'Settings', { params: { pageSize: 50 } });
-    const lines = (payload.records || []).map((record) => {
+    const entries = (payload.records || []).map((record) => {
       const fields = record.fields || {};
-      return fields.Key ? `- ${fields.Key}: ${fields.Value ?? ''}` : '';
+      return fields.Key ? { key: String(fields.Key), value: String(fields.Value ?? '') } : null;
     }).filter(Boolean);
-    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', text: lines.join('\n') || fallback };
+    const text = entries.map((entry) => `- ${entry.key}: ${entry.value}`).join('\n') || fallback;
+    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', entries, text };
   } catch {
-    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', text: fallback };
+    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', entries: [], text: fallback };
   }
 }
 
@@ -555,69 +561,52 @@ function languagePreferenceResponse(input) {
   };
 }
 
-function locationSearchHint(location) {
-  const value = String(location || '').trim();
-  if (/eiffel tower|tour eiffel/i.test(value)) return 'Paris 7th arrondissement';
-  return value;
-}
-
-async function googleSearch(env, query, classification) {
-  const url = new URL('https://app.scrapingbee.com/api/v1/google');
-  url.searchParams.set('search', query);
-  url.searchParams.set('country_code', 'fr');
-  url.searchParams.set('language', 'en');
-  url.searchParams.set('light_request', 'true');
-  try {
-    const result = await fetch(url, { headers: { Authorization: `Bearer ${env.SCRAPINGBEE_API_KEY}` } });
-    if (!result.ok) return [];
-    return parseExternalResults(await result.json(), classification);
-  } catch {
-    return [];
-  }
-}
-
-async function externalSearch(env, input, classification) {
-  if (!env.SCRAPINGBEE_API_KEY) return [];
-  const city = env.HOTEL_CITY || 'Paris';
-  const location = locationSearchHint(classification.location);
-  // Keep purpose-built searches for cuisines and final-day itineraries: they
-  // carry stronger constraints than a general semantic summary. The planner
-  // supplies a query only for genuinely unfamiliar discovery requests.
-  const plannedQuery = !classification.cuisine && classification.category !== 'itinerary'
-    ? String(classification.searchQuery || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 180)
-    : '';
-  const primaryQuery = plannedQuery
-    ? `${plannedQuery} official website`
-    : classification.cuisine
-      ? `${classification.cuisine.label} restaurant ${location || city} official website`
-      : classification.category === 'itinerary'
-        ? `${city} Louvre museum Seine cruise official website`
-        : `${classification.category || 'local service'} ${city} official website`;
-  const options = await googleSearch(env, primaryQuery, classification);
-  if (options.length) return options;
-
-  // A combined itinerary query can occasionally return no useful result from
-  // a changing search index. Retry with a broader, guest-safe itinerary
-  // phrasing before asking the guest to refine a perfectly clear request.
-  if (classification.category === 'itinerary') {
-    return googleSearch(env, `${city} museum visit and Seine cruise official website`, classification);
-  }
-
-  // Google results are volatile. If a narrowly located cuisine search yields
-  // no directly verifiable venue, retry once with the same strict cuisine but
-  // city-wide scope instead of telling the guest we found nothing.
-  if (classification.cuisine && location) {
-    return googleSearch(env, `${classification.cuisine.label} restaurant ${city} official website`, classification);
-  }
-  return [];
-}
-
 function preferenceForOneRecommendation(message) {
   const text = String(message ?? '').toLowerCase();
   return /\b(the best|best one|only one|just one|one that'?s best|one excellent)\b/.test(text);
 }
 
-async function callGroq(env, prompt, { maxTokens = 350, router = false } = {}) {
+function serviceFromTool(service) {
+  return {
+    name: String(service?.name || '').trim(),
+    category: String(service?.category || '').trim(),
+    description: String(service?.description || '').trim(),
+    tags: String(service?.tags || '').trim(),
+    subType: String(service?.sub_type || '').trim(),
+    price: service?.price_eur ?? null,
+    duration: service?.duration_mins ?? null,
+    location: String(service?.location || '').trim(),
+    phone: String(service?.phone || '').trim(),
+    imageUrl: String(service?.image_url || '').trim(),
+    websiteUrl: String(service?.website_url || '').trim(),
+    isPartner: Boolean(service?.is_partner),
+    active: true,
+  };
+}
+
+function uniqueServices(services) {
+  const seen = new Set();
+  return services.filter((service) => {
+    const key = String(service?.name || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function readOnlyObservability(input, metadata) {
+  // This diagnostic shape is deliberately opt-in and test-only; it never
+  // changes public chat responses and contains no prompt/reasoning/secrets.
+  if (input?.testMode !== 'read_only' || !/^task13b_/i.test(String(input?.testRunId || ''))) return null;
+  return metadata;
+}
+
+function attachReadOnlyObservability(result, input, metadata) {
+  const observability = readOnlyObservability(input, metadata);
+  return observability ? { ...result, observability } : result;
+}
+
+async function callGroq(env, prompt, { maxTokens = 350, router = false, jsonMode = true, validateContent = null } = {}) {
   const models = [
     router ? (env.GROQ_ROUTER_MODEL || env.GROQ_MODEL || 'qwen/qwen3.6-27b') : (env.GROQ_MODEL || 'qwen/qwen3.6-27b'),
     env.GROQ_FALLBACK_MODEL || 'openai/gpt-oss-20b',
@@ -630,7 +619,12 @@ async function callGroq(env, prompt, { maxTokens = 350, router = false } = {}) {
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2,
         max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
+        // The response generator needs strict JSON. The primary controller
+        // model is more reliable when allowed to emit plain JSON text, while
+        // a fallback reasoning model needs JSON mode to reserve tokens for a
+        // usable answer rather than hidden reasoning. Both are still passed
+        // through the same strict controller parser below.
+        ...(jsonMode === true || (jsonMode === 'controller' && !model.startsWith('qwen/')) ? { response_format: { type: 'json_object' } } : {}),
         ...(model.startsWith('qwen/') ? { reasoning_effort: 'none', reasoning_format: 'hidden' } : {}),
       };
       const result = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -644,13 +638,45 @@ async function callGroq(env, prompt, { maxTokens = 350, router = false } = {}) {
       }
       const data = await result.json();
       const content = data.choices?.[0]?.message?.content;
-      if (content) return { content, providerFailure: '' };
-      failure = 'empty_response';
+      if (content && (!validateContent || validateContent(content))) return { content, providerFailure: '' };
+      failure = content ? 'invalid_response' : 'empty_response';
     } catch {
       failure = 'request_error';
     }
   }
   return { content: '', providerFailure: failure || 'provider_unavailable' };
+}
+
+async function semanticConversationController(env, input, history, { facts, pendingContext = '', hint = {} } = {}) {
+  const prompt = buildSemanticControllerPrompt({
+    input,
+    history,
+    context: {
+      guestContext: facts?.text || `${facts?.hotelName || env.HOTEL_NAME || 'Hotel'} in ${facts?.hotelCity || env.HOTEL_CITY || 'Paris'}`,
+      pendingContext,
+    },
+    capabilities: ['hotel_facts', 'hotel_services', 'external_search', 'guest_request', 'human_takeover'],
+  });
+  // The validated controller contract is deliberately compact. Keeping this
+  // within the existing router budget avoids spending latency on explanation
+  // the controller is not allowed to provide.
+  const provider = await callGroq(env, prompt, {
+    maxTokens: 320,
+    // The controller needs the same capable conversational model as response
+    // composition. Keep the legacy lightweight router model only for the
+    // conservative outage fallback below.
+    router: false,
+    jsonMode: 'controller',
+    // A syntactically successful provider response is not enough to direct
+    // the app. Retry the configured fallback model when the controller did
+    // not produce a validated machine plan.
+    validateContent: (content) => parseSemanticControllerOutput(content, { language: input.language, hint }).valid,
+  });
+  const plan = parseSemanticControllerOutput(provider.content, { language: input.language, hint });
+  return {
+    plan: { ...plan, providerFailure: provider.providerFailure || plan.providerFailure },
+    providerFailure: provider.providerFailure || plan.providerFailure,
+  };
 }
 
 const ROUTES = new Set(['greeting', 'hotel_faq', 'partner_catalog', 'partner_request', 'external_discovery', 'conversation']);
@@ -2044,7 +2070,7 @@ function escalationResponse(input) {
 }
 
 function operationalResponse(input) {
-  if (!isOperationalRequest(input.message)) return null;
+  if (!isOperationalRequest(input.message) || hasMultipleIndependentNeeds(input.message)) return null;
   const serviceType = operationalServiceType(input.message);
   const reply = OPERATIONAL_REPLIES[input.language] ?? OPERATIONAL_REPLIES.en;
   const outcome = {
@@ -2064,6 +2090,18 @@ function operationalResponse(input) {
   return chatResponseFromOutcome(outcome, { category: serviceType.toLowerCase(), isOperational: true, hasIntent: true }, input.language, [], '', null, input.message);
 }
 
+function hasMultipleIndependentNeeds(message) {
+  const clauses = String(message ?? '')
+    .split(/(?:\s*[;.]\s*|\s+\b(?:and|also|plus|as well as)\b\s+)/i)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+  if (clauses.length < 2) return false;
+  const intents = clauses.map((clause) => classifyRequest(clause));
+  const operational = intents.some((intent) => intent.isOperational);
+  const distinctCategories = new Set(intents.map((intent) => intent.category).filter(Boolean));
+  return operational && (distinctCategories.size > 1 || intents.some((intent) => intent.hasIntent && !intent.isOperational));
+}
+
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   let input;
   try {
@@ -2071,6 +2109,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   } catch (err) {
     throw err;
   }
+  const turnStartedAt = Date.now();
 
   try {
     const instantPostCheckout = postCheckoutResponse(input);
@@ -2125,15 +2164,6 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     }
     let classification = classifyRequest(input.message);
     reportStatus('Reviewing the details of your request\u2026');
-    // Context comes before generic one-word greeting handling. A plain "no"
-    // after a question is an answer, not a new conversation or a decline.
-    const relationshipFollowUp = relationshipFollowUpResponse(input);
-    if (relationshipFollowUp) {
-      if (!input.testMode || input.testMode === 'write_verified') {
-        ctx.waitUntil(persistConversation(env, input, { reply: relationshipFollowUp.reply, requests: [] }).catch(() => undefined));
-      }
-      return relationshipFollowUp;
-    }
     const instantGreeting = simpleGreetingResponse(input);
     if (instantGreeting) {
       if (!input.testMode || input.testMode === 'write_verified') {
@@ -2148,6 +2178,8 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       }
       return languagePreference;
     }
+    // Broad, explicit stay-planning is a safe no-tool fast path. Ambiguous
+    // follow-ups still proceed to the semantic controller below.
     const instantStayPlanning = stayPlanningResponse(input, classification);
     if (instantStayPlanning) {
       if (!input.testMode || input.testMode === 'write_verified') {
@@ -2195,7 +2227,32 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     ]);
     classification = inheritConversationContext(classification, history, input.message);
     reportStatus('Considering the most suitable next step\u2026');
-    classification = await enrichSemanticRoute(env, input, history, classification).catch(() => classification);
+    const semantic = await semanticConversationController(env, input, history, { facts, hint: classification }).catch(() => ({ plan: null, providerFailure: 'semantic_unavailable' }));
+    if (semantic.plan?.valid) {
+      // The controller may resolve a contextual language switch, but only to
+      // a value accepted by its strict schema.
+      input.language = semantic.plan.language || input.language;
+      classification = applySemanticPlan(classification, semantic.plan);
+    } else {
+      // Provider failure remains conservative. The legacy response exists
+      // solely to preserve a coherent, harmless reply during an outage; it is
+      // not the normal interpretation path.
+      const relationshipFollowUp = relationshipFollowUpResponse(input);
+      if (relationshipFollowUp) {
+        if (!input.testMode || input.testMode === 'write_verified') {
+          ctx.waitUntil(persistConversation(env, input, { reply: relationshipFollowUp.reply, requests: [] }).catch(() => undefined));
+        }
+        return relationshipFollowUp;
+      }
+      classification = await enrichSemanticRoute(env, input, history, classification).catch(() => classification);
+    }
+    const semanticStayPlanning = stayPlanningResponse(input, classification);
+    if (semanticStayPlanning) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: semanticStayPlanning.reply, requests: [] }).catch(() => undefined));
+      }
+      return semanticStayPlanning;
+    }
     const serviceSet = matchingServices(serviceRecords, classification);
     // Some short replies only acquire a category after history is considered.
     // Re-run the same hotel-first response with that resolved context before
@@ -2204,10 +2261,26 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       ? null
       : hotelFirstResponse(input, classification, serviceSet.all);
     if (contextualHotelFirst) {
+      const presentationRequests = buildToolRequests({ plan: semantic.plan, classification, input })
+        .filter((request) => ['hotel_facts', 'hotel_services'].includes(request.tool));
+      const presentationResults = await createToolExecutor({
+        env, mode: input.testMode, records: serviceRecords, source: facts,
+        context: { city: env.HOTEL_CITY || 'Paris', classification }, conversationOwner: input.conversationOwner || 'ai',
+      }).execute(presentationRequests);
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, { reply: contextualHotelFirst.reply, requests: [] }).catch(() => undefined));
       }
-      return contextualHotelFirst;
+      return attachReadOnlyObservability(contextualHotelFirst, input, {
+        semantic_route: semantic.plan?.interactionType || classification.route || 'conversation',
+        tools_requested: presentationRequests.map((request) => request.tool),
+        tools_executed: presentationResults.map((result) => result.tool),
+        tool_statuses: Object.fromEntries(presentationResults.map((result) => [result.tool, result.status])),
+        controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
+        response_model_calls: 0,
+        provider_used: null,
+        fallback_used: false,
+        latency_ms: Date.now() - turnStartedAt,
+      });
     }
     // Semantic routing can recognize catalogue wording that the fast phrase
     // matcher did not. Keep this path deterministic as well, so it returns the
@@ -2229,30 +2302,77 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       return chatResponseFromOutcome(directBooking, classification, input.language);
     }
     const partnerMatches = serviceSet.matching.filter((service) => service.isPartner);
-    const promptServices = classification.route === 'partner_catalog' || classification.contextualHotelCatalogue
-      ? serviceSet.all.filter((service) => service.isPartner)
-      : partnerMatches;
-    let externalOptions = [];
-    if (shouldSearchExternal(classification, partnerMatches)) {
+    // The tool executor is deliberately bounded to one request per capability
+    // for this turn. It receives only strict semantic-plan inputs and returns
+    // normalized results; it cannot recursively call model-selected providers.
+    const toolRequests = buildToolRequests({ plan: semantic.plan, classification, input });
+    if (shouldSearchExternal(classification, partnerMatches) && !toolRequests.some((request) => request.tool === 'external_search')) {
+      toolRequests.push({
+        tool: 'external_search',
+        input: {
+          query: input.message,
+          category: classification.category || 'experience',
+          location: classification.location || '',
+          constraints: classification.cuisine ? ['cuisine'] : [],
+          language: input.language,
+        },
+      });
+    }
+    const toolExecutor = createToolExecutor({
+      env,
+      mode: input.testMode,
+      records: serviceRecords,
+      source: facts,
+      context: { city: env.HOTEL_CITY || 'Paris', classification },
+      conversationOwner: input.conversationOwner || 'ai',
+    });
+    if (toolRequests.some((request) => request.tool === 'external_search')) {
       reportStatus('Searching current Paris addresses\u2026');
-      externalOptions = await externalSearch(env, input, classification).catch(() => []);
-      if (preferenceForOneRecommendation(input.message)) externalOptions = externalOptions.slice(0, 1);
-      reportStatus('Curating only independently verified matches\u2026');
     } else {
       reportStatus('Reviewing the hotel\u2019s preferred collection\u2026');
     }
+    const executedTools = await toolExecutor.execute(toolRequests);
+    const toolResults = {
+      hotel_facts: { tool: 'hotel_facts', status: 'not_needed', data: null, error_code: null, meta: {} },
+      hotel_services: { tool: 'hotel_services', status: 'not_needed', data: null, error_code: null, meta: {} },
+      external_search: { tool: 'external_search', status: 'not_needed', data: null, error_code: null, meta: {} },
+      guest_request: { tool: 'guest_request', status: 'not_needed', data: null, error_code: null, meta: {} },
+      human_takeover: { tool: 'human_takeover', status: 'not_needed', data: null, error_code: null, meta: {} },
+      ...toolResultMap(executedTools),
+    };
+    const serviceToolMatches = (toolResults.hotel_services?.data?.services || []).map(serviceFromTool).filter((service) => service.isPartner);
+    // An explicit external request must never be silently replaced with a
+    // hotel partner merely because the search tool is unavailable.
+    const promptServices = classification.externalDiscovery
+      ? []
+      : classification.route === 'partner_catalog' || classification.contextualHotelCatalogue
+        ? serviceSet.all.filter((service) => service.isPartner)
+        : uniqueServices([...partnerMatches, ...serviceToolMatches]);
+    let externalOptions = toolResults.external_search?.data?.results || [];
+    if (preferenceForOneRecommendation(input.message)) externalOptions = externalOptions.slice(0, 1);
+    if (toolRequests.some((request) => request.tool === 'external_search')) reportStatus('Curating only independently verified matches\u2026');
     if (classification.externalDiscovery && externalOptions.length) {
       const outcome = enforceContract(
         { reply: '', intent: 'service_request', serviceType: classification.category, requiresHuman: true, requests: [] },
-        { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions, inputMessage: input.message },
+        { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions, inputMessage: input.message, toolResults },
       );
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
       }
-      return chatResponseFromOutcome(outcome, classification, input.language);
+      return attachReadOnlyObservability(chatResponseFromOutcome(outcome, classification, input.language), input, {
+        semantic_route: semantic.plan?.interactionType || classification.route || 'conversation',
+        tools_requested: toolRequests.map((request) => request.tool),
+        tools_executed: executedTools.map((result) => result.tool),
+        tool_statuses: Object.fromEntries(Object.entries(toolResults).map(([tool, result]) => [tool, result.status])),
+        controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
+        response_model_calls: 0,
+        provider_used: toolResults.external_search?.meta?.provider_used || null,
+        fallback_used: Boolean(toolResults.external_search?.meta?.fallback_used),
+        latency_ms: Date.now() - turnStartedAt,
+      });
     }
     reportStatus('Preparing a considered recommendation\u2026');
-    const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts });
+    const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts, semanticPlan: semantic.plan, toolResults });
     const provider = await callGroq(env, prompt).catch((err) => ({ content: '', providerFailure: err.message || 'groq_error' }));
     const model = parseModelJson(provider.content);
     const outcome = enforceContract(model, {
@@ -2263,12 +2383,23 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       externalOptions,
       inputMessage: input.message,
       providerFailure: provider.providerFailure,
+      toolResults,
     });
 
     if (!input.testMode || input.testMode === 'write_verified') {
       ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
     }
-    return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message);
+    return attachReadOnlyObservability(chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message), input, {
+      semantic_route: semantic.plan?.interactionType || classification.route || 'conversation',
+      tools_requested: toolRequests.map((request) => request.tool),
+      tools_executed: executedTools.map((result) => result.tool),
+      tool_statuses: Object.fromEntries(Object.entries(toolResults).map(([tool, result]) => [tool, result.status])),
+      controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
+      response_model_calls: provider.content ? 1 : 0,
+      provider_used: toolResults.external_search?.meta?.provider_used || null,
+      fallback_used: Boolean(toolResults.external_search?.meta?.fallback_used),
+      latency_ms: Date.now() - turnStartedAt,
+    });
   } catch (error) {
     console.error('Graceful fallback in resolveChat:', error);
     const fallbackReply = 'I apologize, but I am experiencing a brief system delay and could not prepare your request. Please try again shortly or contact the front desk directly for immediate assistance.';

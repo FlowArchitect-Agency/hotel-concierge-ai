@@ -217,6 +217,9 @@ export function inferLanguage(message) {
   if (/[\u0600-\u06ff]/.test(text)) return 'ar';
   if (/[\u3040-\u30ff]/.test(text)) return 'ja';
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+  // Inverted punctuation is an unambiguous Spanish signal even in a short
+  // contextual reply such as a question about a previously shown option.
+  if (/[¿¡]/.test(String(message || ''))) return 'es';
   const scores = Object.fromEntries(Object.keys(LATIN_LANGUAGE_SIGNALS).map((language) => [language, scoreLatinLanguage(message, language)]));
   const ranked = Object.entries(scores).sort((left, right) => right[1] - left[1]);
   const [language, score] = ranked[0];
@@ -614,6 +617,12 @@ export function formatServices(services) {
 }
 
 export function shouldSearchExternal(classification, services) {
+  // A validated semantic plan is the authority for an ambiguous natural turn.
+  // It asks for the provider-independent capability, while deterministic code
+  // still verifies and executes the actual search.
+  if (classification?.semanticPlan?.valid) {
+    return Boolean(classification.semanticPlan.toolNeeds?.externalSearch && classification.externalDiscovery);
+  }
   if (!classification.hasIntent || ['greeting', 'hotel_faq', 'partner_catalog', 'stay_planning'].includes(classification.route)) return false;
   // A vague continuation of a known hotel discussion stays hotel-first. A
   // later semantic step can still use the full verified collection to answer
@@ -845,7 +854,7 @@ function conciseReply(value) {
   return sentences.slice(0, 2).join(' ').slice(0, 360).trim();
 }
 
-export function enforceContract(model, { language, classification, matching, excluded, externalOptions, inputMessage = '', providerFailure = '' }) {
+export function enforceContract(model, { language, classification, matching, excluded, externalOptions, inputMessage = '', providerFailure = '', toolResults = {} }) {
   const isAngry = Boolean(classification?.hasEscalation);
   const operationalType = classification?.isOperational ? operationalServiceType(inputMessage || classification?.rawMessage || '') : '';
   if (isAngry) {
@@ -872,7 +881,9 @@ export function enforceContract(model, { language, classification, matching, exc
   const reply = normalized(replyText);
   const mentionsExcluded = Boolean(classification.cuisine && excludedNames.some((name) => reply.includes(normalized(name))));
   const mentionsExternal = optionNames.some((name) => reply.includes(normalized(name)));
-  const needsRefinement = Boolean((classification.cuisine || classification.externalDiscovery) && !matching.length && !externalOptions.length);
+  const externalToolUnavailable = classification.externalDiscovery
+    && ['unavailable', 'error', 'no_results'].includes(toolResults?.external_search?.status);
+  const needsRefinement = Boolean((classification.cuisine || classification.externalDiscovery) && !matching.length && !externalOptions.length && !externalToolUnavailable);
   let finalReply = conciseReply(replyText);
   let requests = model.requests ?? [];
 
@@ -895,7 +906,7 @@ export function enforceContract(model, { language, classification, matching, exc
   const isRefusal = hasNegation(rawMsg);
   const isExplicitlyExternal = classification?.wantsExternal || guestInsistsOnExternal(rawMsg);
 
-  const suppressPartnerSuffix = isAngry || isSmalltalk || isInformational || isRefusal || isExplicitlyExternal || classification?.isOperational || classification?.route === 'partner_catalog' || !classification?.hasIntent;
+  const suppressPartnerSuffix = isAngry || isSmalltalk || isInformational || isRefusal || isExplicitlyExternal || classification?.externalDiscovery || classification?.isOperational || classification?.route === 'partner_catalog' || !classification?.hasIntent;
 
   if (!suppressPartnerSuffix && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
     const service = matching[0];
@@ -931,7 +942,7 @@ export function enforceContract(model, { language, classification, matching, exc
   };
 }
 
-export function buildPrompt({ input, classification, history, services, externalOptions, facts }) {
+export function buildPrompt({ input, classification, history, services, externalOptions, facts, semanticPlan = null, toolResults = {} }) {
   const historyText = history.length
     ? history.map((item) => `${item.role}: ${item.message}`).join('\n')
     : '(no prior conversation)';
@@ -947,13 +958,14 @@ Hard rules:
 - CANCELLATIONS: When the guest cancels a previously requested service, acknowledge the cancellation clearly. Do not continue to offer or create the cancelled service; if another request is present in the same message, handle that new request separately.
 - REFUSALS & DECLINED OFFERS: When the guest declines an offer, says no thanks, states they do not want to book a service/tour/chauffeur, or prefers to explore on their own, respect their choice immediately. NEVER create booking requests or push the declined service. Provide warm, helpful hospitality for independent exploration.
 - SENTIMENT OVERRIDE: If the guest expresses frustration, anger, complaint, or requests a manager/human/reception, apologize sincerely and empathetically. NEVER offer upsells, services, or room upgrades. Set requires_human: true.
-- Use only the facts, partner services, and external search results below.
+- Use only the VERIFIED FACTS, VERIFIED HOTEL SERVICES, and VERIFIED TOOL RESULTS below. Do not infer a missing venue, price, policy, opening hour, availability, booking, notification, or URL.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
 - Partner services are preferred for leisure & hospitality inquiries. State a catalog price only when it is supplied below.
 - Keep normal replies short and human. Do not dump the hotel database into a chat bubble; structured cards carry service detail where the client supports them.
 - External results are non-partner suggestions. Never invent a price, rating, address, link, or availability. Keep reply_text to one or two elegant sentences; cards are rendered separately by the website.
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
 - Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request. Ask at most one useful clarifying question at a time. Relationship questions must feel hospitable, never like a sales funnel; human staff retains control.
+- If a requested tool is unavailable, acknowledge that limitation naturally and helpfully using the guest's context. Do not substitute a hotel service for an explicitly external request and do not claim a venue was found.
 
 Return exactly this JSON shape:
 {"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"Housekeeping|Maintenance|Spa & Wellness|Transport|Dining|Concierge|General Manager","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
@@ -967,12 +979,18 @@ ${classification.cuisine?.label ?? 'none'}
 CONVERSATION HISTORY:
 ${historyText}
 
-PARTNER SERVICES:
+CONVERSATIONAL CONTEXT (semantic interpretation, not factual data):
+${semanticPlan?.contextSummary || '(none)'}
+
+VERIFIED TOOL RESULTS:
+${JSON.stringify(toolResults || {})}
+
+VERIFIED HOTEL SERVICES:
 ${formatServices(services)}
 
 EXTERNAL SEARCH RESULTS:
 ${formatExternalOptions(externalOptions, classification)}
 
-HOTEL FACTS:
+VERIFIED FACTS:
 ${facts.text || '(no additional hotel facts configured)'}`;
 }
