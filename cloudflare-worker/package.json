@@ -11,7 +11,10 @@
     "test:semantic:live": "node test/live-semantic-evals.mjs",
     "test:tools": "node --test test/tools.test.js",
     "test:multi-tools": "node --test test/multi-tool-scenarios.test.js",
-    "test:tools:live": "node test/live-tool-evals.mjs"
+    "test:tools:live": "node test/live-tool-evals.mjs",
+    "test:benchmark": "node --test test/conversation-benchmark.test.js",
+    "benchmark:validate": "node evals/conversation-benchmark/run.mjs",
+    "benchmark:smoke": "node evals/conversation-benchmark/live-smoke.mjs"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1"
