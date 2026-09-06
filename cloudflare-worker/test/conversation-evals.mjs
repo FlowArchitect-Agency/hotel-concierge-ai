@@ -59,9 +59,68 @@ function routerResult(prompt) {
   return { route: 'conversation', category: null, search_query: '' };
 }
 
+function categoryFromConversation(prompt) {
+  const text = String(prompt || '').toLowerCase();
+  if (/\b(?:spa|massage|hammam|wellness)\b/.test(text)) return 'spa';
+  if (/\b(?:dining|dinner|breakfast|restaurant|chef.?s table|le jardin)\b/.test(text)) return 'restaurant';
+  if (/\b(?:room|suite|accommodation)\b/.test(text)) return 'accommodation';
+  if (/\b(?:transfer|airport|cdg|orly|gare)\b/.test(text)) return 'transport';
+  if (/\b(?:tour|louvre|versailles)\b/.test(text)) return 'tour';
+  if (/\b(?:experience|anniversary|romantic)\b/.test(text)) return 'experience';
+  return null;
+}
+
+// The production flow now always gives a history-bearing turn to the semantic
+// controller. Keep this deterministic fixture representative of that contract
+// rather than falling back to the retired keyword-context inheritance path.
+function semanticControllerResult(prompt) {
+  const latest = (prompt.match(/LATEST GUEST MESSAGE:\n([\s\S]*)$/)?.[1] || '').toLowerCase();
+  const conversation = (prompt.match(/RECENT CONVERSATION:\n([\s\S]*?)\n\nLATEST GUEST MESSAGE:/)?.[1] || '').toLowerCase();
+  const routed = routerResult(`LATEST GUEST MESSAGE:\n${latest}`);
+  let route = routed.route;
+  let category = routed.category || categoryFromConversation(latest);
+  const vagueFollowUp = /\b(?:what do you suggest|which one|the other one|not that one|yes please|no,? something else|something different|another|other vibe|more casual|quiet suite)\b/.test(latest);
+  const returningVisitorThread = /first time in paris|returning guest|already knows paris/.test(conversation);
+  if (route === 'conversation' && vagueFollowUp && !returningVisitorThread) category ||= categoryFromConversation(conversation);
+  if (route === 'conversation' && !category && !returningVisitorThread) category = categoryFromConversation(conversation);
+  if (route === 'conversation' && /\b(?:not that|something smaller|less touristy|somewhere intimate)\b/.test(latest) && /\b(?:jazz|nightlife|fixture jazz)\b/.test(conversation)) {
+    route = 'external_discovery';
+    category = 'experience';
+  }
+  if (route === 'conversation' && category && !returningVisitorThread) route = 'partner_request';
+  const hasHistory = conversation && conversation !== '(no previous conversation)';
+  const external = route === 'external_discovery';
+  const hotelService = route === 'partner_request' || route === 'partner_catalog';
+  return {
+    interaction_type: external ? 'external_discovery' : (hotelService ? 'hotel_service' : 'conversation'),
+    guest_goal: external ? 'Find a current Paris recommendation' : (hotelService ? 'Continue the active hotel service discussion' : 'Answer the current conversational follow-up'),
+    context_summary: hasHistory ? 'Use the immediately preceding hotel conversation.' : '',
+    active_goal: external ? 'external_discovery' : (hotelService ? 'hotel_service' : 'conversation'),
+    active_constraints: /quiet|calm/.test(latest) ? ['quiet'] : [],
+    preference_constraints: [], referenced_entities: [], rejected_entities: [], superseded_goals: [],
+    location_constraint: '', time_constraint: '', service_category: category,
+    additional_service_categories: [], reference_target: hasHistory && !returningVisitorThread ? 'previous_service' : 'none',
+    needs_hotel_facts: false, needs_hotel_services: hotelService, needs_external_search: external,
+    needs_guest_request: false, needs_human: false, language: 'en', confidence: 0.9,
+    clarification_needed: false, clarification_reason: '', topic_changed: false, topic_reset: false,
+  };
+}
+
 function modelResult(prompt) {
   const message = (prompt.match(/GUEST MESSAGE:\n([\s\S]*?)\n\nREQUIRED CUISINE/)?.[1] || '').toLowerCase();
   let replyText = 'I can help you narrow that down with one thoughtful next step.';
+  if (/^(?:no\b|i(?:'|’)ve been here)/.test(message)) {
+    replyText = 'Since you already know Paris, I can focus on more local ideas rather than first-time sights.';
+  }
+  if (/^yes\b/.test(message)) {
+    replyText = 'Wonderful — I can help shape a few ideas and plans for your stay in Paris.';
+  }
+  if (/\bno\b.*\bwhy\b|\bwhy\b|\bwhat\b/.test(message)) {
+    replyText = 'I asked because it helps me tailor ideas for a returning guest who already knows Paris.';
+  }
+  if (/what do you suggest/.test(message) && /first time in paris|returning guest|already knows paris/.test(prompt.toLowerCase())) {
+    replyText = 'For a returning guest, I would begin with a quieter dinner, a wellness moment, or a more local Paris experience.';
+  }
   if (/romantic|romant/.test(message)) replyText = 'For something romantic, a memorable dinner or a couples wellness experience would be a thoughtful place to begin. Which feels more like your evening?';
   if (/different|another|else/.test(message)) replyText = 'Of course. I can suggest a different option from the verified hotel collection—would you prefer dining, wellness, or an experience?';
   if (/which|quel|cual/.test(message)) replyText = 'I can help you choose between the verified options already discussed. Would you prefer the more relaxed or more celebratory choice?';
@@ -83,7 +142,9 @@ globalThis.fetch = async (url, options = {}) => {
   if (target.includes('/Settings')) return Response.json({ records: [] });
   if (target.includes('api.groq.com')) {
     const prompt = JSON.parse(options.body).messages?.[0]?.content || '';
-    const content = /You are the intent router/i.test(prompt) ? routerResult(prompt) : modelResult(prompt);
+    const content = /semantic conversation controller/i.test(prompt)
+      ? semanticControllerResult(prompt)
+      : (/You are the intent router/i.test(prompt) ? routerResult(prompt) : modelResult(prompt));
     return Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
   }
   if (target.includes('scrapingbee')) {

@@ -29,6 +29,12 @@ import {
 import { buildToolRequests, createToolExecutor, toolResultMap } from './tools/index.js';
 import { buildDiscoveryBriefPdf } from './discovery-brief-pdf.js';
 import { completeStructured, llmConfigurationStatus } from './llm/index.js';
+import {
+  buildResponseContract,
+  buildResponseRepairPrompt,
+  contextualSafeFallback,
+  validateResponseAdherence,
+} from './response-contract.js';
 
 const RECENT_REQUESTS = new Map();
 const RECENT_WHATSAPP_MESSAGES = new Map();
@@ -596,16 +602,196 @@ function uniqueServices(services) {
   });
 }
 
+function normalizedEntity(value) {
+  return normalized(String(value || '')).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function isRejectedEntity(name, plan) {
+  const candidate = normalizedEntity(name);
+  if (!candidate) return false;
+  return (plan?.rejectedEntities || []).some((entity) => {
+    const rejected = normalizedEntity(entity);
+    // The semantic controller resolves the entity. Code only performs a
+    // bounded name comparison to avoid rendering that same verified item.
+    return rejected && (candidate === rejected || candidate.includes(rejected) || rejected.includes(candidate));
+  });
+}
+
+function withoutRejectedServices(services, plan) {
+  return (services || []).filter((service) => !isRejectedEntity(service?.name, plan));
+}
+
+function withoutRejectedOptions(options, plan) {
+  return (options || []).filter((option) => !isRejectedEntity(option?.name, plan));
+}
+
+function visibleToolResults(toolResults, plan) {
+  const hotelServices = toolResults?.hotel_services;
+  const externalSearch = toolResults?.external_search;
+  return {
+    ...toolResults,
+    hotel_services: hotelServices?.data?.services
+      ? { ...hotelServices, data: { ...hotelServices.data, services: withoutRejectedServices(hotelServices.data.services, plan) } }
+      : hotelServices,
+    external_search: externalSearch?.data?.results
+      ? { ...externalSearch, data: { ...externalSearch.data, results: withoutRejectedOptions(externalSearch.data.results, plan) } }
+      : externalSearch,
+  };
+}
+
+function isReadOnlyTask13Diagnostic(input) {
+  return input?.testMode === 'read_only' && /^task13(?:b|e)_/i.test(String(input?.testRunId || ''));
+}
+
 function readOnlyObservability(input, metadata) {
   // This diagnostic shape is deliberately opt-in and test-only; it never
   // changes public chat responses and contains no prompt/reasoning/secrets.
-  if (input?.testMode !== 'read_only' || !/^task13b_/i.test(String(input?.testRunId || ''))) return null;
+  if (!isReadOnlyTask13Diagnostic(input)) return null;
   return metadata;
 }
 
 function attachReadOnlyObservability(result, input, metadata) {
   const observability = readOnlyObservability(input, metadata);
   return observability ? { ...result, observability } : result;
+}
+
+const RESPONSE_ADHERENCE_SEVERITY = Object.freeze({
+  tool_failure_presented_as_success: 'HARD_SAFETY',
+  resolved_reference_not_addressed: 'SEMANTIC',
+  active_constraints_not_reflected: 'SEMANTIC',
+  rejected_entity_reintroduced: 'SEMANTIC',
+  superseded_goal_continued: 'SEMANTIC',
+  response_mode_mismatch: 'METADATA',
+  addressed_goal_metadata_mismatch: 'METADATA',
+  addressed_reference_metadata_mismatch: 'METADATA',
+  missing_reply: 'SOFT_QUALITY',
+});
+
+function redactDiagnosticText(value, max = 2_400) {
+  return String(value ?? '')
+    .replace(/(?:gsk_|sk-|nvapi-|AIza|bearer\s+)[a-z0-9._-]+/ig, '[redacted credential-like content]')
+    .replace(/[\r\n]+/g, '\n')
+    .slice(0, max);
+}
+
+function diagnosticText(value, max = 420) {
+  return redactDiagnosticText(value, max).trim();
+}
+
+function responseContractSnapshot(contract = {}) {
+  return {
+    response_mode: diagnosticText(contract.response_mode, 80),
+    active_goal: diagnosticText(contract.active_goal, 160),
+    reference_type: diagnosticText(contract.reference, 80),
+    reference_summary: diagnosticText(contract.reference_summary, 420),
+    active_constraints: (contract.active_constraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    preference_constraints: (contract.preference_constraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    rejected_entities: (contract.rejected_entities || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    superseded_goals: (contract.superseded_goals || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    required_behaviors: (contract.required_behavior || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    prohibited_behaviors: (contract.prohibited_behavior || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+  };
+}
+
+function semanticPlanSnapshot(plan = {}) {
+  return {
+    valid: Boolean(plan?.valid),
+    interaction_type: diagnosticText(plan?.interactionType, 80),
+    active_goal: diagnosticText(plan?.activeGoal, 160),
+    reference_target: diagnosticText(plan?.referenceTarget, 80),
+    guest_goal: diagnosticText(plan?.guestGoal, 420),
+    context_summary: diagnosticText(plan?.contextSummary, 420),
+    active_constraints: (plan?.activeConstraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    preference_constraints: (plan?.preferenceConstraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    rejected_entities: (plan?.rejectedEntities || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    superseded_goals: (plan?.supersededGoals || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+  };
+}
+
+function normalizedResponseSnapshot(model = {}) {
+  return {
+    reply: diagnosticText(model.reply, 800),
+    intent: diagnosticText(model.intent, 80),
+    service_type: diagnosticText(model.serviceType, 80),
+    requires_human: Boolean(model.requiresHuman),
+    requests: Array.isArray(model.requests) ? model.requests.slice(0, 3).map((request) => ({
+      service_name: diagnosticText(request?.serviceName, 160),
+      source: request?.source === 'external' ? 'external' : 'partner',
+      summary: diagnosticText(request?.summary, 420),
+      est_value_eur: Number.isFinite(Number(request?.estValueEur)) ? Number(request.estValueEur) : null,
+      is_upsell: Boolean(request?.isUpsell),
+    })) : [],
+    response_mode: diagnosticText(model.responseMode, 80),
+    addressed_goal: diagnosticText(model.addressedGoal, 160),
+    addressed_reference: diagnosticText(model.addressedReference, 220),
+  };
+}
+
+function safeRawResponseContent(provider = {}) {
+  const raw = diagnosticText(provider?.content, 3_200);
+  if (!raw) return '';
+  // Structured responses should be JSON. Preserve only public-parser fields;
+  // any unexpected field could contain hidden reasoning and is excluded.
+  const json = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
+  try {
+    const parsed = JSON.parse(json);
+    return JSON.stringify({
+      reply_text: diagnosticText(parsed.reply_text ?? parsed.reply, 800),
+      language_detected: diagnosticText(parsed.language_detected, 40),
+      intent: diagnosticText(parsed.intent, 80),
+      service_type: diagnosticText(parsed.service_type, 80),
+      requests: Array.isArray(parsed.requests) ? parsed.requests.slice(0, 3).map((request) => ({
+        service_name: diagnosticText(request?.service_name, 160),
+        source: request?.source === 'external' ? 'external' : 'partner',
+        summary: diagnosticText(request?.summary, 420),
+        est_value_eur: Number.isFinite(Number(request?.est_value_eur)) ? Number(request.est_value_eur) : null,
+        is_upsell: Boolean(request?.is_upsell),
+      })) : [],
+      requires_human: Boolean(parsed.requires_human),
+      response_mode: diagnosticText(parsed.response_mode, 80),
+      addressed_goal: diagnosticText(parsed.addressed_goal, 160),
+      addressed_reference: diagnosticText(parsed.addressed_reference, 220),
+    });
+  } catch {
+    return '[unavailable: non-JSON response content]';
+  }
+}
+
+function responseActionTruthStatus(reply) {
+  const text = diagnosticText(reply, 800);
+  const failures = [];
+  if (/\b(?:booking|reservation|request) (?:is |has been )?confirmed\b/i.test(text)) failures.push('unverified_action_confirmation');
+  if (/\bavailability (?:is |has been )?confirmed\b/i.test(text)) failures.push('unverified_availability_confirmation');
+  if (/\b(?:staff|team|housekeeping|transport) (?:has been )?(?:notified|alerted|dispatched)\b/i.test(text)) failures.push('unverified_staff_notification');
+  return { status: failures.length ? 'FAIL' : 'PASS', failure_codes: failures };
+}
+
+function responseGroundingStatus(failures = []) {
+  const groundingFailures = failures.filter((failure) => failure === 'tool_failure_presented_as_success');
+  return { status: groundingFailures.length ? 'FAIL' : 'PASS', failure_codes: groundingFailures };
+}
+
+function responseAttemptSnapshot({ attempt, provider, model, adherence, contract }) {
+  const failures = [...new Set(adherence?.failures || [])];
+  return {
+    attempt,
+    response_contract: responseContractSnapshot(contract),
+    raw_provider_content: safeRawResponseContent(provider),
+    parsed_normalized_response: normalizedResponseSnapshot(model),
+    candidate_guest_message: diagnosticText(model?.reply, 800),
+    response_mode: diagnosticText(model?.responseMode, 80),
+    addressed_goal: diagnosticText(model?.addressedGoal, 160),
+    addressed_reference: diagnosticText(model?.addressedReference, 220),
+    adherence_result: adherence?.passed ? 'PASS' : 'FAIL',
+    failure_codes: failures,
+    failure_severity: Object.fromEntries(failures.map((failure) => [failure, RESPONSE_ADHERENCE_SEVERITY[failure] || 'SOFT_QUALITY'])),
+    grounding: responseGroundingStatus(failures),
+    action_truth: responseActionTruthStatus(model?.reply),
+  };
+}
+
+function hasMeaningfulConversation(history) {
+  return (history || []).some((item) => String(item?.message || item?.content || '').trim());
 }
 
 async function semanticConversationController(env, input, history, { facts, pendingContext = '', hint = {} } = {}) {
@@ -687,17 +873,6 @@ ${input.message}`;
 
 async function enrichSemanticRoute(env, input, history, classification) {
   if (classification.route === 'stay_planning') return classification;
-  // The deterministic history pass has already established that this is a
-  // continuation of a hotel discussion. Preserve that context instead of
-  // asking the router to infer an unrelated external search from a few words.
-  if (classification.contextualFollowUp && !classification.wantsExternal) {
-    return {
-      ...classification,
-      route: classification.category ? 'partner_request' : 'conversation',
-      externalDiscovery: false,
-      searchQuery: '',
-    };
-  }
   const basicGreeting = !classification.hasIntent && !String(input.message || '').trim().includes(' ');
   if (basicGreeting) return classification;
   const provider = await completeStructured(env, {
@@ -1166,10 +1341,38 @@ function hasBookingIntent(message) {
   return /\b(book|reserve|confirm|yes)\b/.test(text);
 }
 
+// Generic hospitality/branding words that appear across many catalogue
+// entries and are therefore never distinctive enough, on their own, to
+// identify one specific item (e.g. every chauffeur service says "Private").
+const GENERIC_SERVICE_NAME_WORDS = new Set([
+  'private', 'hotel', 'lumiere', 'vip', 'after', 'hours', 'day', 'trip', 'signature', 'the', 'and', 'for', 'with',
+]);
+
 function preferredBookingService(services, category, message) {
+  const text = normalized(message);
+
+  // A guest naming a specific item by a distinctive word from its own name
+  // (e.g. "Louvre", "Versailles") should resolve to that exact item -- even
+  // when the deterministic category guess for this message put it in the
+  // wrong bucket. An item's own name can contain words that score a
+  // different category than the one it is actually filed under (the Louvre
+  // tour's name scores "tour", but Airtable files it under "experience"),
+  // which previously sent the search into the wrong category's candidate
+  // list entirely. This checks every active partner service, not just the
+  // guessed category, and only auto-resolves when exactly one item matches.
+  const allPartners = services.filter((service) => service.isPartner);
+  const nameMatches = allPartners.filter((service) => {
+    const distinctiveWords = normalized(service.name)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length >= 4 && !GENERIC_SERVICE_NAME_WORDS.has(word));
+    // hasTerm() is a concierge.js-local helper, not exported -- use an
+    // equivalent inline word-boundary check here instead of importing it.
+    return distinctiveWords.some((word) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'u').test(text));
+  });
+  if (nameMatches.length === 1) return nameMatches[0];
+
   const candidates = categoryPartnerServices(services, category);
   if (!candidates.length) return null;
-  const text = normalized(message);
   const matching = candidates.find((service) => {
     const name = normalized(service.name);
     return (text.includes('couples') && name.includes('couples'))
@@ -1177,7 +1380,15 @@ function preferredBookingService(services, category, message) {
       || (text.includes('airport') && name.includes('airport'))
       || (text.includes('cdg') && name.includes('cdg'));
   });
-  return matching || candidates[0];
+  // A confident keyword or distinctive-name match resolves here. Otherwise,
+  // only fall back to a single available candidate when the category is
+  // genuinely unambiguous (exactly one partner service exists for it). With
+  // two or more candidates and no confident match, guessing by array order
+  // is exactly the wrong-entity failure mode this fast path must avoid --
+  // return null so the caller falls through to the semantic-controller-
+  // driven guest_request tool instead, which grounds its confirmation in the
+  // model's own guest_goal text.
+  return matching || (candidates.length === 1 ? candidates[0] : null);
 }
 
 function partnerBookingOutcome(input, classification, services) {
@@ -1923,7 +2134,11 @@ function requestSummariesFromOutcome(outcome) {
 }
 
 function chatResponseFromOutcome(outcome, classification, language, partnerOfferList = [], providerFailure = '', customMedia = null, inputMessage = '') {
-  const media = customMedia || detectMediaBrochure(inputMessage || outcome?.reply || classification?.category || '', classification?.category);
+  // Only the guest's own current message may drive brochure attachment.
+  // Falling back to outcome.reply or the raw category string here previously
+  // let the assistant's own "avoiding spa" wording re-trigger the spa
+  // brochure on a message that had just dropped the spa topic.
+  const media = customMedia || detectMediaBrochure(inputMessage || '', classification?.category);
   const nextStep = outcome?.nextStep && outcome.nextStep.type === 'guest_follow_up' && typeof outcome.nextStep.text === 'string'
     ? {
       type: 'guest_follow_up',
@@ -1950,7 +2165,10 @@ function chatResponseFromOutcome(outcome, classification, language, partnerOffer
     provider_failure: providerFailure,
     requires_human: Boolean(outcome.requiresHuman || outcome.escapeHatchTriggered),
     escape_hatch_triggered: Boolean(outcome.escapeHatchTriggered),
-    media: media || detectMediaBrochure(outcome.reply || '', classification.category),
+    // No second attempt against outcome.reply: scanning the assistant's own
+    // generated text for category keywords is what let "avoiding spa" in a
+    // reply re-attach the spa brochure it was meant to be leaving out.
+    media,
     staff_alerts: staffAlertsFromOutcome(outcome),
     requests: requestSummariesFromOutcome(outcome),
     ...(nextStep ? { next_step: nextStep } : {}),
@@ -2154,10 +2372,18 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       return instantStayPlanning;
     }
     requireSecrets(env);
-    const serviceRecords = await fetchServices(env, { bypassCache: Boolean(input.testMode) }).catch((err) => {
-      console.error('Failed to fetch services from Airtable:', err);
-      return [];
-    });
+    // Load any usable context before a category/card shortcut. The controller
+    // decides whether that context is relevant; code only observes that it
+    // exists so it cannot pre-interpret a guest's natural follow-up.
+    const [history, facts, serviceRecords] = await Promise.all([
+      input.chatHistory ? Promise.resolve(input.chatHistory) : fetchHistory(env, input.userId).catch(() => []),
+      fetchFacts(env).catch(() => ({ hotelName: env.HOTEL_NAME || 'Hôtel Lumière Paris', hotelCity: env.HOTEL_CITY || 'Paris', text: '' })),
+      fetchServices(env, { bypassCache: Boolean(input.testMode) }).catch((err) => {
+        console.error('Failed to fetch services from Airtable:', err);
+        return [];
+      }),
+    ]);
+    const hasConversationHistory = hasMeaningfulConversation(history);
     const initialServiceSet = matchingServices(serviceRecords, classification);
     const instantCancellation = await cancellationOutcome(env, input, classification, initialServiceSet.all);
     if (instantCancellation) {
@@ -2173,25 +2399,23 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       }
       return chatResponseFromOutcome(instantDirectBooking, classification, input.language);
     }
-    const instantHotelFirst = hotelFirstResponse(input, classification, initialServiceSet.all);
+    // Cards are presentation for a new request only. A history-bearing turn
+    // reaches the semantic controller before any hotel-first/card shortcut.
+    const instantHotelFirst = hasConversationHistory ? null : hotelFirstResponse(input, classification, initialServiceSet.all);
     if (instantHotelFirst) {
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, { reply: instantHotelFirst.reply, requests: [] }).catch(() => undefined));
       }
       return instantHotelFirst;
     }
-    const instantDining = curatedDiningResponse(input, classification, initialServiceSet.matching);
+    const instantDining = hasConversationHistory ? null : curatedDiningResponse(input, classification, initialServiceSet.matching);
     if (instantDining) {
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, { reply: instantDining.reply, requests: [] }).catch(() => undefined));
       }
       return instantDining;
     }
-    const [history, facts] = await Promise.all([
-      input.chatHistory ? Promise.resolve(input.chatHistory) : fetchHistory(env, input.userId).catch(() => []),
-      fetchFacts(env).catch(() => ({ hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', hotelCity: env.HOTEL_CITY || 'Paris', text: '' })),
-    ]);
-    classification = inheritConversationContext(classification, history, input.message);
+    classification = inheritConversationContext(classification, history);
     reportStatus('Considering the most suitable next step\u2026');
     const semantic = await semanticConversationController(env, input, history, { facts, hint: classification }).catch(() => ({ plan: null, providerFailure: 'semantic_unavailable' }));
     if (semantic.plan?.valid) {
@@ -2220,53 +2444,23 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       return semanticStayPlanning;
     }
     const serviceSet = matchingServices(serviceRecords, classification);
-    // Some short replies only acquire a category after history is considered.
-    // Re-run the same hotel-first response with that resolved context before
-    // handing a vague continuation to the model or any external search.
-    const contextualHotelFirst = classification.externalDiscovery
+    // After semantic planning, verified cards/media accompany the natural
+    // reply below. They must never replace a contextual answer with a generic
+    // category or catalogue sentence.
+    // A history-bearing affirmative can mean continued exploration rather
+    // than consent to book. Once the semantic controller has run, only its
+    // validated action capability may unlock the legacy direct booking helper.
+    // First-turn explicit booking remains on the existing fast path above.
+    // A valid semantic plan is always routed through the tool-based
+    // guest_request pipeline below (buildToolRequests -> guest_request),
+    // which grounds its confirmation text in the model's own guestGoal
+    // rather than a keyword guess. The legacy partnerBookingOutcome helper
+    // now exists solely as a degraded-mode fallback for when the semantic
+    // controller itself failed (plan invalid), not as an alternate path for
+    // an otherwise-successful, action-flagged plan.
+    const directBooking = semantic.plan?.valid
       ? null
-      : hotelFirstResponse(input, classification, serviceSet.all);
-    if (contextualHotelFirst) {
-      const presentationRequests = buildToolRequests({ plan: semantic.plan, classification, input })
-        .filter((request) => ['hotel_facts', 'hotel_services'].includes(request.tool));
-      const presentationResults = await createToolExecutor({
-        env, mode: input.testMode, records: serviceRecords, source: facts,
-        context: { city: env.HOTEL_CITY || 'Paris', classification }, conversationOwner: input.conversationOwner || 'ai',
-      }).execute(presentationRequests);
-      if (!input.testMode || input.testMode === 'write_verified') {
-        ctx.waitUntil(persistConversation(env, input, { reply: contextualHotelFirst.reply, requests: [] }).catch(() => undefined));
-      }
-      return attachReadOnlyObservability(contextualHotelFirst, input, {
-        semantic_route: semantic.plan?.interactionType || classification.route || 'conversation',
-        tools_requested: presentationRequests.map((request) => request.tool),
-        tools_executed: presentationResults.map((result) => result.tool),
-        tool_statuses: Object.fromEntries(presentationResults.map((result) => [result.tool, result.status])),
-        controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
-        response_model_calls: 0,
-        llm_provider: semantic.llm?.provider || null,
-        llm_model: semantic.llm?.model || null,
-        llm_purpose: 'semantic_controller',
-        llm_status: semantic.llm?.status || 'provider_error',
-        llm_latency_ms: semantic.llm?.latency_ms || 0,
-        llm_attempt_count: semantic.llm?.attempts || 0,
-        provider_used: null,
-        fallback_used: Boolean(semantic.llm?.fallback_used),
-        latency_ms: Date.now() - turnStartedAt,
-      });
-    }
-    // Semantic routing can recognize catalogue wording that the fast phrase
-    // matcher did not. Keep this path deterministic as well, so it returns the
-    // complete collection rather than a model-selected subset.
-    if (classification.route === 'partner_catalog') {
-      const catalogue = hotelCatalogueResponse(input, classification, serviceSet.all);
-      if (catalogue) {
-        if (!input.testMode || input.testMode === 'write_verified') {
-          ctx.waitUntil(persistConversation(env, input, { reply: catalogue.reply, requests: [] }).catch(() => undefined));
-        }
-        return catalogue;
-      }
-    }
-    const directBooking = partnerBookingOutcome(input, classification, serviceSet.all);
+      : partnerBookingOutcome(input, classification, serviceSet.all);
     if (directBooking) {
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, directBooking).catch(() => undefined));
@@ -2312,46 +2506,34 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       human_takeover: { tool: 'human_takeover', status: 'not_needed', data: null, error_code: null, meta: {} },
       ...toolResultMap(executedTools),
     };
-    const serviceToolMatches = (toolResults.hotel_services?.data?.services || []).map(serviceFromTool).filter((service) => service.isPartner);
+    const responseToolResults = visibleToolResults(toolResults, semantic.plan);
+    const serviceToolMatches = (responseToolResults.hotel_services?.data?.services || []).map(serviceFromTool).filter((service) => service.isPartner);
     // An explicit external request must never be silently replaced with a
     // hotel partner merely because the search tool is unavailable.
-    const promptServices = classification.externalDiscovery
+    const promptServices = withoutRejectedServices(classification.externalDiscovery
       ? []
       : classification.route === 'partner_catalog' || classification.contextualHotelCatalogue
         ? serviceSet.all.filter((service) => service.isPartner)
-        : uniqueServices([...partnerMatches, ...serviceToolMatches]);
-    let externalOptions = toolResults.external_search?.data?.results || [];
+        : uniqueServices([...partnerMatches, ...serviceToolMatches]), semantic.plan);
+    let externalOptions = responseToolResults.external_search?.data?.results || [];
     if (preferenceForOneRecommendation(input.message)) externalOptions = externalOptions.slice(0, 1);
     if (toolRequests.some((request) => request.tool === 'external_search')) reportStatus('Curating only independently verified matches\u2026');
-    if (classification.externalDiscovery && externalOptions.length) {
-      const outcome = enforceContract(
-        { reply: '', intent: 'service_request', serviceType: classification.category, requiresHuman: true, requests: [] },
-        { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions, inputMessage: input.message, toolResults },
-      );
-      if (!input.testMode || input.testMode === 'write_verified') {
-        ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
-      }
-      return attachReadOnlyObservability(chatResponseFromOutcome(outcome, classification, input.language), input, {
-        semantic_route: semantic.plan?.interactionType || classification.route || 'conversation',
-        tools_requested: toolRequests.map((request) => request.tool),
-        tools_executed: executedTools.map((result) => result.tool),
-        tool_statuses: Object.fromEntries(Object.entries(toolResults).map(([tool, result]) => [tool, result.status])),
-        controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
-        response_model_calls: 0,
-        llm_provider: semantic.llm?.provider || null,
-        llm_model: semantic.llm?.model || null,
-        llm_purpose: 'semantic_controller',
-        llm_status: semantic.llm?.status || 'provider_error',
-        llm_latency_ms: semantic.llm?.latency_ms || 0,
-        llm_attempt_count: semantic.llm?.attempts || 0,
-        provider_used: toolResults.external_search?.meta?.provider_used || null,
-        fallback_used: Boolean(semantic.llm?.fallback_used || toolResults.external_search?.meta?.fallback_used),
-        latency_ms: Date.now() - turnStartedAt,
-      });
-    }
     reportStatus('Preparing a considered recommendation\u2026');
-    const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts, semanticPlan: semantic.plan, toolResults });
-    const provider = await completeStructured(env, {
+    const responseContract = buildResponseContract({
+      semanticPlan: semantic.plan,
+      history,
+      facts,
+      toolResults: responseToolResults,
+    });
+    const prompt = buildPrompt({
+      input, classification, history, services: promptServices, externalOptions, facts,
+      semanticPlan: semantic.plan, toolResults: responseToolResults, responseContract,
+    });
+    const parseResponseModel = (content) => {
+      const model = parseModelJson(content);
+      return model.reply ? model : null;
+    };
+    const firstProvider = await completeStructured(env, {
       purpose: 'response_generator',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 350,
@@ -2359,12 +2541,63 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     }, {
       // A reply is the minimum response-generator contract. ConciergeFlow's
       // existing final guardrail remains responsible for factual/action truth.
-      parse: (content) => {
-        const model = parseModelJson(content);
-        return model.reply ? model : null;
-      },
+      parse: parseResponseModel,
     }).catch(() => ({ status: 'provider_error', content: '', structured: null, provider: '', model: '', latency_ms: 0, attempts: 1, fallback_used: false }));
-    const model = provider.structured || parseModelJson('');
+    let provider = firstProvider;
+    let model = provider.structured || parseModelJson('');
+    let adherence = validateResponseAdherence(model, responseContract);
+    let responseRepairUsed = false;
+    let contextualFallbackUsed = false;
+    const responsePipeline = isReadOnlyTask13Diagnostic(input) ? {
+      semantic_plan: semanticPlanSnapshot(semantic.plan),
+      response_contract: responseContractSnapshot(responseContract),
+      attempts: [responseAttemptSnapshot({ attempt: 1, provider, model, adherence, contract: responseContract })],
+      repair_input: null,
+      final_response_source: adherence.passed ? 'INITIAL_MODEL' : null,
+      initial_rejected: !adherence.passed,
+      repair_rejected: null,
+    } : null;
+
+    // The controller interprets intent once. A visibly non-adherent response
+    // receives exactly one fresh wording attempt; it never starts another
+    // semantic pass or an unbounded retry loop.
+    if (!adherence.passed && semantic.plan?.valid) {
+      responseRepairUsed = true;
+      if (responsePipeline) {
+        responsePipeline.repair_input = {
+          rejected_normalized_attempt: normalizedResponseSnapshot(model),
+          failure_codes_supplied: [...adherence.failures],
+          exact_failed_invariant_supplied: adherence.failures.length > 0,
+          semantic_plan: semanticPlanSnapshot(semantic.plan),
+          response_contract: responseContractSnapshot(responseContract),
+          resolved_reference_summary: diagnosticText(responseContract.reference_summary, 420),
+        };
+      }
+      const repairProvider = await completeStructured(env, {
+        purpose: 'response_generator',
+        messages: [{ role: 'user', content: `${prompt}\n\n${buildResponseRepairPrompt({ contract: responseContract, failures: adherence.failures })}` }],
+        max_tokens: 350,
+        conversation_id: input.userId,
+      }, { parse: parseResponseModel }).catch(() => ({ status: 'provider_error', content: '', structured: null, provider: '', model: '', latency_ms: 0, attempts: 1, fallback_used: false }));
+      provider = repairProvider;
+      model = provider.structured || parseModelJson('');
+      adherence = validateResponseAdherence(model, responseContract);
+      if (responsePipeline) {
+        responsePipeline.attempts.push(responseAttemptSnapshot({ attempt: 2, provider, model, adherence, contract: responseContract }));
+        responsePipeline.repair_rejected = !adherence.passed;
+        responsePipeline.final_response_source = adherence.passed ? 'REPAIR_MODEL' : null;
+      }
+      if (!adherence.passed) {
+        contextualFallbackUsed = true;
+        model = {
+          ...model,
+          reply: contextualSafeFallback(responseContract, input.language),
+          requests: [],
+        };
+        adherence = validateResponseAdherence(model, responseContract);
+        if (responsePipeline) responsePipeline.final_response_source = 'CONTEXTUAL_SAFE_FALLBACK';
+      }
+    }
     const providerFailure = provider.status === 'success' ? '' : provider.status;
     const outcome = enforceContract(model, {
       language: input.language,
@@ -2372,9 +2605,10 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       matching: promptServices,
       excluded: serviceSet.excluded,
       externalOptions,
+      knownServices: serviceSet.all,
       inputMessage: input.message,
       providerFailure,
-      toolResults,
+      toolResults: responseToolResults,
     });
 
     if (!input.testMode || input.testMode === 'write_verified') {
@@ -2386,7 +2620,11 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       tools_executed: executedTools.map((result) => result.tool),
       tool_statuses: Object.fromEntries(Object.entries(toolResults).map(([tool, result]) => [tool, result.status])),
       controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
-      response_model_calls: provider.status === 'success' ? 1 : 0,
+      response_model_calls: 1 + (responseRepairUsed ? 1 : 0),
+      response_repair_used: responseRepairUsed,
+      contextual_response_fallback_used: contextualFallbackUsed,
+      response_adherence_failures: adherence.failures,
+      response_pipeline: responsePipeline,
       llm_provider: provider.provider || semantic.llm?.provider || null,
       llm_model: provider.model || semantic.llm?.model || null,
       llm_purpose: 'response_generator',

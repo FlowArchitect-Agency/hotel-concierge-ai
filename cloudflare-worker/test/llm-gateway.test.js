@@ -77,6 +77,40 @@ test('OpenAI-compatible gateway accepts ordinary string assistant content', asyn
   assert.equal(result.content, 'OK');
 });
 
+test('OpenAI-compatible gateway applies validated deployment-owned chat-template options', async () => {
+  let body;
+  const result = await completeText(openAiCompatibleEnv({
+    LLM_OPENAI_COMPATIBLE_CHAT_TEMPLATE_KWARGS_JSON: JSON.stringify({ enable_thinking: false }),
+  }), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply exactly: OK' }],
+  }, {
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return jsonResponse('OK');
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });
+  assert.equal(body.model, 'provider-test-model');
+  assert.equal(body.messages[0].content, 'Reply exactly: OK');
+});
+
+test('OpenAI-compatible gateway ignores malformed chat-template configuration', async () => {
+  let body;
+  const result = await completeText(openAiCompatibleEnv({
+    LLM_OPENAI_COMPATIBLE_CHAT_TEMPLATE_KWARGS_JSON: '{not json',
+  }), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply exactly: OK' }],
+  }, {
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return jsonResponse('OK');
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.equal('chat_template_kwargs' in body, false);
+});
+
 test('OpenAI-compatible gateway normalizes a typed text content array', async () => {
   const result = await completeText(openAiCompatibleEnv(), {
     purpose: 'response_generator', messages: [{ role: 'user', content: 'Reply' }],

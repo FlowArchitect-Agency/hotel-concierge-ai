@@ -102,6 +102,17 @@ test('NVIDIA generator configuration is role-scoped and permits only its 90-seco
   assert.equal(request.timeout_ms, NVIDIA_GENERATOR_TIMEOUT_MS);
 });
 
+test('NVIDIA SUT chat-template configuration remains role-scoped', () => {
+  const sut = roleGatewayEnvironment({
+    DYNAMIC_SUT_PROVIDER: 'nvidia', DYNAMIC_SUT_MODEL: 'nvidia/nemotron-3-super-120b-a12b',
+    DYNAMIC_SUT_CHAT_TEMPLATE_KWARGS_JSON: JSON.stringify({ enable_thinking: false }),
+    NVIDIA_API_KEY: 'test-only-nvidia-key',
+  }, 'sut');
+  assert.equal(sut.LLM_PROVIDER, 'openai-compatible');
+  assert.equal(sut.LLM_BASE_URL, 'https://integrate.api.nvidia.com/v1');
+  assert.equal(sut.LLM_OPENAI_COMPATIBLE_CHAT_TEMPLATE_KWARGS_JSON, JSON.stringify({ enable_thinking: false }));
+});
+
 test('Gemini generator configuration remains OpenAI-compatible, role-scoped, and credential-name based', () => {
   const env = {
     DYNAMIC_GENERATOR_PROVIDER: 'openai-compatible', DYNAMIC_GENERATOR_MODEL: GEMINI_GENERATOR_MODEL,

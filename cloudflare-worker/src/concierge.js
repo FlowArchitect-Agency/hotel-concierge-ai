@@ -75,6 +75,20 @@ function hasTerm(text, value) {
   return new RegExp(`(?:^|[^\\p{L}\\p{N}])${term}(?=$|[^\\p{L}\\p{N}])`, 'u').test(text);
 }
 
+// A category keyword inside an abandonment/negation clause ("forget the spa
+// idea", "no more massages", "cancel the tour") must not still score that
+// category — that previously kept spa media/cards attached to a message that
+// was explicitly dropping the spa topic. This only looks a short window before
+// the matched term; it does not attempt full negation parsing.
+function isNegatedCategoryTerm(text, value) {
+  const term = normalized(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!term) return false;
+  const match = new RegExp(`(?:^|[^\\p{L}\\p{N}])(${term})(?=$|[^\\p{L}\\p{N}])`, 'u').exec(text);
+  if (!match) return false;
+  const before = text.slice(Math.max(0, match.index - 40), match.index);
+  return /\b(forget|forgetting|cancel|cancelled|canceled|no more|not interested in|don'?t want|dont want|do not want|stop wanting|skip the|avoid the|without (?:the|a|any)|drop the|never ?mind|no longer want|leave (?:it|that|the) aside)\b/i.test(before);
+}
+
 function scalar(value) {
   return Array.isArray(value) ? value.join(' ') : String(value ?? '');
 }
@@ -325,7 +339,19 @@ export function detectMediaBrochure(message, category = null) {
   }
   const asksForBrochure = /\b(menu|carte|brochure|pdf|catalog|catalogue|directory|guide|treatments?|pricing|tarifs?|tarifs|services list|list of services|view services|our services|carte des soins|soins|massages?)\b/i.test(text)
     || /\b(?:show|see|view|send|have|list|what|all)\s+(?:me\s+)?(?:the\s+)?(?:services?|collection)\b/i.test(text);
-  const isSpa = category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(text);
+  // Category alone is not trusted here: classification.category can carry
+  // the previous topic across a guest-initiated reset ("forget the spa
+  // idea, let's do something else") because the semantic plan still names
+  // the topic being left behind. Requiring the actual current message to
+  // name spa/massage/etc. prevents the spa brochure from re-attaching to a
+  // message that is explicitly moving away from it. A negation-window check
+  // is also needed here specifically: the word "spa" inside "forget the spa
+  // idea completely" still matches this regex on its own, which is exactly
+  // how the brochure kept re-attaching even after the classifyRequest-level
+  // negation fix and the category/reply-text fixes above -- this is a third,
+  // independent keyword scan that needed the same guard.
+  const isSpa = ['spa', 'massage', 'sauna', 'hammam', 'wellness', 'facial', 'soin']
+    .some((word) => hasTerm(text, word) && !isNegatedCategoryTerm(text, word));
   const isDining = category === 'restaurant' || /\b(dinner|lunch|breakfast|food|carte|dining|restaurant|wine|cocktail|room service)\b/i.test(text);
   const isRooms = category === 'accommodation' || /\b(room|suite|chambre|habitacion|stay)\b/i.test(text);
 
@@ -509,7 +535,7 @@ export function classifyRequest(message) {
   const scores = new Map();
   for (const rule of CATEGORY_RULES) {
     for (const word of rule.words) {
-      if (hasTerm(text, word)) scores.set(rule.category, (scores.get(rule.category) ?? 0) + 1);
+      if (hasTerm(text, word) && !isNegatedCategoryTerm(text, word)) scores.set(rule.category, (scores.get(rule.category) ?? 0) + 1);
     }
   }
   if (ITINERARY_WORDS.some((word) => hasTerm(text, word))) scores.set('itinerary', 1);
@@ -525,57 +551,14 @@ export function classifyRequest(message) {
   return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational, wantsExternal, isStayPlanning, route: isStayPlanning ? 'stay_planning' : '', rawMessage: message };
 }
 
-export function inheritConversationContext(classification, history, latestMessage) {
-  if (classification.cuisine && classification.category) return classification;
-  const latest = normalized(latestMessage);
-  const hasRecentCatalogueContext = [...(history || [])].slice(-8).some((item) => {
-    const text = normalized(item?.message || item?.content || '');
-    return /\b(?:view|show|all|what)\b[^.!?]{0,48}\b(?:services?|collection|offerings?)\b/.test(text)
-      || /\b(?:rooms?|dining|spa|wellness|transfers?|private experiences?)\b/.test(text) && /\b(?:explore|offer|help)\b/.test(text);
-  });
-  // A short reply only becomes actionable when it has a nearby conversational
-  // anchor. This deliberately keeps generic wording such as "what do you
-  // suggest?" out of the external-search path until we know what it refers to.
-  const isContinuation = classification.hasIntent
-    || /\b(pictures?|photos?|images?|show|attach|one|best|which|that|details?|more|suggest|recommend|what about|something else|another|different|yes please|not that|flight|lands?|landing|arrival|arrive|quel(?:le)?|quels?|quelle?\s+option|quoi d autre|autre chose|suggerez|recommandez|cual|cu[aá]l|que sugieres|que recomienda|otra cosa|algo mas|si por favor)\b/i.test(latest)
-    || (hasRecentCatalogueContext && !classification.category && !classification.cuisine && !classification.wantsExternal);
-  if (!isContinuation || GREETINGS.has(latest.replace(/[!.?\u00a1\u00bf]+$/g, ''))) return classification;
-  const priorGuestMessages = [...(history || [])]
-    .reverse()
-    .filter((item) => item?.role === 'user' && String(item?.message || item?.content || '').trim());
-  const prior = priorGuestMessages
-    .map((item) => classifyRequest(item.message || item.content))
-    .find((item) => item.category || item.cuisine);
-  // Short confirmations such as "yes, book it" must retain any recently
-  // established service category, including transport and wellness.
-  if (prior?.category || prior?.cuisine) {
-    // "No, something else" is a conversational refinement, not a request to
-    // search outside the hotel. Keep an explicit outside-the-hotel request as
-    // an external preference, but do not infer one from a vague negative.
-    const vagueAlternative = /^(?:no[,\s]+)?(?:something|anything|another|different)\s+else[!.?]*$/i.test(String(latestMessage || '').trim());
-    return {
-      ...classification,
-      category: classification.category || prior.category,
-      cuisine: classification.cuisine || prior.cuisine,
-      location: classification.location || prior.location,
-      wantsExternal: vagueAlternative ? false : classification.wantsExternal,
-      hasIntent: true,
-      contextualFollowUp: true,
-    };
-  }
-
-  // A follow-up after a broad hotel catalogue should remain a hotel
-  // conversation even when it names no category yet (for example, "something
-  // romantic"). The model receives the verified collection and can ask one
-  // useful question rather than sending the guest to a web search.
-  if (!hasRecentCatalogueContext) return classification;
-  return {
-    ...classification,
-    hasIntent: true,
-    wantsExternal: false,
-    contextualFollowUp: true,
-    contextualHotelCatalogue: true,
-  };
+export function inheritConversationContext(classification, history) {
+  // Conversation history is factual input to the semantic controller, not a
+  // source of keyword-driven intent inheritance. Earlier versions inferred a
+  // category, cuisine, location, and even a hotel-first route here. That made
+  // ambiguous follow-ups deterministic before the model could resolve what a
+  // guest meant. Preserve only the neutral fact that usable context exists.
+  const hasConversationHistory = (history || []).some((item) => String(item?.message || item?.content || '').trim());
+  return { ...classification, hasConversationHistory };
 }
 
 export function toService(record) {
@@ -775,6 +758,11 @@ export function parseModelJson(raw) {
       intent: String(parsed.intent ?? 'other'),
       serviceType: parsed.service_type ?? null,
       requiresHuman: Boolean(parsed.requires_human),
+      // Legacy optional labels may appear in historical/provider output, but
+      // the response contract never treats them as semantic authority.
+      responseMode: typeof parsed.response_mode === 'string' ? parsed.response_mode.trim().slice(0, 80) : '',
+      addressedGoal: typeof parsed.addressed_goal === 'string' ? parsed.addressed_goal.trim().slice(0, 160) : '',
+      addressedReference: typeof parsed.addressed_reference === 'string' ? parsed.addressed_reference.trim().slice(0, 220) : '',
       requests: Array.isArray(parsed.requests) ? parsed.requests.slice(0, 3).map((item) => ({
         serviceName: item?.service_name ?? null,
         source: item?.source === 'external' ? 'external' : 'partner',
@@ -854,7 +842,7 @@ function conciseReply(value) {
   return sentences.slice(0, 2).join(' ').slice(0, 360).trim();
 }
 
-export function enforceContract(model, { language, classification, matching, excluded, externalOptions, inputMessage = '', providerFailure = '', toolResults = {} }) {
+export function enforceContract(model, { language, classification, matching, excluded, externalOptions, knownServices = [], inputMessage = '', providerFailure = '', toolResults = {} }) {
   const isAngry = Boolean(classification?.hasEscalation);
   const operationalType = classification?.isOperational ? operationalServiceType(inputMessage || classification?.rawMessage || '') : '';
   if (isAngry) {
@@ -880,6 +868,13 @@ export function enforceContract(model, { language, classification, matching, exc
   const replyText = String(model.reply ?? '').trim();
   const reply = normalized(replyText);
   const mentionsExcluded = Boolean(classification.cuisine && excludedNames.some((name) => reply.includes(normalized(name))));
+  const mentionsUnverifiedHotelService = externalOptions.length > 0
+    && knownServices.some((service) => {
+      const name = normalized(service?.name || service);
+      const variants = [name, ...String(service?.name || service || '').split(/[—–|-]/).map(normalized)]
+        .filter((value) => value.length >= 4);
+      return variants.some((variant) => reply.includes(variant) && !optionNames.some((option) => normalized(option) === variant));
+    });
   const mentionsExternal = optionNames.some((name) => reply.includes(normalized(name)));
   const externalToolUnavailable = classification.externalDiscovery
     && ['unavailable', 'error', 'no_results'].includes(toolResults?.external_search?.status);
@@ -887,16 +882,24 @@ export function enforceContract(model, { language, classification, matching, exc
   let finalReply = conciseReply(replyText);
   let requests = model.requests ?? [];
 
-  if (mentionsExcluded || needsRefinement) {
-    finalReply = REFINEMENT[language] ?? REFINEMENT.en;
-    requests = [];
-  } else if (externalOptions.length) {
-    // Recommendation names, descriptions and links are supplied in the
-    // structured array below. Never let the model invent an unverified venue
-    // in the short conversational introduction.
+  if (mentionsUnverifiedHotelService && externalOptions.length) {
     finalReply = classification.category === 'itinerary'
       ? itineraryReply(language, externalOptions)
       : externalIntro(language, externalOptions.length);
+    requests = [];
+  } else if (mentionsExcluded || needsRefinement) {
+    finalReply = REFINEMENT[language] ?? REFINEMENT.en;
+    requests = [];
+  } else if (externalOptions.length) {
+    // Recommendation names, descriptions and links remain in verified cards.
+    // Keep the model's concise contextual sentence when it supplied one;
+    // replacing it with a stock card introduction loses the guest's active
+    // reference, rejection, or refinement.
+    if (!finalReply) {
+      finalReply = classification.category === 'itinerary'
+        ? itineraryReply(language, externalOptions)
+        : externalIntro(language, externalOptions.length);
+    }
     requests = requests.filter((item) => optionNames.some((name) => normalized(item.serviceName).includes(normalized(name))));
   }
 
@@ -942,15 +945,16 @@ export function enforceContract(model, { language, classification, matching, exc
   };
 }
 
-export function buildPrompt({ input, classification, history, services, externalOptions, facts, semanticPlan = null, toolResults = {} }) {
+export function buildPrompt({ input, classification, history, services, externalOptions, facts, semanticPlan = null, toolResults = {}, responseContract = null }) {
   const historyText = history.length
-    ? history.map((item) => `${item.role}: ${item.message}`).join('\n')
+    ? history.map((item) => `${item.role}: ${item.message ?? item.content ?? ''}`).join('\n')
     : '(no prior conversation)';
   return `You are the concierge for ${facts.hotelName}. Return JSON only, never Markdown.
 
 Hard rules:
 - Respond in the language of the guest's CURRENT message (${input.language}) unless the guest explicitly requests another language. A saved preference may help only with an ambiguous short turn.
 - Answer the exact question first. Specific hotel categories beat a generic catalogue: Dining means Dining, Rooms means Rooms, and broad planning should be a warm conversation rather than an external-search failure.
+- If the guest's message raises more than one distinct question or request in the same turn, address every one of them, even briefly for the secondary item. Never silently answer only the first half of a multi-part message.
 - POST-CHECKOUT REVIEWS:
   * POSITIVE FEEDBACK (e.g. loved it, great stay, 5 stars, wonderful): Thank the guest warmly and offer the simulated Google Review link (https://g.page/r/hotel-lumiere-paris/review). Do NOT create a complaint ticket.
   * NEGATIVE FEEDBACK / COMPLAINTS (e.g. noisy room, poor service, disappointment): Apologize, prepare a private service-recovery request routed to the General Manager, and offer the same neutral public review link without pressure. Do not state that a manager has received or is reviewing the request. Set requires_human: true.
@@ -966,9 +970,15 @@ Hard rules:
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
 - Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request. Ask at most one useful clarifying question at a time. Relationship questions must feel hospitable, never like a sales funnel; human staff retains control.
 - If a requested tool is unavailable, acknowledge that limitation naturally and helpfully using the guest's context. Do not substitute a hotel service for an explicitly external request and do not claim a venue was found.
+- Answer the CURRENT guest intent using the interpreted reference and active state below. Do not restart the conversation, turn a specific clarification into a generic welcome, repeat a rejected option, or treat a superseded goal as current. The active state is an interpretation aid, not a source of hotel facts.
+- The RESPONSE CONTRACT below is the semantic controller's authoritative handoff. Do not reinterpret the guest's intent. Express a grounded answer to that contract, especially its resolved reference and active constraints. When it has a known reference, do not ask a generic opening question.
 
-Return exactly this JSON shape:
-{"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"Housekeeping|Maintenance|Spa & Wellness|Transport|Dining|Concierge|General Manager","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
+Return one JSON object only. Use actual values, never placeholder text.
+- reply_text: the concise guest-facing reply.
+- intent: choose faq, service_request, smalltalk, or other.
+- service_type: choose one approved hotel category, or null when none applies.
+- requests: an array of operational request objects only when genuinely needed; each has service_name, source, summary, est_value_eur, and is_upsell.
+- requires_human: true only when human judgement or escalation is genuinely needed.
 
 GUEST MESSAGE:
 ${input.message}
@@ -979,8 +989,24 @@ ${classification.cuisine?.label ?? 'none'}
 CONVERSATION HISTORY:
 ${historyText}
 
-CONVERSATIONAL CONTEXT (semantic interpretation, not factual data):
-${semanticPlan?.contextSummary || '(none)'}
+ACTIVE CONVERSATIONAL STATE (semantic interpretation, not factual data):
+${JSON.stringify({
+    active_goal: semanticPlan?.activeGoal || semanticPlan?.interactionType || 'conversation',
+    reference_target: semanticPlan?.referenceTarget || 'none',
+    guest_goal: semanticPlan?.guestGoal || '',
+    active_constraints: semanticPlan?.activeConstraints || [],
+    preference_constraints: semanticPlan?.preferenceConstraints || [],
+    referenced_entities: semanticPlan?.referencedEntities || [],
+    rejected_entities: semanticPlan?.rejectedEntities || [],
+    superseded_goals: semanticPlan?.supersededGoals || [],
+    location_constraint: semanticPlan?.locationConstraint || '',
+    time_constraint: semanticPlan?.timeConstraint || '',
+    topic_reset: Boolean(semanticPlan?.topicReset || semanticPlan?.topicChanged),
+    context_summary: semanticPlan?.contextSummary || '',
+  })}
+
+RESPONSE CONTRACT (authoritative semantic handoff, not a reasoning trace):
+${JSON.stringify(responseContract || {})}
 
 VERIFIED TOOL RESULTS:
 ${JSON.stringify(toolResults || {})}

@@ -67,7 +67,9 @@ test('What do you suggest is not unconditionally classified as an itinerary', ()
 test('A spa follow-up stays with verified hotel options instead of triggering external discovery', async () => {
   const originalFetch = globalThis.fetch;
   let externalSearches = 0;
-  globalThis.fetch = async (url) => {
+  let controllerCalls = 0;
+  let responseCalls = 0;
+  globalThis.fetch = async (url, options = {}) => {
     const target = String(url);
     if (target.includes('/Services')) {
       return Response.json({ records: [{ fields: {
@@ -80,6 +82,23 @@ test('A spa follow-up stays with verified hotel options instead of triggering ex
       externalSearches += 1;
       return Response.json({ organic_results: [] });
     }
+    if (target.includes('api.groq.com')) {
+      const prompt = JSON.parse(options.body).messages?.[0]?.content || '';
+      if (/semantic conversation controller/i.test(prompt)) {
+        controllerCalls += 1;
+        return Response.json({ choices: [{ message: { content: JSON.stringify({
+          interaction_type: 'hotel_service', guest_goal: 'Refine a quiet spa option', context_summary: 'The guest is continuing the spa discussion.',
+          active_goal: 'hotel_service', active_constraints: ['quiet'], preference_constraints: [], referenced_entities: ['couples massage'], rejected_entities: [], superseded_goals: [], location_constraint: '', time_constraint: '',
+          service_category: 'spa', additional_service_categories: [], reference_target: 'previous_service',
+          needs_hotel_facts: false, needs_hotel_services: true, needs_external_search: false, needs_guest_request: false, needs_human: false,
+          language: 'en', confidence: 0.92, clarification_needed: false, clarification_reason: '', topic_changed: false, topic_reset: false,
+        }) } }] });
+      }
+      responseCalls += 1;
+      return Response.json({ choices: [{ message: { content: JSON.stringify({
+        reply_text: 'For a quieter spa moment, the couples massage is the most suitable verified option.', language_detected: 'en', intent: 'service_request', service_type: 'Spa & Wellness', requests: [], requires_human: false,
+      }) } }] });
+    }
     throw new Error(`Unexpected request: ${target}`);
   };
   try {
@@ -89,7 +108,8 @@ test('A spa follow-up stays with verified hotel options instead of triggering ex
     });
     assert.equal(response.status, 200);
     assert.equal(externalSearches, 0);
-    assert.equal(body.intent, 'partner_request');
+    assert.equal(controllerCalls, 1);
+    assert.equal(responseCalls, 1);
     assert.equal(body.partner_offers.length, 1);
     assert.equal(body.partner_offers[0].name, 'Lumière Spa — Couples Massage');
   } finally {

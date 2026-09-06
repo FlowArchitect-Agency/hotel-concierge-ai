@@ -11,6 +11,26 @@ function configured(value) {
   return String(value || '').trim();
 }
 
+// OpenAI-compatible providers sometimes expose non-standard chat-template
+// switches (for example, a hosted model's reasoning mode). Keep those as a
+// deployment-owned transport setting: never derive them from guest input and
+// never allow them to replace the application-owned request fields.
+function chatTemplateKwargs(env) {
+  const source = configured(env.LLM_OPENAI_COMPATIBLE_CHAT_TEMPLATE_KWARGS_JSON);
+  if (!source || source.length > 1_000) return null;
+  try {
+    const parsed = JSON.parse(source);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object' || Object.keys(parsed).length > 12) return null;
+    const entries = Object.entries(parsed).filter(([key, value]) => (
+      /^[a-z][a-z0-9_]{0,63}$/i.test(key)
+      && (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && value.length <= 160))
+    ));
+    return entries.length === Object.keys(parsed).length ? Object.fromEntries(entries) : null;
+  } catch {
+    return null;
+  }
+}
+
 function providerName(env) {
   const provider = configured(env.LLM_PROVIDER || 'groq').toLowerCase();
   return ['groq', 'openai-compatible', 'omniroute'].includes(provider) ? provider : 'groq';
@@ -35,7 +55,13 @@ function providerConfig(env, provider, model) {
       baseUrl: configured(env.LLM_BASE_URL || env.OMNIROUTE_BASE_URL || DEFAULT_OMNIROUTE_BASE_URL),
     };
   }
-  return { provider, model, apiKey: env.LLM_API_KEY, baseUrl: configured(env.LLM_BASE_URL) };
+  return {
+    provider,
+    model,
+    apiKey: env.LLM_API_KEY,
+    baseUrl: configured(env.LLM_BASE_URL),
+    chatTemplateKwargs: chatTemplateKwargs(env),
+  };
 }
 
 function fallbackCandidate(env, primary, purpose) {
@@ -52,7 +78,12 @@ function fallbackCandidate(env, primary, purpose) {
 async function providerComplete(candidate, request, fetchImpl) {
   if (candidate.provider === 'groq') return completeGroq({ apiKey: candidate.apiKey, request, fetchImpl });
   if (candidate.provider === 'omniroute') return completeOmniRoute({ baseUrl: candidate.baseUrl, apiKey: candidate.apiKey, request, fetchImpl });
-  return completeOpenAICompatible({ provider: 'openai-compatible', baseUrl: candidate.baseUrl, apiKey: candidate.apiKey, request, fetchImpl });
+  return completeOpenAICompatible({
+    provider: 'openai-compatible', baseUrl: candidate.baseUrl, apiKey: candidate.apiKey, request, fetchImpl,
+    requestTransform: candidate.chatTemplateKwargs
+      ? (body) => ({ ...body, chat_template_kwargs: candidate.chatTemplateKwargs })
+      : undefined,
+  });
 }
 
 function validateStructured(result, request) {

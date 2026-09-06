@@ -18,6 +18,25 @@ function requestSummary(message, category) {
   return `${category || 'Concierge'} request: ${String(message ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 520)}`;
 }
 
+function compactTerms(values = [], max = 4) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean))].slice(0, max);
+}
+
+function searchQueryForPlan(input, plan) {
+  // The model's validated state can refine a search, but it never provides a
+  // provider, URL, or executable action. The current guest words remain the
+  // primary query so a stale context summary cannot replace the current ask.
+  return compactTerms([
+    input.message,
+    ...(plan?.activeConstraints || []),
+    ...(plan?.preferenceConstraints || []),
+    plan?.locationConstraint,
+    plan?.timeConstraint,
+  ], 8).join(' ').slice(0, 180);
+}
+
 // Convert a strict semantic plan into a bounded set of allowlisted requests.
 // There is intentionally no autonomous recursion or model-controlled adapter.
 export function buildToolRequests({ plan, classification = {}, input = {} }) {
@@ -29,9 +48,9 @@ export function buildToolRequests({ plan, classification = {}, input = {} }) {
   if (needs.externalSearch) requested.push({
     tool: 'external_search',
     input: {
-      query: input.message,
+      query: searchQueryForPlan(input, plan),
       category: plan?.serviceCategory || classification.category || 'experience',
-      location: classification.location || '',
+      location: plan?.locationConstraint || classification.location || '',
       constraints: classification.cuisine ? ['cuisine'] : [],
       language: input.language || 'en',
     },

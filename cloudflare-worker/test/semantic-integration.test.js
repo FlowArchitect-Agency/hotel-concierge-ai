@@ -82,8 +82,9 @@ test('controller keeps a vague spa follow-up hotel-first without external discov
     reply: 'For a quieter moment, the couples massage would be a lovely place to begin. Shall I prepare a request for the concierge team?',
   });
   assert.equal(result.response.status, 200);
+  assert.equal(result.controllerCalls, 1);
+  assert.equal(result.responseCalls, 1);
   assert.equal(result.searchCalls, 0);
-  assert.equal(result.body.intent, 'partner_request');
   assert.equal(result.body.partner_offers[0].name, 'Lumière Spa — Couples Massage');
 });
 

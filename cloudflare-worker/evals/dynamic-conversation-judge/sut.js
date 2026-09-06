@@ -45,8 +45,26 @@ function semanticPlanSummary(plan) {
     valid: true, interaction_type: plan.interactionType, service_category: plan.serviceCategory,
     service_categories: plan.serviceCategories, reference_target: plan.referenceTarget,
     tool_needs: plan.toolNeeds, language: plan.language, topic_changed: plan.topicChanged,
-    clarification_needed: plan.clarificationNeeded,
+    topic_reset: plan.topicReset, clarification_needed: plan.clarificationNeeded, guest_goal: plan.guestGoal,
+    context_summary: plan.contextSummary, active_goal: plan.activeGoal,
+    active_constraints: plan.activeConstraints, preference_constraints: plan.preferenceConstraints,
+    referenced_entities: plan.referencedEntities, rejected_entities: plan.rejectedEntities,
+    superseded_goals: plan.supersededGoals, location_constraint: plan.locationConstraint,
+    time_constraint: plan.timeConstraint,
   };
+}
+
+function renderedCardEvidence(body) {
+  const cards = (items = []) => items.slice(0, 12).map((item) => ({
+    name: String(item?.name || '').slice(0, 160),
+    category: String(item?.category || item?.service_type || '').slice(0, 64),
+    source: String(item?.source || '').slice(0, 64),
+    description: String(item?.description || '').slice(0, 280),
+  }));
+  const media = body?.media && typeof body.media === 'object'
+    ? { type: String(body.media.type || '').slice(0, 48), title: String(body.media.title || '').slice(0, 180), filename: String(body.media.filename || '').slice(0, 180) }
+    : null;
+  return { partner_offers: cards(body?.partner_offers), recommendations: cards(body?.recommendations), media };
 }
 
 function safetyFailure(reply) {
@@ -76,18 +94,24 @@ export async function runDynamicSut(env, scenario, options = {}) {
     const target = input instanceof Request ? input.url : String(input);
     if (modelUrlAllowed(target, roleEnv)) {
       const prompt = JSON.parse(init.body || '{}').messages?.[0]?.content || '';
+      const controller = /semantic conversation controller/i.test(prompt);
       calls.total += 1;
-      if (/semantic conversation controller/i.test(prompt)) calls.controller += 1; else calls.response += 1;
+      if (controller) calls.controller += 1; else calls.response += 1;
       const response = await (options.modelFetch || originalFetch)(input, init);
       if (controller && response.ok) {
         const payload = await response.clone().json().catch(() => null);
         calls.semantic_plan = semanticPlanSummary(parseSemanticControllerOutput(payload?.choices?.[0]?.message?.content || '', { language: scenario.language }));
       }
       if (response.status === 429) {
+        const header = (name) => response.headers.get(name) || null;
         calls.rate_limit = {
-          status: 429, observed_at: new Date().toISOString(), retry_after: response.headers.get('retry-after') || null,
-          request_reset: response.headers.get('x-ratelimit-reset-requests') || null,
-          token_reset: response.headers.get('x-ratelimit-reset-tokens') || null,
+          status: 429, observed_at: new Date().toISOString(), retry_after: header('retry-after'),
+          retry_after_ms: header('retry-after-ms'), request_reset: header('x-ratelimit-reset-requests'),
+          token_reset: header('x-ratelimit-reset-tokens'), rate_limit: {
+            limit_requests: header('x-ratelimit-limit-requests'), remaining_requests: header('x-ratelimit-remaining-requests'),
+            limit_tokens: header('x-ratelimit-limit-tokens'), remaining_tokens: header('x-ratelimit-remaining-tokens'),
+            reset: header('x-ratelimit-reset'),
+          },
         };
       }
       return response;
@@ -112,7 +136,7 @@ export async function runDynamicSut(env, scenario, options = {}) {
         message: finalTurn,
         sessionId: `dynamic_eval_${scenario.id}`,
         chatHistory: (scenario.conversation_history || []).map((turn) => ({ role: turn.role, message: turn.content })),
-        scenario: 'pre-arrival', testMode: 'read_only', testRunId: 'task13b_dynamic_conversation_eval',
+        scenario: 'pre-arrival', testMode: 'read_only', testRunId: 'task13e_demo_ai_readiness',
       }),
     }), roleEnv, {
       waitUntil() { throw new Error('Dynamic read-only evaluation attempted a prohibited persistence write.'); },
@@ -125,6 +149,8 @@ export async function runDynamicSut(env, scenario, options = {}) {
       requires_human: Boolean(body.requires_human), provider_failure: body.provider_failure || '',
       semantic_route: observability.semantic_route, semantic_plan: calls.semantic_plan, tools_requested: observability.tools_requested || [],
       tools_executed: observability.tools_executed || [], tool_statuses: observability.tool_statuses || {},
+      rendered_cards: renderedCardEvidence(body),
+      response_pipeline: observability.response_pipeline || null,
       write_attempts: 0, invalid_action_arguments_reached_write_layer: false,
       deterministic_failures: safetyFailure(body.reply), ground_truth: { hotel_facts: HOTEL_FIXTURES.facts, fixture_profile: profile },
       provider_metadata: {

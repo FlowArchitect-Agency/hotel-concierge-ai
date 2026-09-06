@@ -16,7 +16,8 @@
     "benchmark:validate": "node evals/conversation-benchmark/run.mjs",
     "benchmark:smoke": "node evals/conversation-benchmark/live-smoke.mjs",
     "test:dynamic-evals": "node --test test/dynamic-conversation-evals.test.js",
-    "dynamic-evals:run": "node evals/dynamic-conversation-judge/run.mjs"
+    "dynamic-evals:run": "node evals/dynamic-conversation-judge/run.mjs",
+    "demo-ai-readiness:run": "node evals/demo-ai-readiness/run.mjs"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1"

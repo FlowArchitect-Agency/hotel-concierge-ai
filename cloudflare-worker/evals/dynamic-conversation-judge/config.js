@@ -52,6 +52,8 @@ export function roleGatewayEnvironment(env = {}, role) {
     roleEnv.LLM_MODEL = model;
     roleEnv.LLM_BASE_URL = env[`${prefix}_BASE_URL`] || (requestedProvider === 'nvidia' ? 'https://integrate.api.nvidia.com/v1' : env.LLM_BASE_URL);
     roleEnv.LLM_API_KEY = roleApiKey || (requestedProvider === 'nvidia' ? env.NVIDIA_API_KEY : env.LLM_API_KEY) || env.LLM_API_KEY;
+    roleEnv.LLM_OPENAI_COMPATIBLE_CHAT_TEMPLATE_KWARGS_JSON = env[`${prefix}_CHAT_TEMPLATE_KWARGS_JSON`]
+      || env.LLM_OPENAI_COMPATIBLE_CHAT_TEMPLATE_KWARGS_JSON;
   }
   return roleEnv;
 }

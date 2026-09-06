@@ -29,6 +29,13 @@ function stringValue(value, max = 240) {
   return String(value ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function stringList(value, { maxItems = 4, maxLength = 120 } = {}) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .map((item) => typeof item === 'string' ? stringValue(item, maxLength) : '')
+    .filter(Boolean))].slice(0, maxItems);
+}
+
 function bool(value) {
   return value === true;
 }
@@ -49,6 +56,14 @@ export function semanticFallback({ language = 'en', hint = {} } = {}) {
     interactionType: 'conversation',
     guestGoal: '',
     contextSummary: '',
+    activeGoal: 'conversation',
+    activeConstraints: [],
+    preferenceConstraints: [],
+    referencedEntities: [],
+    rejectedEntities: [],
+    supersededGoals: [],
+    locationConstraint: '',
+    timeConstraint: '',
     serviceCategory: SERVICE_CATEGORIES.has(hint.category) ? hint.category : null,
     referenceTarget: 'none',
     toolNeeds: { hotelFacts: false, hotelServices: false, externalSearch: false, guestRequest: false, humanTakeover: false },
@@ -89,6 +104,8 @@ export function parseSemanticControllerOutput(raw, { language = 'en', hint = {} 
   const confidence = Number.isFinite(confidenceValue) ? Math.max(0, Math.min(1, confidenceValue)) : 0;
   const clarificationNeeded = bool(parsed.clarification_needed);
   const topicChanged = bool(parsed.topic_changed) || referenceTarget === 'topic_reset';
+  const topicReset = bool(parsed.topic_reset) || referenceTarget === 'topic_reset';
+  const activeGoal = INTERACTION_TYPES.has(parsed.active_goal) ? parsed.active_goal : interactionType;
 
   const externalSearch = interactionType === 'external_discovery' && bool(parsed.needs_external_search) && !clarificationNeeded;
   const hotelFacts = bool(parsed.needs_hotel_facts);
@@ -103,6 +120,18 @@ export function parseSemanticControllerOutput(raw, { language = 'en', hint = {} 
     interactionType,
     guestGoal: stringValue(parsed.guest_goal),
     contextSummary: stringValue(parsed.context_summary, 420),
+    // These fields carry the controller's interpreted *current* state through
+    // bounded tools and into the response generator. They are descriptive
+    // only; allowlisted interaction/tool fields remain the sole execution
+    // authority.
+    activeGoal,
+    activeConstraints: stringList(parsed.active_constraints),
+    preferenceConstraints: stringList(parsed.preference_constraints),
+    referencedEntities: stringList(parsed.referenced_entities),
+    rejectedEntities: stringList(parsed.rejected_entities),
+    supersededGoals: stringList(parsed.superseded_goals),
+    locationConstraint: stringValue(parsed.location_constraint, 120),
+    timeConstraint: stringValue(parsed.time_constraint, 120),
     serviceCategory,
     serviceCategories: [serviceCategory, ...additionalServiceCategories].filter(Boolean),
     referenceTarget,
@@ -112,6 +141,7 @@ export function parseSemanticControllerOutput(raw, { language = 'en', hint = {} 
     clarificationNeeded,
     clarificationReason: clarificationNeeded ? stringValue(parsed.clarification_reason, 200) : '',
     topicChanged,
+    topicReset,
     providerFailure: '',
     valid: true,
   };
@@ -141,7 +171,9 @@ export function buildSemanticControllerPrompt({ input, history, context = {}, ca
 
 Your only job is to understand the guest's meaning in context and request conceptual capabilities. Use the recent conversation and the immediately previous assistant message before interpreting short replies, pronouns, corrections, or references. A simple “no” can answer a prior question; it is not automatically a refusal. A topic reset supersedes previous context. A single guest turn can need more than one capability: mark every required capability, and use additional_service_categories for up to two secondary hotel-service categories.
 
-This is a compact machine contract, not a reasoning trace: return exactly one JSON object and no commentary. Keep guest_goal to 16 words, context_summary to 24 words, and clarification_reason to 12 words or fewer. Do not explain alternatives, reasoning, or ambiguity beyond those limits.
+Also return compact active conversational state: the goal that is current now, current constraints/preferences, any referenced or rejected entities, and any superseded goal. This is not a reasoning trace. It is a concise handoff for bounded tools and the response generator. A rejected prior external venue remains an external-discovery need when the guest asks for a different one, unless a clarification is genuinely needed. A change in preference replaces prior preferences; do not keep an abandoned goal active merely because it appears in the history summary.
+
+This is a compact machine contract, not a reasoning trace: return exactly one JSON object and no commentary. Keep guest_goal to 16 words, context_summary to 24 words, each active-state item to 12 words, and clarification_reason to 12 words or fewer. Do not explain alternatives, reasoning, or ambiguity beyond those limits.
 
 AVAILABLE CAPABILITIES (not results): ${capabilityList}
 CONVERSATION OWNER: ${input.conversationOwner}
@@ -165,7 +197,7 @@ Rules:
 - Use confidence between 0.70 and 0.99 for a clear contextual reference or direct goal. Use a lower confidence only with clarification_needed: true.
 
 Return exactly:
-{"interaction_type":"conversation","guest_goal":"short neutral summary","context_summary":"short summary of resolved conversational context","service_category":null,"additional_service_categories":[],"reference_target":"none","needs_hotel_facts":false,"needs_hotel_services":false,"needs_external_search":false,"needs_guest_request":false,"needs_human":false,"language":"${preferredLanguage}","confidence":0.0,"clarification_needed":false,"clarification_reason":"","topic_changed":false}
+{"interaction_type":"conversation","guest_goal":"short neutral summary","context_summary":"short summary of resolved conversational context","active_goal":"conversation","active_constraints":[],"preference_constraints":[],"referenced_entities":[],"rejected_entities":[],"superseded_goals":[],"location_constraint":"","time_constraint":"","service_category":null,"additional_service_categories":[],"reference_target":"none","needs_hotel_facts":false,"needs_hotel_services":false,"needs_external_search":false,"needs_guest_request":false,"needs_human":false,"language":"${preferredLanguage}","confidence":0.0,"clarification_needed":false,"clarification_reason":"","topic_changed":false,"topic_reset":false}
 
 RECENT CONVERSATION:
 ${historyText(history)}
@@ -209,6 +241,17 @@ export function applySemanticPlan(classification, plan) {
     searchQuery: '',
     contextualFollowUp: plan.referenceTarget !== 'none',
     contextualHotelCatalogue: Boolean(plan.toolNeeds.hotelServices && !externalDiscovery && !category),
+    activeConversationState: {
+      activeGoal: plan.activeGoal,
+      activeConstraints: plan.activeConstraints,
+      preferenceConstraints: plan.preferenceConstraints,
+      referencedEntities: plan.referencedEntities,
+      rejectedEntities: plan.rejectedEntities,
+      supersededGoals: plan.supersededGoals,
+      locationConstraint: plan.locationConstraint,
+      timeConstraint: plan.timeConstraint,
+      topicReset: plan.topicReset,
+    },
     semanticPlan: plan,
   };
 }

@@ -48,6 +48,24 @@ test('semantic controller prompt makes previous assistant context and capability
   assert.match(prompt, /AVAILABLE CAPABILITIES .*external_search/i);
   assert.match(prompt, /Do not answer the guest and do not invent facts/i);
   assert.match(prompt, /arrange, book, bring, repair, cancel, prepare/i);
+  assert.match(prompt, /active conversational state/i);
+});
+
+test('semantic controller preserves typed active state while execution remains allowlisted', () => {
+  const plan = parseSemanticControllerOutput(controllerOutput({
+    interaction_type: 'external_discovery', active_goal: 'external_discovery', reference_target: 'topic_reset',
+    active_constraints: ['casual', 'nearby'], preference_constraints: ['low effort'], referenced_entities: ['Le Jardin'],
+    rejected_entities: ['Le Jardin'], superseded_goals: ['romantic dinner'], location_constraint: 'Saint-Germain', time_constraint: 'tonight',
+    service_category: 'experience', needs_external_search: true, topic_changed: true, topic_reset: true,
+  }), { language: 'en' });
+  assert.equal(plan.valid, true);
+  assert.equal(plan.activeGoal, 'external_discovery');
+  assert.deepEqual(plan.activeConstraints, ['casual', 'nearby']);
+  assert.deepEqual(plan.rejectedEntities, ['Le Jardin']);
+  assert.deepEqual(plan.supersededGoals, ['romantic dinner']);
+  assert.equal(plan.locationConstraint, 'Saint-Germain');
+  assert.equal(plan.topicReset, true);
+  assert.equal(plan.toolNeeds.externalSearch, true);
 });
 
 const semanticCases = [
