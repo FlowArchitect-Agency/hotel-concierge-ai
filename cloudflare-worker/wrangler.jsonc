@@ -4,25 +4,19 @@
   "main": "src/index.js",
   "compatibility_date": "2026-08-02",
   "workers_dev": true,
-  // Live readiness testing on 2026-09-07 saw intermittent raw Cloudflare
-  // error 1102 ("Worker exceeded resource limits") under normal, light
-  // conversational load. Cloudflare's own docs list only CPU time or memory
-  // as causes for 1102, and this Worker had no explicit limits.cpu_ms set --
-  // meaning it was running on whatever the account's default CPU-time budget
-  // is, which can be as little as ~10ms of actual JS execution on some
-  // plans. A single guest turn here can do JSON parsing/stringification of
-  // an 8-turn history plus the service catalogue, several regex passes for
-  // classification and name-matching, and response-contract validation --
-  // comfortably over a 10ms budget on a heavier turn, even though none of
-  // that time is spent waiting on the network (fetch time doesn't count
-  // against this limit). Raising the configured ceiling costs nothing and
-  // only takes effect on a Workers plan that supports it -- it cannot make
-  // things worse. This does NOT change billing by itself; a request still
-  // returns as soon as it finishes. Verify in the Cloudflare dashboard
-  // (Workers & Pages -> conciergeflow-api -> Settings) that the account's
-  // plan actually honors a value this high, and if 1102s persist afterward,
-  // check Workers Logs for whether CPU or memory is the reported cause.
-  "limits": { "cpu_ms": 30000 },
+  // NOTE: do not add a "limits": { "cpu_ms": ... } block here while this
+  // account is on the Workers Free plan. The Cloudflare API rejects the whole
+  // deploy with error 100328 ("CPU limits are not supported for the Free
+  // plan") -- it is not silently ignored, it blocks every `wrangler deploy`.
+  // An earlier attempt (4dafac0) set cpu_ms to 30000 on the assumption that an
+  // unsupported ceiling would be inert; it is not, and it left the fixes in
+  // that commit undeployed until the block was removed.
+  //
+  // Live readiness testing on 2026-09-07 saw intermittent raw Cloudflare error
+  // 1102 ("Worker exceeded resource limits") under light conversational load.
+  // Free plan CPU time is capped at 10ms per request and cannot be raised, so
+  // the real remedy is either the Workers Paid plan (which then makes a
+  // limits.cpu_ms block legal) or reducing per-turn CPU work.
   "vars": {
     "ALLOWED_ORIGIN": "https://flowarchitect-agency.github.io",
     "DEMO_ALLOWED_ORIGIN": "https://flowarchitect-agency.github.io",
