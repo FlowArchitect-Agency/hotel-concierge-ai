@@ -37,6 +37,7 @@ import {
 } from './response-contract.js';
 
 const RECENT_REQUESTS = new Map();
+let recentRequestsLastSweptAt = 0;
 const RECENT_WHATSAPP_MESSAGES = new Map();
 const SERVICE_CACHE_TTL_MS = 120_000;
 const WHATSAPP_MESSAGE_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -120,10 +121,27 @@ function twimlResponse(message = '', status = 200) {
   });
 }
 
+// A Worker isolate can stay warm and keep handling requests for a long time,
+// and this map never used to remove a key once an IP went idle -- only the
+// array under each key shrank. Real traffic from many distinct visitor IPs
+// would let it grow without bound for the life of the isolate. Sweeping
+// fully-idle IPs out periodically (not on every call, to avoid an O(map
+// size) scan on every request once it's large) keeps it bounded to
+// currently-active IPs instead.
+const RECENT_REQUESTS_SWEEP_INTERVAL_MS = 60_000;
+function sweepRecentRequests(now) {
+  if (now - recentRequestsLastSweptAt < RECENT_REQUESTS_SWEEP_INTERVAL_MS) return;
+  recentRequestsLastSweptAt = now;
+  for (const [ip, timestamps] of RECENT_REQUESTS) {
+    if (!timestamps.length || now - timestamps[timestamps.length - 1] >= 60_000) RECENT_REQUESTS.delete(ip);
+  }
+}
+
 function rateLimited(request) {
   const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for');
   if (!ip) return false;
   const now = Date.now();
+  sweepRecentRequests(now);
   const timestamps = (RECENT_REQUESTS.get(ip) || []).filter((value) => now - value < 60_000);
   timestamps.push(now);
   RECENT_REQUESTS.set(ip, timestamps);
@@ -1341,12 +1359,87 @@ function hasBookingIntent(message) {
   return /\b(book|reserve|confirm|yes)\b/.test(text);
 }
 
-// Generic hospitality/branding words that appear across many catalogue
-// entries and are therefore never distinctive enough, on their own, to
-// identify one specific item (e.g. every chauffeur service says "Private").
+// Generic hospitality/branding and service-*type* words that appear across
+// many catalogue entries and are therefore never distinctive enough, on
+// their own, to identify one specific item (e.g. every chauffeur service
+// says "Private", and "tour" describes a whole category of items, not one
+// of them). Deliberately excludes real landmark/proper-noun words such as
+// "Eiffel", "Louvre", "Versailles" -- those are exactly the words that let
+// two different real items in the same category be told apart (see the
+// nameMatches disambiguation below), even though concierge.js's own
+// CATEGORY_RULES also uses them as *category-classification* keywords for
+// an unrelated purpose. Conflating the two lists previously broke that
+// disambiguation (a blanket merge made "louvre"/"versailles" generic too);
+// keep this list hand-curated to genuinely generic type words only.
+// The gap this list closes: "book the Eiffel Tower Sunset Helicopter Tour"
+// (a service that doesn't exist) named its target only via the word "tour",
+// which used to slip through as if it were a distinctive identifier and
+// matched the one unrelated real tour in the catalogue.
 const GENERIC_SERVICE_NAME_WORDS = new Set([
   'private', 'hotel', 'lumiere', 'vip', 'after', 'hours', 'day', 'trip', 'signature', 'the', 'and', 'for', 'with',
+  // tour/experience-type nouns
+  'tour', 'tours', 'excursion', 'excursions', 'cruise', 'cruises', 'museum', 'museums',
+  'sightsee', 'sightseeing', 'guide', 'guided', 'experience', 'experiences',
+  'chef', 'sommelier', 'tasting', 'shopping', 'shopper', 'photographer', 'proposal', 'anniversary', 'honeymoon',
+  // spa/wellness-type nouns
+  'spa', 'massage', 'massages', 'sauna', 'hammam', 'wellness', 'treatment', 'treatments', 'facial',
+  // dining-type nouns
+  'restaurant', 'restaurants', 'dining', 'dinner', 'lunch', 'breakfast', 'table', 'reservation', 'food', 'cuisine', 'michelin', 'meal',
+  // transport-type nouns
+  'taxi', 'uber', 'chauffeur', 'car', 'driver', 'transfer', 'transfers', 'airport', 'pickup', 'shuttle', 'ride',
+  // stay/room-type nouns and catch-alls
+  'suite', 'suites', 'room', 'rooms', 'stay', 'accommodation', 'menu', 'package', 'service', 'services', 'option', 'options',
 ]);
+
+// hasTerm() is a concierge.js-local helper, not exported -- this is an
+// equivalent standalone word-boundary check.
+function containsWord(text, word) {
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'u').test(text);
+}
+
+// The words in a catalogue item's own name that could plausibly identify it
+// specifically -- i.e. everything left after stripping generic hospitality
+// and category/type vocabulary.
+function distinctiveServiceWords(name) {
+  return normalized(name)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length >= 4 && !GENERIC_SERVICE_NAME_WORDS.has(word));
+}
+
+// Quoted phrases and runs of capitalized words in the guest's own (non-
+// lowercased) message read as the guest naming something specific by title
+// ("book me the \"Eiffel Tower Sunset Helicopter Tour\"", or the same
+// without quotes). Used only to decide whether trusting a lone remaining
+// candidate would be a guess rather than a real match -- never to identify
+// which item was meant.
+function extractNamedPhrases(rawMessage) {
+  const text = String(rawMessage ?? '');
+  const phrases = [];
+  for (const match of text.matchAll(/["“]([^"”]{3,80})["”]/g)) phrases.push(match[1]);
+  for (const match of text.matchAll(/\b(?:\p{Lu}[\p{Ll}'’-]*\s+){1,6}\p{Lu}[\p{Ll}'’-]*\b/gu)) phrases.push(match[0]);
+  return phrases;
+}
+
+// True when the guest's message names something specific enough (by its own
+// distinctive vocabulary) that it doesn't share a single word with the sole
+// remaining candidate -- i.e. they are very likely asking for an item that
+// simply isn't in the catalogue, not using a generic category phrase like
+// "book the tour" or "book a massage". Guards the single-candidate fallback
+// below, which otherwise cannot tell "the only tour we have" apart from
+// "a specific, different tour that doesn't exist" -- the exact gap that let
+// a nonexistent "Eiffel Tower Sunset Helicopter Tour" request get silently
+// confirmed as the one real Louvre tour.
+function namesUnmatchedSpecificItem(rawMessage, service) {
+  const serviceWords = new Set(distinctiveServiceWords(service.name));
+  for (const phrase of extractNamedPhrases(rawMessage)) {
+    const phraseWords = normalized(phrase)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length >= 4 && !GENERIC_SERVICE_NAME_WORDS.has(word));
+    if (phraseWords.length < 2) continue;
+    if (!phraseWords.some((word) => serviceWords.has(word))) return true;
+  }
+  return false;
+}
 
 function preferredBookingService(services, category, message) {
   const text = normalized(message);
@@ -1361,14 +1454,7 @@ function preferredBookingService(services, category, message) {
   // list entirely. This checks every active partner service, not just the
   // guessed category, and only auto-resolves when exactly one item matches.
   const allPartners = services.filter((service) => service.isPartner);
-  const nameMatches = allPartners.filter((service) => {
-    const distinctiveWords = normalized(service.name)
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((word) => word.length >= 4 && !GENERIC_SERVICE_NAME_WORDS.has(word));
-    // hasTerm() is a concierge.js-local helper, not exported -- use an
-    // equivalent inline word-boundary check here instead of importing it.
-    return distinctiveWords.some((word) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'u').test(text));
-  });
+  const nameMatches = allPartners.filter((service) => distinctiveServiceWords(service.name).some((word) => containsWord(text, word)));
   if (nameMatches.length === 1) return nameMatches[0];
 
   const candidates = categoryPartnerServices(services, category);
@@ -1380,15 +1466,21 @@ function preferredBookingService(services, category, message) {
       || (text.includes('airport') && name.includes('airport'))
       || (text.includes('cdg') && name.includes('cdg'));
   });
-  // A confident keyword or distinctive-name match resolves here. Otherwise,
-  // only fall back to a single available candidate when the category is
-  // genuinely unambiguous (exactly one partner service exists for it). With
-  // two or more candidates and no confident match, guessing by array order
-  // is exactly the wrong-entity failure mode this fast path must avoid --
+  if (matching) return matching;
+  // Otherwise, only fall back to a single available candidate when the
+  // category is genuinely unambiguous (exactly one partner service exists
+  // for it) AND the guest doesn't appear to be naming a different, specific
+  // item that just happens to share this category. With two or more
+  // candidates and no confident match, or a named item this sole candidate
+  // shares no vocabulary with, guessing is exactly the wrong-entity/
+  // fabricated-confirmation failure mode this fast path must avoid --
   // return null so the caller falls through to the semantic-controller-
   // driven guest_request tool instead, which grounds its confirmation in the
-  // model's own guest_goal text.
-  return matching || (candidates.length === 1 ? candidates[0] : null);
+  // model's own guest_goal text (or, for a genuinely unmatched item, can
+  // honestly say it isn't offered instead of confirming the wrong one).
+  if (candidates.length !== 1) return null;
+  const sole = candidates[0];
+  return namesUnmatchedSpecificItem(message, sole) ? null : sole;
 }
 
 function partnerBookingOutcome(input, classification, services) {

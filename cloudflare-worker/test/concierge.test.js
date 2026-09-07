@@ -2166,3 +2166,45 @@ test('A guest naming a specific catalogue item is never confirmed against a diff
     globalThis.fetch = originalFetch;
   }
 });
+
+// Regression test for a live readiness test found 2026-09-07: a guest naming
+// a service that does not exist at all in the catalogue ("book me the
+// \"Eiffel Tower Sunset Helicopter Tour\"") was silently confirmed against a
+// real, unrelated, expensive catalogue item ("VIP Louvre After-Hours Private
+// Tour", EUR 2800) -- the same underlying failure mode as the Louvre/
+// Versailles bug above, but worse: the guest's own message shares no real
+// identifying word with the item that got booked. Root cause: the message's
+// only catalogue-vocabulary word was "tour", a generic type word that (at
+// the time) was not in GENERIC_SERVICE_NAME_WORDS, so it was treated as
+// this being the sole matching candidate in its category. The fast
+// deterministic booking shortcut must never confirm an item the guest's own
+// message gives no real evidence for -- it should return null instead so the
+// semantic-controller/LLM path can honestly say the item isn't offered.
+test('A guest naming a service that does not exist in the catalogue is never silently confirmed against a real one', async () => {
+  const records = [
+    { fields: { Name: 'VIP Louvre After-Hours Private Tour', Category: 'experience', Description: 'Exclusive after-hours Louvre access.', Active: true, IsPartner: true, PriceEUR: 2800, DurationMins: 120 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        message: 'Please book me the "Eiffel Tower Sunset Helicopter Tour" for Saturday.',
+        sessionId: 'qa_nonexistent_item_fabrication',
+        testMode: 'read_only',
+      }),
+    }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris' }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    // Must never confirm the unrelated real item as if it were what the
+    // guest asked for.
+    assert.doesNotMatch(body.reply, /I have recorded your request for VIP Louvre/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

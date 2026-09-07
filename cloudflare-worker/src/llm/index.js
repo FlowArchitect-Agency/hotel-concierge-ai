@@ -94,6 +94,23 @@ function validateStructured(result, request) {
   return structured ? normalizedResult({ ...result, structured }) : invalidStructuredResult(result);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// A 429 from Groq's free-tier per-minute limit is usually gone within a
+// second -- a guest conversation only has to survive the current window, not
+// a real outage. Retrying immediately, back-to-back, tends to land in the
+// same window and fail again, which is exactly what turned "the model was
+// rate-limited once" into "the response generator failed twice and the
+// guest got the last-resort fallback sentence." A short, jittered pause
+// before exactly one retry is enough to usually clear the window without
+// meaningfully changing guest-facing latency for the common (non-limited)
+// case. A real 'timeout' is not retried here: the request timeout is already
+// generous (30s default), so doubling it would risk far worse latency for
+// what is more likely a genuine provider slowdown than a clearable window.
+const RATE_LIMIT_RETRY_BASE_MS = 350;
+
 /**
  * Executes a deterministic primary → qualified fallback chain. The gateway
  * does not route across an arbitrary provider pool and never owns guest state:
@@ -110,7 +127,11 @@ export async function complete(env, rawRequest, { fetchImpl } = {}) {
       last = normalizedResult({ status: 'provider_error', provider: candidate.provider, model: candidate.model, attempts: index + 1, fallback_used: index > 0, error_code: 'missing_configuration' });
       continue;
     }
-    const result = validateStructured(await providerComplete(candidate, { ...request, model: candidate.model }, fetchImpl), request);
+    let result = validateStructured(await providerComplete(candidate, { ...request, model: candidate.model }, fetchImpl), request);
+    if (result.status === 'rate_limited') {
+      await sleep(RATE_LIMIT_RETRY_BASE_MS + Math.floor(Math.random() * RATE_LIMIT_RETRY_BASE_MS));
+      result = validateStructured(await providerComplete(candidate, { ...request, model: candidate.model }, fetchImpl), request);
+    }
     last = normalizedResult({ ...result, attempts: index + 1, fallback_used: index > 0 });
     if (last.status === 'success') return last;
   }

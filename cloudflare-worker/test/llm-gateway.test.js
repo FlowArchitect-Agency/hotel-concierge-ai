@@ -196,6 +196,42 @@ test('gateway normalizes a provider rate limit without exposing headers or crede
   assert.equal(JSON.stringify(result).includes('test-groq-key'), false);
 });
 
+// Regression test for a live readiness test found 2026-09-07: a single
+// transient 429 from Groq's free-tier per-minute limit was going straight to
+// a failed result with no retry, and since the app's own "repair" second
+// attempt fires back-to-back with no delay, it usually landed in the same
+// rate-limit window and failed too -- turning one brief rate-limit blip into
+// a guest-facing "I am experiencing a brief system delay" fallback. The
+// gateway should absorb a single transient 429 by retrying once after a
+// short pause, so only a sustained outage (limit still active on the retry)
+// reaches the caller as a failure.
+test('gateway retries once after a single transient rate limit and recovers', async () => {
+  let calls = 0;
+  const result = await completeText(env(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Hello' }],
+  }, {
+    fetchImpl: async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response(null, { status: 429 })
+        : Response.json({ choices: [{ message: { content: 'Breakfast starts at 7am.' } }] });
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.status, 'success');
+  assert.equal(result.content, 'Breakfast starts at 7am.');
+});
+
+test('gateway gives up after a sustained rate limit (retry also limited)', async () => {
+  let calls = 0;
+  const result = await completeText(env(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Hello' }],
+  }, { fetchImpl: async () => { calls += 1; return new Response(null, { status: 429 }); } });
+  assert.equal(calls, 2);
+  assert.equal(result.status, 'rate_limited');
+  assert.equal(result.content, '');
+});
+
 test('gateway normalizes an aborted provider call as a timeout', async () => {
   const result = await completeText(env(), {
     purpose: 'response_generator', messages: [{ role: 'user', content: 'Hello' }],
