@@ -280,10 +280,15 @@ export function contextualSafeFallback(contract = {}, language = 'en') {
   if (contract.reference && contract.reference !== 'none' && compact(contract.reference_summary)) {
     return `${FALLBACK_PREFIX[language] || FALLBACK_PREFIX.en} ${compact(contract.reference_summary, 420)}`;
   }
+  // Last resort, reached only when both generation attempts failed the
+  // contract. It must be a usable guest-facing answer, not a statement of
+  // intent: "I will answer the current request using the verified information
+  // available" promises an answer and then delivers none, which live testing
+  // showed reaching guests as the entire reply. Defer to a human instead.
   const templates = {
-    en: 'I will answer the current request using the verified information available.',
-    fr: 'Je répondrai à votre demande actuelle en utilisant les informations vérifiées disponibles.',
-    es: 'Responderé a su solicitud actual utilizando la información verificada disponible.',
+    en: 'I do not have that detail in my verified records. Let me check with our front desk team and come back to you shortly.',
+    fr: "Je n'ai pas cette information dans mes données vérifiées. Je me renseigne auprès de la réception et je reviens vers vous rapidement.",
+    es: 'No dispongo de ese dato en mis registros verificados. Lo consultaré con nuestro equipo de recepción y le responderé en breve.',
   };
   return templates[language] || templates.en;
 }

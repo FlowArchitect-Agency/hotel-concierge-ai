@@ -2255,3 +2255,69 @@ test('Airtable failures surface the provider error body, not just a bare status'
     console.error = originalError;
   }
 });
+
+test('A price question reaches the model instead of being answered with a category card', async () => {
+  // "How much is the Signature Hammam Ritual?" was previously short-circuited
+  // by the category-card fast path into "We have 2 spa & wellness options in
+  // the Hotel Lumiere collection", which never answers the question even
+  // though the price is in the catalogue. Specific-attribute questions must
+  // reach the model. Broad browsing questions must still take the fast path.
+  const originalFetch = globalThis.fetch;
+  const env = { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' };
+
+  async function ask(message, sessionId) {
+    const calls = [];
+    globalThis.fetch = async (url) => {
+      const target = String(url);
+      calls.push(target);
+      if (target.includes('/Services')) return Response.json({ records });
+      if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+      if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+        return Response.json({ choices: [{ message: { content: JSON.stringify({
+          reply_text: 'The Couples Massage is 420 EUR for 75 minutes.',
+          intent: 'faq', service_type: 'spa', requests: [], requires_human: false,
+        }) } }] });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    };
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message, sessionId, testMode: 'read_only' }),
+    }), env, { waitUntil() {} });
+    return { body: await response.json(), reachedModel: calls.some((u) => u.includes('api.groq.com')) };
+  }
+
+  try {
+    for (const question of [
+      'How much is the Lumière Spa Couples Massage?',
+      'What does the couples massage cost?',
+      'How long does the couples massage last?',
+      'Combien coûte le massage en duo ?',
+    ]) {
+      const { body, reachedModel } = await ask(question, 'qa_price_q');
+      assert.equal(reachedModel, true, `"${question}" must reach the model`);
+      assert.doesNotMatch(body.reply, /hôtel lumière collection/i, `"${question}" must not get the category card`);
+    }
+
+    // Broad browsing must still be served by the fast path, with no model call.
+    const browsing = await ask('What spa treatments do you offer?', 'qa_browse_q');
+    assert.equal(browsing.reachedModel, false, 'broad browsing should stay on the card fast path');
+    assert.equal(browsing.body.intent, 'partner_request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('The last-resort fallback gives a usable answer, not a promise to answer', async () => {
+  const { contextualSafeFallback } = await import('../src/response-contract.js');
+  for (const language of ['en', 'fr', 'es']) {
+    const reply = contextualSafeFallback({}, language);
+    assert.doesNotMatch(reply, /I will answer the current request/i);
+    assert.doesNotMatch(reply, /Je répondrai à votre demande actuelle/i);
+    assert.doesNotMatch(reply, /Responderé a su solicitud actual/i);
+    assert.ok(reply.length > 30, 'fallback must still say something useful');
+  }
+  // It should defer to a human rather than assert a fact it does not hold.
+  assert.match(contextualSafeFallback({}, 'en'), /front desk|do not have/i);
+});

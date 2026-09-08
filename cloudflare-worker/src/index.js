@@ -1616,9 +1616,21 @@ function hotelCatalogueResponse(input, classification, services) {
   };
 }
 
+// A question about a SPECIFIC attribute of a service -- what it costs, how
+// long it runs, what it includes -- must be answered with that attribute. The
+// category-card shortcut below is for broad browsing ("what dining do you
+// offer"), and answering "How much is the Signature Hammam Ritual?" with
+// "We have 2 spa & wellness options" is a non-answer: the price is in the
+// catalogue the model already receives. Deliberately excludes availability
+// wording ("what dining experiences are available"), which is browsing.
+const SPECIFIC_ATTRIBUTE_QUESTION = /\b(how much|how many|price|prices|pricing|cost|costs|rate|rates|fee|fees|expensive|combien|prix|tarif|cuanto|cuánto|precio|how long|duration|last)\b|\bwhat(?:'s| is| does)?\b[^?]{0,40}\b(include|included|includes)\b/i;
+
 function hotelFirstResponse(input, classification, services) {
   const text = normalized(input.message);
   if (/\b(what time|when did|did i|did we|which time|what day|how much did|remind me|what was)\b/.test(text)) {
+    return null;
+  }
+  if (SPECIFIC_ATTRIBUTE_QUESTION.test(text)) {
     return null;
   }
   if (classification?.wantsExternal || guestInsistsOnExternal(input.message)) {
