@@ -111,6 +111,23 @@ function sleep(ms) {
 // what is more likely a genuine provider slowdown than a clearable window.
 const RATE_LIMIT_RETRY_BASE_MS = 350;
 
+// Reasoning models write their chain-of-thought as plain text BEFORE the JSON
+// object. The callers' budgets here are 180-350 tokens, sized for Qwen with
+// reasoning suppressed (reasoning_effort:'none'), and they cut such a model off
+// mid-sentence -- the strict parser then sees prose and rejects the turn as an
+// invalid plan. Measured directly: at 700 tokens these models produced
+// unparseable plans on most cases; at 2500 the same models, same prompts,
+// returned valid plans. Any candidate that cannot have reasoning suppressed
+// therefore needs a floor, applied per candidate so the Qwen primary keeps its
+// small, cheap budget.
+const REASONING_MODEL_MIN_TOKENS = 2500;
+const REASONING_MODEL_PATTERN = /nemotron|minimax|deepseek|qwq|magistral|thinking/i;
+
+function candidateMaxTokens(candidate, request) {
+  if (!REASONING_MODEL_PATTERN.test(String(candidate.model))) return request.max_tokens;
+  return Math.max(Number(request.max_tokens) || 0, REASONING_MODEL_MIN_TOKENS);
+}
+
 /**
  * Executes a deterministic primary → qualified fallback chain. The gateway
  * does not route across an arbitrary provider pool and never owns guest state:
@@ -127,10 +144,11 @@ export async function complete(env, rawRequest, { fetchImpl } = {}) {
       last = normalizedResult({ status: 'provider_error', provider: candidate.provider, model: candidate.model, attempts: index + 1, fallback_used: index > 0, error_code: 'missing_configuration' });
       continue;
     }
-    let result = validateStructured(await providerComplete(candidate, { ...request, model: candidate.model }, fetchImpl), request);
+    const candidateRequest = { ...request, model: candidate.model, max_tokens: candidateMaxTokens(candidate, request) };
+    let result = validateStructured(await providerComplete(candidate, candidateRequest, fetchImpl), request);
     if (result.status === 'rate_limited') {
       await sleep(RATE_LIMIT_RETRY_BASE_MS + Math.floor(Math.random() * RATE_LIMIT_RETRY_BASE_MS));
-      result = validateStructured(await providerComplete(candidate, { ...request, model: candidate.model }, fetchImpl), request);
+      result = validateStructured(await providerComplete(candidate, candidateRequest, fetchImpl), request);
     }
     last = normalizedResult({ ...result, attempts: index + 1, fallback_used: index > 0 });
     if (last.status === 'success') return last;

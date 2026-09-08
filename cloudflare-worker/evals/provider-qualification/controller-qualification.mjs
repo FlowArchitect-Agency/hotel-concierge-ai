@@ -14,6 +14,11 @@ import { writeFileSync } from 'node:fs';
 import { buildSemanticControllerPrompt, parseSemanticControllerOutput } from '../../src/semantic-controller.js';
 
 const OUT = process.argv[2] || 'controller-qualification.json';
+// Reasoning models (nemotron, minimax, deepseek) emit their chain-of-thought as
+// text BEFORE the JSON object. At 700 tokens they were cut off mid-sentence and
+// every plan was scored invalid -- a measurement artefact, not a model failure.
+// Production's default of 350 (src/llm/schemas.js) is lower still.
+const MAX_TOKENS = Number(process.env.QUALIFY_MAX_TOKENS || 2500);
 const KEYS = { openrouter: process.env.OPENROUTER_API_KEY, nvidia: process.env.NVIDIA_API_KEY };
 const URLS = {
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
@@ -23,11 +28,16 @@ const URLS = {
 // nvidia/nemotron-3-super-120b-a12b:free was dropped after a first pass: it
 // produced 15/15 unparseable plans against the production prompt (despite
 // handling a toy JSON prompt fine) and returned intermittent upstream 404s.
-const CANDIDATES = [
-  ['openrouter', 'nvidia/nemotron-3-ultra-550b-a55b:free'],
-  ['nvidia', 'deepseek-ai/deepseek-v4-pro-0813'],
-  ['nvidia', 'minimaxai/minimax-m3'],
-];
+// nvidia/nemotron-3-ultra-550b-a55b:free was also dropped: 7/15 with five
+// unparseable plans against the production prompt, i.e. it fails exactly when
+// a fallback would be needed.
+const CANDIDATES = (process.env.QUALIFY_ONLY
+  ? process.env.QUALIFY_ONLY.split(',').map((s) => s.split('|'))
+  : [
+    ['nvidia', 'minimaxai/minimax-m3'],
+    ['nvidia', 'deepseek-ai/deepseek-v4-pro-0813'],
+    ['openrouter', 'nvidia/nemotron-3-ultra-550b-a55b:free'],
+  ]);
 
 const CAPABILITIES = ['hotel_facts', 'hotel_services', 'external_search', 'guest_request', 'human_takeover'];
 const h = (role, message) => ({ role, message });
@@ -91,22 +101,33 @@ function scoreCase(plan, expect) {
   return misses;
 }
 
+// Free tiers rate-limit aggressively (NVIDIA 429s after ~2 rapid calls). Retry
+// with backoff so the score measures the MODEL's ability, not the provider's
+// throttle. A 429 that survives every retry is reported separately as a
+// capacity finding rather than being scored as a wrong answer.
 async function callModel(provider, model, prompt) {
-  const res = await fetch(URLS[provider], {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KEYS[provider]}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model, max_tokens: 700, temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
-  if (!res.ok) {
+  let wait = 6000;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const res = await fetch(URLS[provider], {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KEYS[provider]}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model, max_tokens: MAX_TOKENS, temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json?.choices?.[0]?.message?.content ?? '';
+    }
     const body = await res.text();
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 120)}`);
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable || attempt === 4) throw new Error(`HTTP ${res.status}: ${body.slice(0, 90)}`);
+    await new Promise((r) => setTimeout(r, wait));
+    wait = Math.min(wait * 2, 45000);
   }
-  const json = await res.json();
-  return json?.choices?.[0]?.message?.content ?? '';
+  throw new Error('unreachable');
 }
 
 const report = { generatedAt: new Date().toISOString(), candidates: [] };
@@ -134,7 +155,7 @@ for (const [provider, model] of CANDIDATES) {
     if (ok) pass += 1;
     rows.push({ id: c.id, ok, misses, err });
     console.log(`  ${ok ? 'ok  ' : 'MISS'} ${c.id.padEnd(17)} ${err ? err : misses.join(' ')}`);
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, Number(process.env.QUALIFY_GAP_MS || 8000)));
   }
 
   const rate = pass / CASES.length;

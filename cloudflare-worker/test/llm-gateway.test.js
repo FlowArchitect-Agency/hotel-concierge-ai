@@ -385,3 +385,25 @@ test('An unqualified fallback model is never selected, even when configured', as
   assert.equal(result.fallback_used, false, 'no fallback should be attempted');
   assert.ok(calls.every((m) => m === 'qwen/qwen3.6-27b'), 'the unqualified model must never be called');
 });
+
+test('Reasoning-model candidates get a token floor so their JSON is not truncated', async () => {
+  // Callers budget 180-350 tokens, which suits Qwen with reasoning suppressed.
+  // A reasoning model writes its chain-of-thought before the JSON and gets cut
+  // off mid-object at that budget, so the strict parser rejects a plan the
+  // model was perfectly capable of producing.
+  const seen = [];
+  const fetchImpl = async (url, options) => {
+    seen.push(JSON.parse(options.body));
+    return Response.json({ choices: [{ message: { content: '{"reply_text":"ok"}' } }] });
+  };
+
+  await completeText({ GROQ_API_KEY: 'k', GROQ_MODEL: 'qwen/qwen3.6-27b' },
+    { purpose: 'response_generator', max_tokens: 350, messages: [{ role: 'user', content: 'hi' }] }, { fetchImpl });
+  assert.equal(seen[0].max_tokens, 350, 'the Qwen primary keeps its small budget');
+
+  await completeText(
+    { LLM_API_KEY: 'k', LLM_BASE_URL: 'https://integrate.api.nvidia.com/v1', LLM_PROVIDER: 'openai-compatible', LLM_MODEL: 'minimaxai/minimax-m3' },
+    { purpose: 'response_generator', max_tokens: 350, messages: [{ role: 'user', content: 'hi' }] }, { fetchImpl },
+  );
+  assert.ok(seen[1].max_tokens >= 2500, `reasoning model must get a floor, got ${seen[1].max_tokens}`);
+});
