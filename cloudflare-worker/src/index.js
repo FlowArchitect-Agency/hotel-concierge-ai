@@ -1625,12 +1625,32 @@ function hotelCatalogueResponse(input, classification, services) {
 // wording ("what dining experiences are available"), which is browsing.
 const SPECIFIC_ATTRIBUTE_QUESTION = /\b(how much|how many|price|prices|pricing|cost|costs|rate|rates|fee|fees|expensive|combien|prix|tarif|cuanto|cuánto|precio|how long|duration|last)\b|\bwhat(?:'s| is| does)?\b[^?]{0,40}\b(include|included|includes)\b/i;
 
+// A question about WHEN something happens is a hotel-facts question, not a
+// request to browse the catalogue. The English forms were already guarded
+// above, but a guest asking the same thing in French was still being handed
+// restaurant cards ("à quelle heure est le petit-déjeuner ?" ->
+// "Nous avons 2 options de restauration"), because only the English wording
+// bailed out. Facts questions must reach the facts path in every language.
+const TIME_OR_HOURS_QUESTION = /\b(what time|when do|when does|when is|opening hours|closing time|how late|hours of)\b|à quelle heure|quelle heure|horaires?\b|a qué hora|qué hora|horario|a che ora|orari\b|wie viel uhr|öffnungszeiten/i;
+
+// True when the guest names a specific catalogue item by a word distinctive to
+// that item's own name ("Versailles", "ritual", "Louvre"). They are asking for
+// that item, so answering with a category card ("We have 2 spa & wellness
+// options") is a non-answer. Brand and category vocabulary is already excluded
+// by GENERIC_SERVICE_NAME_WORDS, so broad browsing ("what dining experiences
+// are available at Hôtel Lumière?") still reaches the card path.
+function namesSpecificCatalogueItem(message, services) {
+  const text = normalized(message);
+  return services.some((service) => distinctiveServiceWords(service.name)
+    .some((word) => containsWord(text, word)));
+}
+
 function hotelFirstResponse(input, classification, services) {
   const text = normalized(input.message);
   if (/\b(what time|when did|did i|did we|which time|what day|how much did|remind me|what was)\b/.test(text)) {
     return null;
   }
-  if (SPECIFIC_ATTRIBUTE_QUESTION.test(text)) {
+  if (SPECIFIC_ATTRIBUTE_QUESTION.test(text) || TIME_OR_HOURS_QUESTION.test(input.message)) {
     return null;
   }
   if (classification?.wantsExternal || guestInsistsOnExternal(input.message)) {
@@ -1644,6 +1664,9 @@ function hotelFirstResponse(input, classification, services) {
   if (!hotelServiceCategories.has(classification.category)) return null;
   const hotelOptions = categoryPartnerServices(services, classification.category);
   if (!hotelOptions.length) return null;
+  // "I want the Signature Hammam Ritual" must not be answered with "We have 2
+  // spa & wellness options" -- the guest already chose.
+  if (namesSpecificCatalogueItem(input.message, hotelOptions)) return null;
   // A spa menu can use its own verified brochure. Narrow dining and room
   // questions deliberately stay card-first and never receive the general
   // directory as a side effect.

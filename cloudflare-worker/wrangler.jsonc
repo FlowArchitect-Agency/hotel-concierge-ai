@@ -24,7 +24,12 @@
     "HOTEL_CITY": "Paris",
     "LEADS_AIRTABLE_BASE_ID": "app5IahpKr1nBhU8O",
     "DISCOVERY_BRIEF_PDF_FIELD_ID": "fld9dACylrANXzOS8",
-    "GROQ_MODEL": "qwen/qwen3.6-27b",
+    // Groq enforces its token-per-day budget PER MODEL, not per account, so a
+    // sibling model on the same key carries its own full daily budget.
+    // qwen3.6-27b was exhausted by readiness testing; qwen3.8-27b is the same
+    // family (so the Qwen transport rules and prompt behaviour still apply) and
+    // scored 3/3 valid plans on the production controller prompt.
+    "GROQ_MODEL": "qwen/qwen3.8-27b",
     "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b"
   }
 }

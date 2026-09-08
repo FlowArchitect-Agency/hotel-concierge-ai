@@ -2321,3 +2321,58 @@ test('The last-resort fallback gives a usable answer, not a promise to answer', 
   // It should defer to a human rather than assert a fact it does not hold.
   assert.match(contextualSafeFallback({}, 'en'), /front desk|do not have/i);
 });
+
+test('A named catalogue item and a non-English time question skip the category card', async () => {
+  // Live testing found three category-card non-answers: "I want the Signature
+  // Hammam Ritual" and "Can you arrange the Versailles private day trip?" were
+  // answered with "We have N options" although the guest had already chosen,
+  // and the French form of "what time is breakfast" was handed restaurant
+  // cards because only the English wording bailed out of the shortcut.
+  const catalogue = [
+    { fields: { Name: 'Lumière Spa — Signature Hammam Ritual', Category: 'spa', Description: 'Hammam.', Active: true, IsPartner: true, PriceEUR: 280 } },
+    { fields: { Name: 'Lumière Spa — Couples Massage', Category: 'spa', Description: 'Massage.', Active: true, IsPartner: true, PriceEUR: 420 } },
+    { fields: { Name: 'Versailles Private Day Trip', Category: 'tour', Description: 'Day trip.', Active: true, IsPartner: true, PriceEUR: 950 } },
+    { fields: { Name: 'Le Jardin — Chef’s Table', Category: 'restaurant', Description: 'Dining.', Active: true, IsPartner: true, PriceEUR: 580 } },
+    { fields: { Name: 'Terrasse Lumière — Rooftop Dinner', Category: 'restaurant', Description: 'Rooftop.', Active: true, IsPartner: true, PriceEUR: 180 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  const env = { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' };
+
+  async function ask(message, language = 'en') {
+    globalThis.fetch = async (url) => {
+      const target = String(url);
+      if (target.includes('/Services')) return Response.json({ records: catalogue });
+      if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+      if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+        return Response.json({ choices: [{ message: { content: JSON.stringify({
+          reply_text: 'Model answered the specific question.', intent: 'faq', service_type: 'spa', requests: [], requires_human: false,
+        }) } }] });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    };
+    const res = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message, sessionId: 'qa_card_guard', testMode: 'read_only', language }),
+    }), env, { waitUntil() {} });
+    return (await res.json()).reply;
+  }
+
+  try {
+    for (const [message, language] of [
+      ['I want the Signature Hammam Ritual.', 'en'],
+      ['Can you arrange the Versailles private day trip?', 'en'],
+      ['Bonjour, à quelle heure est le petit-déjeuner ?', 'fr'],
+    ]) {
+      const reply = await ask(message, language);
+      assert.doesNotMatch(reply, /collection\. (?:Here|Voici)/i, `"${message}" must not get a category card`);
+      assert.doesNotMatch(reply, /options de restauration/i, `"${message}" must not get a category card`);
+    }
+
+    // Broad browsing must still be served by the fast path.
+    const browsing = await ask('What dining experiences do you offer?');
+    assert.match(browsing, /collection/i, 'broad browsing should still get the category card');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
