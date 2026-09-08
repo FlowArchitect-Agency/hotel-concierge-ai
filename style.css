@@ -563,13 +563,17 @@ footer { padding: 2.1rem 0; background: #20221f; border-top: 1px solid #3a3d37; 
 /* --- the drawing ------------------------------------------------------- */
 .hero-figure { position: relative; align-self: stretch; min-height: clamp(420px, 47vw, 620px); color: var(--lum-forest); }
 .hero-tower {
-  position: absolute; right: clamp(-6rem, -5vw, -1.5rem); bottom: 0;
-  width: clamp(300px, 34vw, 470px); height: auto;
-  /* overshoots the top of the section on purpose, so it is cropped by the
+  position: absolute; right: clamp(-1rem, 1vw, 3rem); bottom: 2%;
+  width: auto; height: clamp(420px, 62vw, 860px);
+  /* The viewBox is cropped to the drawing, so height drives the size now.
+     It overshoots the top of the section on purpose and is cropped by the
      section's overflow: clip rather than sitting politely inside a box. */
-  max-height: 132%;
+  max-width: 46%;
 }
-.hero-boat { position: absolute; right: 46%; bottom: 2%; width: clamp(96px, 11vw, 148px); height: auto; color: var(--lum-muted); }
+/* The river sits behind and below the tower, the boat on the river -- three
+   depths, which is what the parallax then separates. */
+.hero-seine { position: absolute; right: 8%; bottom: -2%; width: clamp(380px, 52vw, 700px); height: auto; color: var(--lum-forest); opacity: .42; }
+.hero-boat { position: absolute; right: 52%; bottom: 4%; width: clamp(78px, 8.5vw, 118px); height: auto; color: var(--lum-forest); opacity: .75; }
 .hero-figure .ink { fill: none; stroke: currentColor; }
 
 /* --- sparkle accents ---------------------------------------------------- */
@@ -591,8 +595,9 @@ footer { padding: 2.1rem 0; background: #20221f; border-top: 1px solid #3a3d37; 
   .hero-stage { grid-template-columns: 1fr; }
   .hero-v2-content { max-width: none; }
   .hero-figure { min-height: 300px; margin-top: 2rem; }
-  .hero-tower { right: -2rem; bottom: -8%; width: min(58vw, 300px); max-height: 118%; }
-  .hero-boat { right: auto; left: 2%; bottom: 6%; }
+  .hero-tower { right: -1rem; bottom: 0; width: auto; height: min(52vh, 380px); max-width: 62%; }
+  .hero-seine { right: -14%; bottom: 2%; width: 130%; opacity: .45; }
+  .hero-boat { right: auto; left: 4%; bottom: 8%; width: 92px; }
   .hero-product { margin-right: 0; }
 }
 

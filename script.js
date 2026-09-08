@@ -978,13 +978,17 @@ restoreConversation();
 
       const tower = figure.querySelector('.hero-tower');
       const boat = figure.querySelector('.hero-boat');
+      const seine = figure.querySelector('.hero-seine');
       let queued = false;
       const drift = () => {
         queued = false;
         const y = window.scrollY || window.pageYOffset || 0;
         if (y > 1400) return;
+        // Three depths: the river drifts slowest, the tower mid, the boat
+        // fastest and sideways, so the group separates as you scroll.
+        if (seine) seine.style.transform = `translate3d(0, ${(y * -0.02).toFixed(2)}px, 0)`;
         if (tower) tower.style.transform = `translate3d(0, ${(y * -0.055).toFixed(2)}px, 0)`;
-        if (boat) boat.style.transform = `translate3d(${(y * 0.07).toFixed(2)}px, ${(y * -0.02).toFixed(2)}px, 0)`;
+        if (boat) boat.style.transform = `translate3d(${(y * 0.09).toFixed(2)}px, ${(y * -0.03).toFixed(2)}px, 0)`;
       };
       window.addEventListener('scroll', () => {
         if (queued) return;
