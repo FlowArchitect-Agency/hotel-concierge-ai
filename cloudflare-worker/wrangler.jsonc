@@ -25,11 +25,31 @@
     "LEADS_AIRTABLE_BASE_ID": "app5IahpKr1nBhU8O",
     "DISCOVERY_BRIEF_PDF_FIELD_ID": "fld9dACylrANXzOS8",
     // Groq enforces its token-per-day budget PER MODEL, not per account, so a
-    // sibling model on the same key carries its own full daily budget.
-    // qwen3.6-27b was exhausted by readiness testing; qwen3.8-27b is the same
-    // family (so the Qwen transport rules and prompt behaviour still apply) and
-    // scored 3/3 valid plans on the production controller prompt.
+    // sibling model on the same key carries its own full daily budget. Both
+    // qwen models were exhausted by readiness testing; gpt-oss-120b scored 3/3
+    // valid plans on the production controller prompt and has its own budget.
     "GROQ_MODEL": "openai/gpt-oss-120b",
-    "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b"
+    "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b",
+
+    // Cross-provider failover to NVIDIA is WIRED BUT DELIBERATELY OFF.
+    //
+    // The mechanism itself is verified working (evals/provider-qualification/
+    // verify-failover.mjs): a broken Groq primary does fail over to
+    // deepseek-v4-pro for the controller purpose, and correctly does NOT fail
+    // over for the response purpose it is unqualified for.
+    //
+    // It is off because NVIDIA's free tier is not dependable enough to be a
+    // safety net. Measured on the same key that scored 13/15 in qualification:
+    // a single 2500-token call returned HTTP 504 after 302 SECONDS, and 429s
+    // appeared after roughly two rapid calls. In the gateway that surfaces as a
+    // 30s timeout, so a guest would wait an extra 30 seconds and then receive
+    // the same apology they would have received immediately -- strictly worse
+    // during a live demo, and it burns Worker CPU that the Free plan caps.
+    //
+    // To enable: uncomment these three, keep the LLM_API_KEY secret, redeploy,
+    // and re-run verify-failover.mjs first to confirm NVIDIA is healthy.
+    // "LLM_FALLBACK_PROVIDER": "openai-compatible",
+    // "LLM_FALLBACK_MODEL": "deepseek-ai/deepseek-v4-pro-0813",
+    // "LLM_BASE_URL": "https://integrate.api.nvidia.com/v1"
   }
 }
