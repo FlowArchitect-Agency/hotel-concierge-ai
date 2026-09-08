@@ -7,8 +7,11 @@
 <meta name="description" content="ConciergeFlow is the AI concierge platform that understands guests and coordinates hotel service from pre-arrival to checkout.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<!-- Fraunces for display: a variable serif with real optical-size contrast and
+     genuine quirk, deliberately not the Playfair Display default. Manrope for
+     UI: a grotesque with more character than Inter. Two families, nothing else.
+     Font Awesome was removed; every icon is now hand-authored inline SVG. -->
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=task-10">
 </head>
 <body data-page="index">
@@ -423,11 +426,11 @@
             <span>Private concierge &middot; Live demonstration</span>
           </div>
           <div class="chat-header-assurance" aria-label="Private concierge service">
-            <i class="fas fa-lock" aria-hidden="true"></i>
+            <svg class="ico ico--lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.4 10.6h11.2v8.1H6.4z"/><path d="M8.7 10.5V7.8c0-1.9 1.5-3.4 3.3-3.4 1.9 0 3.3 1.5 3.3 3.5v2.6"/><path d="M12 13.6v2.2"/></svg>
             <span>Private</span>
           </div>
           <button class="chat-header-action" id="fullscreen-btn" type="button" aria-label="Enter full presentation mode" title="Enter full presentation mode">
-            <i class="fas fa-expand" id="fullscreen-icon"></i>
+            <svg class="ico ico--expand" id="fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.3 9.4V4.5h4.9"/><path d="M19.7 14.6v4.9h-4.9"/><path d="M4.4 4.6 10 10.1"/><path d="M19.6 19.4 14 13.9"/></svg><svg class="ico ico--compress" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.3 4.4v4.9H4.4"/><path d="M14.7 19.6v-4.9h4.9"/><path d="M3.9 3.9 9.2 9.2"/><path d="M20.1 20.1 14.8 14.8"/></svg>
           </button>
         </div>
 
@@ -456,7 +459,7 @@
             maxlength="1200"
           />
           <button class="chat-send" id="chat-send" aria-label="Send message">
-            <i class="fas fa-paper-plane"></i>
+            <svg class="ico ico--send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.6 3.6 3.5 10.2c-.5.2-.5.9 0 1.1l6.6 2.4 2.5 6.6c.2.5.9.5 1.1 0z"/><path d="M20.5 3.7 10.2 13.6"/></svg>
           </button>
         </div>
         <div class="chat-footer-note">Recommendations may use current venue sources. Reservations and service requests remain subject to confirmation.</div>
@@ -549,7 +552,7 @@
         <div><dt>Unconfirmed availability</dt><dd>Never presented as confirmed</dd></div>
         <div><dt>Guest request context</dt><dd>Passed to staff</dd></div>
       </dl>
-      <p><i class="fas fa-shield-halved" aria-hidden="true"></i> A concierge that supports the hotel&rsquo;s operating model.</p>
+      <p><svg class="ico ico--shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.4 5.1 6v5.5c0 4 2.9 7.6 6.9 9.1 4-1.5 6.9-5.1 6.9-9.1V6z"/><path d="M12 3.5v17"/></svg> A concierge that supports the hotel&rsquo;s operating model.</p>
     </div>
   </div>
 </section>
@@ -584,7 +587,7 @@
 
 <!-- Toast -->
 <div class="toast" id="toast">
-  <i class="fas fa-circle-check"></i>
+  <svg class="ico ico--check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.5 11.2v.9a8.5 8.5 0 1 1-5-7.8"/><path d="m8.4 11.6 3 2.9 9.2-9.4"/></svg>
   <span id="toast-msg">Message</span>
 </div>
 
@@ -600,8 +603,8 @@
         </div>
       </div>
       <div class="hotel-collection-dialog-actions">
-        <button class="hotel-collection-back" id="hotel-collection-back" type="button" data-back-hotel-collection hidden><i class="fas fa-arrow-left" aria-hidden="true"></i> All services</button>
-        <button class="hotel-collection-close" type="button" data-close-hotel-collection aria-label="Close hotel collection"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+        <button class="hotel-collection-back" id="hotel-collection-back" type="button" data-back-hotel-collection hidden><svg class="ico ico--arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19.4 12H4.8"/><path d="M10.6 5.4 4.5 12l6.1 6.6"/></svg> All services</button>
+        <button class="hotel-collection-close" type="button" data-close-hotel-collection aria-label="Close hotel collection"><svg class="ico ico--close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.1 6.2 17.9 17.8"/><path d="M17.8 6.1 6.2 17.9"/></svg></button>
       </div>
     </header>
     <div class="hotel-collection-dialog-body">
@@ -613,7 +616,7 @@
 
 <div class="booking-modal" id="booking-modal" hidden role="dialog" aria-modal="true" aria-labelledby="booking-title">
   <div class="booking-dialog">
-    <button class="booking-close" type="button" data-close-booking aria-label="Close enquiry form"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+    <button class="booking-close" type="button" data-close-booking aria-label="Close enquiry form"><svg class="ico ico--close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.1 6.2 17.9 17.8"/><path d="M17.8 6.1 6.2 17.9"/></svg></button>
     <p class="booking-kicker">H&#xF4;tel Lumi&#xE8;re Paris</p>
     <h2 id="booking-title">Send a concierge enquiry</h2>
     <div class="booking-service-summary">
@@ -643,7 +646,7 @@
       </div>
       <label class="booking-consent"><input type="checkbox" name="consent" value="yes" required /> <span>I agree that H&#xF4;tel Lumi&#xE8;re may use these details to respond to this enquiry.</span></label>
       <p class="booking-error" id="booking-error" role="alert"></p>
-      <button class="btn-primary booking-submit" id="booking-submit" type="submit"><i class="fas fa-paper-plane" aria-hidden="true"></i> Send concierge enquiry</button>
+      <button class="btn-primary booking-submit" id="booking-submit" type="submit"><svg class="ico ico--send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.6 3.6 3.5 10.2c-.5.2-.5.9 0 1.1l6.6 2.4 2.5 6.6c.2.5.9.5 1.1 0z"/><path d="M20.5 3.7 10.2 13.6"/></svg> Send concierge enquiry</button>
     </form>
   </div>
 </div>
@@ -651,7 +654,7 @@
 <!-- Hotel room enquiries use a separate, date-first form so availability is never implied before the reservations team confirms it. -->
 <div class="booking-modal room-booking-modal" id="room-booking-modal" hidden role="dialog" aria-modal="true" aria-labelledby="room-booking-title">
   <div class="booking-dialog room-booking-dialog">
-    <button class="booking-close" type="button" data-close-room-booking aria-label="Close room enquiry form"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+    <button class="booking-close" type="button" data-close-room-booking aria-label="Close room enquiry form"><svg class="ico ico--close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.1 6.2 17.9 17.8"/><path d="M17.8 6.1 6.2 17.9"/></svg></button>
     <p class="booking-kicker">H&#xF4;tel Lumi&#xE8;re reservations</p>
     <h2 id="room-booking-title">Request your stay.</h2>
     <div class="booking-service-summary" id="room-booking-service-summary" hidden>
@@ -688,7 +691,7 @@
       <label class="discovery-message">Anything else to note? <span>(optional)</span><textarea name="notes" maxlength="600" placeholder="Accessibility needs, celebration, early arrival..."></textarea></label>
       <label class="booking-consent"><input type="checkbox" name="consent" value="yes" required /> <span>I agree that H&#xF4;tel Lumi&#xE8;re may use these details to respond to this room enquiry.</span></label>
       <p class="booking-error" id="room-booking-error" role="alert"></p>
-      <button class="btn-primary booking-submit" id="room-booking-submit" type="submit"><i class="fas fa-paper-plane" aria-hidden="true"></i> Send room enquiry</button>
+      <button class="btn-primary booking-submit" id="room-booking-submit" type="submit"><svg class="ico ico--send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.6 3.6 3.5 10.2c-.5.2-.5.9 0 1.1l6.6 2.4 2.5 6.6c.2.5.9.5 1.1 0z"/><path d="M20.5 3.7 10.2 13.6"/></svg> Send room enquiry</button>
     </form>
   </div>
 </div>
@@ -696,7 +699,7 @@
 <!-- Sales lead capture: recorded directly in the same Airtable Requests table as a new, actionable lead. -->
 <div class="discovery-modal" id="discovery-modal" hidden role="dialog" aria-modal="true" aria-labelledby="discovery-title">
   <div class="discovery-dialog">
-    <button class="booking-close" type="button" data-close-discovery aria-label="Close discovery form"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+    <button class="booking-close" type="button" data-close-discovery aria-label="Close discovery form"><svg class="ico ico--close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.1 6.2 17.9 17.8"/><path d="M17.8 6.1 6.2 17.9"/></svg></button>
     <p class="booking-kicker">ConciergeFlow AI</p>
     <h2 id="discovery-title">Let&#x2019;s shape your hotel concierge.</h2>
     <p class="booking-intro">Share a few details about your property. Your request is recorded for our team so we can prepare a relevant 10-minute discovery call.</p>
@@ -718,7 +721,7 @@
       <label class="discovery-message">What would you like the concierge to handle? <span>(optional)</span><textarea name="message" maxlength="900" placeholder="For example: WhatsApp inquiries, spa and dining requests, multilingual guest support..."></textarea></label>
       <label class="booking-consent"><input type="checkbox" name="consent" value="yes" required /> <span>I agree that ConciergeFlow AI may use these details to contact me about this discovery request.</span></label>
       <p class="booking-error" id="discovery-error" role="alert"></p>
-      <button class="btn-primary booking-submit" id="discovery-submit" type="submit"><i class="fas fa-calendar-check" aria-hidden="true"></i> Request a discovery call</button>
+      <button class="btn-primary booking-submit" id="discovery-submit" type="submit"><svg class="ico ico--calendar-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.6 6.6h14.8v13H4.6z"/><path d="M4.7 10.4h14.6"/><path d="M8.6 4.4v3.4M15.4 4.5v3.3"/><path d="m9 14.6 2.3 2.3 4.2-4.4"/></svg> Request a discovery call</button>
     </form>
   </div>
 </div>

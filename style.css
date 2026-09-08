@@ -13,8 +13,8 @@
   --line: rgba(32, 43, 53, 0.1);
   --shadow-soft: 0 18px 48px rgba(20, 35, 47, 0.1);
   --shadow-deep: 0 34px 90px rgba(13, 29, 45, 0.2);
-  --serif: 'Playfair Display', Georgia, serif;
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", 'Inter', 'Segoe UI', sans-serif;
+  --serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   
   /* Apple Canonical Motion Easing Curves (emilkowalski/skills) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -541,11 +541,15 @@ footer { padding: 2.1rem 0; background: #20221f; border-top: 1px solid #3a3d37; 
 .hero-h1-under {
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 20" preserveAspectRatio="none"><path d="M5 12 C 84 4, 168 17, 248 8 S 412 3, 515 11" fill="none" stroke="%23e4c48c" stroke-width="6" stroke-linecap="round"/></svg>');
   background-repeat: no-repeat;
-  background-position: left 88%;
-  background-size: 0% .28em;
+  /* Anchored to the bottom of a padded box rather than a percentage: at narrow
+     widths the tighter line-height put an 88% position through the middle of
+     the glyphs, so the rule read as a strikethrough. */
+  padding-bottom: .14em;
+  background-position: left bottom;
+  background-size: 0% .26em;
   transition: background-size 1100ms cubic-bezier(.37,.01,.2,1) 620ms;
 }
-.hero-h1-under.is-drawn { background-size: 104% .28em; }
+.hero-h1-under.is-drawn { background-size: 104% .26em; }
 
 .hero-v2 .hero-sub { max-width: 34rem; margin: 1.7rem 0 2.2rem; color: var(--lum-muted); }
 .hero-v2-ctas { justify-content: flex-start; gap: .7rem; }
@@ -605,4 +609,42 @@ footer { padding: 2.1rem 0; background: #20221f; border-top: 1px solid #3a3d37; 
   0%, 62%, 100% { opacity: .28; transform: scale(.82) rotate(0deg); }
   74%           { opacity: .95; transform: scale(1.12) rotate(6deg); }
   86%           { opacity: .5;  transform: scale(.94) rotate(-3deg); }
+}
+
+
+/* --- hand-authored icons (Font Awesome removed) --------------------------- */
+.ico { display: inline-block; width: 1em; height: 1em; vertical-align: -.13em; flex: 0 0 auto; }
+button .ico, a .ico { pointer-events: none; }
+/* The fullscreen control carries both glyphs; the button's state picks one, so
+   no script has to reach inside the SVG. */
+.ico--compress { display: none; }
+.is-expanded .ico--expand { display: none; }
+.is-expanded .ico--compress { display: inline-block; }
+
+/* Fraunces is a variable serif: push the optical size to the display cut so the
+   contrast is high and the letterforms keep their quirk at large sizes. */
+.hero-v2 h1, .section-title { font-variation-settings: 'opsz' 132, 'SOFT' 0; }
+.hero-v2 h1 { font-weight: 380; }
+
+/* Hero conversation playback. The authored markup is the finished state, so
+   these rules only apply once the script has taken over (.hp-step is added by
+   JS); with no JS, or under reduced motion, the thread renders complete. */
+.hp-step { opacity: 0; transform: translateY(7px); transition: opacity 420ms var(--ease-out, ease), transform 420ms var(--ease-out, ease); }
+.hp-step.is-shown { opacity: 1; transform: none; }
+#hero .conversation-thread { transition: min-height 260ms ease; }
+#hero .product-message p { min-height: 1.4em; }
+
+/* Thinking indicator: three dots on offset delays, so it reads as considering
+   rather than as a progress bar. */
+#hero .request-processing span[aria-hidden]::after {
+  content: '';
+  display: inline-block; width: 3px; height: 3px; margin-left: 5px;
+  border-radius: 50%; background: currentColor;
+  box-shadow: 6px 0 0 currentColor, 12px 0 0 currentColor;
+  animation: hpThink 1.15s ease-in-out infinite;
+}
+@keyframes hpThink { 0%, 100% { opacity: .25; } 50% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) {
+  .hp-step { opacity: 1; transform: none; }
+  #hero .request-processing span[aria-hidden]::after { animation: none; opacity: .6; }
 }

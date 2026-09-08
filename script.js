@@ -802,7 +802,7 @@ async function setFullscreen(isFullscreen, { requestBrowserFullscreen = true } =
   chatWidget.classList.toggle('fullscreen', isFullscreen);
   if (isFullscreen) {
     document.body.appendChild(chatWidget);
-    fullscreenIcon.classList.replace('fa-expand', 'fa-compress');
+    fullscreenBtn?.classList.add('is-expanded');
     document.body.style.overflow = 'hidden';
     fullscreenBtn?.setAttribute('aria-label', 'Exit full presentation mode');
     fullscreenBtn?.setAttribute('title', 'Exit full presentation mode');
@@ -815,7 +815,7 @@ async function setFullscreen(isFullscreen, { requestBrowserFullscreen = true } =
     }
   } else {
     chatWrapper.prepend(chatWidget);
-    fullscreenIcon.classList.replace('fa-compress', 'fa-expand');
+    fullscreenBtn?.classList.remove('is-expanded');
     document.body.style.overflow = '';
     fullscreenBtn?.setAttribute('aria-label', 'Enter full presentation mode');
     fullscreenBtn?.setAttribute('title', 'Enter full presentation mode');
@@ -996,5 +996,115 @@ restoreConversation();
   } catch (error) {
     // A decorative flourish must never take the page down with it.
     console.warn('hero ink skipped:', error);
+  }
+})();
+
+/* ---------------------------------------------------------------------------
+   Hero conversation: plays the pre-arrival exchange on a slow loop so a visitor
+   watches the concierge work instead of reading a screenshot of it.
+
+   One long-lived loop that PAUSES at step boundaries, rather than cancelling
+   and restarting. An earlier cancel/restart version deadlocked: stop() set the
+   cancel flag while play() was inside an await, and the restart then hit the
+   "already running" guard and returned, so the loop exited and never resumed.
+
+   - The markup in index.html is the finished state. Under prefers-reduced-motion
+     (or if anything is missing) we leave it alone and never start.
+   - The thread's height is locked before the first frame, so replays cause no
+     layout shift.
+   - Pauses when scrolled away or when the tab is hidden.
+   ------------------------------------------------------------------------ */
+(function heroConversation() {
+  try {
+    const thread = document.querySelector('#hero .conversation-thread');
+    if (!thread) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+    const guestBubble = thread.querySelector('.product-message-guest');
+    const replyBubble = thread.querySelector('.product-message-ai');
+    const think = thread.querySelector('.request-processing');
+    const prepared = thread.querySelector('.request-prepared');
+    const guest = guestBubble?.querySelector('p');
+    const reply = replyBubble?.querySelector('p');
+    if (!guest || !reply || !think || !prepared) return;
+
+    const guestText = guest.textContent;
+    const replyText = reply.textContent;
+    const steps = [guestBubble, think, replyBubble, prepared];
+
+    const lockHeight = () => {
+      thread.style.minHeight = '';
+      const h = thread.getBoundingClientRect().height;
+      if (h > 0) thread.style.minHeight = `${Math.ceil(h)}px`;
+    };
+    lockHeight();
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(lockHeight, 200);
+    }, { passive: true });
+
+    steps.forEach((el) => el.classList.add('hp-step', 'is-shown'));
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    let paused = true;
+    const gate = async () => { while (paused) await sleep(180); };
+
+    async function type(node, text, perChar) {
+      node.textContent = '';
+      for (let i = 1; i <= text.length; i += 1) {
+        node.textContent = text.slice(0, i);
+        const ch = text[i - 1];
+        await sleep(/[.,?!]/.test(ch) ? perChar * 7 : perChar);
+      }
+    }
+
+    (async function loop() {
+      // Hold the authored complete state until the visitor is actually looking.
+      await gate();
+      for (;;) {
+        await gate();
+        steps.forEach((el) => el.classList.remove('is-shown'));
+        guest.textContent = '';
+        reply.textContent = '';
+        await sleep(850);
+
+        await gate();
+        guestBubble.classList.add('is-shown');
+        await type(guest, guestText, 26);
+        await sleep(600);
+
+        await gate();
+        think.classList.add('is-shown');
+        await sleep(1500);
+        think.classList.remove('is-shown');
+
+        await gate();
+        replyBubble.classList.add('is-shown');
+        await type(reply, replyText, 20);
+        await sleep(500);
+
+        await gate();
+        prepared.classList.add('is-shown');
+        await sleep(6500);
+      }
+    })();
+
+    const setPaused = (next) => { paused = next; };
+    let inView = false;
+    const sync = () => setPaused(!inView || document.hidden);
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver((entries) => {
+        entries.forEach((e) => { inView = e.isIntersecting; });
+        sync();
+      }, { threshold: 0.2 }).observe(thread);
+    } else {
+      inView = true;
+      sync();
+    }
+    document.addEventListener('visibilitychange', sync);
+  } catch (error) {
+    console.warn('hero conversation skipped:', error);
   }
 })();
