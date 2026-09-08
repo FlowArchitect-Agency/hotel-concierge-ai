@@ -328,6 +328,36 @@ function waitForAirtableRetry(delayMs) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+// Marks an error as an upstream/provider failure rather than bad guest input.
+// Route handlers pick the HTTP status by pattern-matching the error message,
+// and provider messages can contain validation-ish words (Airtable's own
+// "INVALID_REQUEST_UNKNOWN" being the obvious trap), which would report an
+// upstream outage to the browser as a 400 client error. The flag is checked
+// before any message matching.
+function upstreamFailure(message) {
+  const error = new Error(message);
+  error.isUpstream = true;
+  return error;
+}
+
+// Extracts Airtable's own error type/message from a failed response. Never
+// throws and never returns the request body (which would echo guest text into
+// logs); the response body here is Airtable's error envelope only.
+async function airtableErrorDetail(result) {
+  try {
+    const raw = (await result.text()).slice(0, 600);
+    if (!raw) return 'no response body';
+    try {
+      const error = JSON.parse(raw)?.error;
+      if (typeof error === 'string') return error;
+      if (error?.type || error?.message) return [error.type, error.message].filter(Boolean).join(' - ');
+    } catch { /* not JSON; fall through to the raw text */ }
+    return raw;
+  } catch {
+    return 'error body unreadable';
+  }
+}
+
 async function airtable(env, table, { method = 'GET', params, fields, recordId = '', baseId = env.AIRTABLE_BASE_ID } = {}) {
   const recordPath = recordId ? `/${encodeURIComponent(recordId)}` : '';
   const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}${recordPath}`);
@@ -342,11 +372,18 @@ async function airtable(env, table, { method = 'GET', params, fields, recordId =
     });
     if (result.ok) return result.json();
     if (result.status !== 429 || attempt === AIRTABLE_MAX_ATTEMPTS - 1) {
-      throw new Error(`Airtable ${table} request failed (${result.status}).`);
+      // Airtable's status alone does not identify the problem: a plan record
+      // cap, a bad field name and a revoked token all surface as 4xx. Carry the
+      // provider's own error type/message into the thrown error and the log,
+      // otherwise every failure here is indistinguishable in Workers Logs --
+      // which is how an exhausted record cap can silently drop guest bookings.
+      const detail = await airtableErrorDetail(result);
+      console.error(`Airtable ${method} ${table} failed (${result.status}): ${detail}`);
+      throw upstreamFailure(`Airtable ${table} request failed (${result.status}): ${detail}`);
     }
     await waitForAirtableRetry(airtableRetryDelayMs(result.headers.get('Retry-After'), attempt));
   }
-  throw new Error(`Airtable ${table} request failed after ${AIRTABLE_MAX_ATTEMPTS} attempts.`);
+  throw upstreamFailure(`Airtable ${table} request failed after ${AIRTABLE_MAX_ATTEMPTS} attempts (rate limited).`);
 }
 
 function bytesToBase64(bytes) {
@@ -944,13 +981,26 @@ async function cancelRequests(env, userId, target) {
   return { cancelled: open.length, alreadyCancelled };
 }
 
+// Persistence runs in ctx.waitUntil, so a rejection here can never reach the
+// guest -- they have already been told their request was taken. Swallowing it
+// silently is therefore the worst option: a full Airtable base or a revoked
+// token would drop real bookings with no trace. Log every failure loudly and
+// keep going, so the reply still goes out but the loss is visible in Workers
+// Logs and can be alerted on.
+function logPersistFailure(what) {
+  return (error) => {
+    console.error(`PERSIST FAILURE (${what}) -- guest-visible reply was already sent, this record is LOST: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  };
+}
+
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
   const guestName = String(input?.guestName || input?.guest_name || input?.name || '').trim() || (input?.isDemo || input?.is_demo ? 'Demo Guest' : 'Guest');
   const flags = demoFlagFields(input);
 
   await Promise.all([
-    upsertGuest(env, input).catch(() => undefined),
+    upsertGuest(env, input).catch(logPersistFailure('Guests upsert')),
     airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
@@ -963,7 +1013,7 @@ async function persistConversation(env, input, outcome) {
         Timestamp: input.receivedAt,
         ...flags,
       },
-    }).catch(() => undefined),
+    }).catch(logPersistFailure('Conversations: guest message')),
     airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
@@ -976,7 +1026,7 @@ async function persistConversation(env, input, outcome) {
         Timestamp: time,
         ...flags,
       },
-    }).catch(() => undefined),
+    }).catch(logPersistFailure('Conversations: assistant reply')),
   ]);
   const requests = outcome.requests.filter((item) => item.summary);
   await Promise.all(requests.map((item) => airtable(env, 'Requests', {
@@ -996,7 +1046,7 @@ async function persistConversation(env, input, outcome) {
       HandoverAt: time,
       ...flags,
     },
-  }).catch((err) => console.error('Error creating request in Airtable:', err))));
+  }).catch(logPersistFailure(`Requests: booking "${item.serviceName || item.summary}"`))));
 }
 
 const PARTNER_CARD_IMAGES = {
@@ -2985,7 +3035,7 @@ export default {
         return await handleJsonChat(request, env, ctx);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|message/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|message/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/demo-chat') {
@@ -2994,7 +3044,7 @@ export default {
         return await handleDemoChat(request, env, ctx);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return demoResponse({ error: message }, /required|Invalid|chatHistory|demo|Guest|Language|Scenario/i.test(message) ? 400 : 502, request, env);
+        return demoResponse({ error: message }, !error?.isUpstream && /required|Invalid|chatHistory|demo|Guest|Language|Scenario/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/booking-enquiry') {
@@ -3003,7 +3053,7 @@ export default {
         return await handleBookingEnquiry(request, env);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|valid|long|Consent/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|valid|long|Consent/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/room-enquiry') {
@@ -3012,7 +3062,7 @@ export default {
         return await handleRoomEnquiry(request, env);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|valid|after|between|long|Consent/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|valid|after|between|long|Consent/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/discovery-lead') {
@@ -3021,7 +3071,7 @@ export default {
         return await handleDiscoveryLead(request, env);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|valid|long|Consent|between|Locale/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|valid|long|Consent|between|Locale/i.test(message) ? 400 : 502, request, env);
       }
     }
     return response({ error: 'Not found.' }, 404, request, env);

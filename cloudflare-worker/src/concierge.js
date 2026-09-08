@@ -930,6 +930,11 @@ export function enforceContract(model, { language, classification, matching, exc
 
   const isDelayFallback = Boolean(providerFailure && !finalReply);
   if (isDelayFallback) {
+    // This is the single most guest-visible failure in the product -- the guest
+    // is told the system is unavailable. It was previously silent in Workers
+    // Logs, so a run of them could not be distinguished from healthy traffic or
+    // attributed to a provider. Always record why.
+    console.error(`GUEST-VISIBLE DELAY FALLBACK: provider failure = ${typeof providerFailure === 'string' ? providerFailure : JSON.stringify(providerFailure)}`);
     finalReply = 'I apologize, but I am experiencing a brief system delay and could not prepare your request. Please try again shortly or contact the front desk directly for immediate assistance.';
   }
 

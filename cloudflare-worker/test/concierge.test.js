@@ -2208,3 +2208,50 @@ test('A guest naming a service that does not exist in the catalogue is never sil
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Airtable failures surface the provider error body, not just a bare status', async () => {
+  // A plan record cap, a bad field name and a revoked token all return 4xx.
+  // Without the provider's own error type/message, Workers Logs cannot tell
+  // them apart -- which is how an exhausted Airtable base silently drops
+  // guest bookings. The detail must reach both the log and the thrown error.
+  const originalFetch = globalThis.fetch;
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...args) => { logged.push(args.join(' ')); };
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith('https://api.airtable.com/')) {
+      return new Response(
+        JSON.stringify({ error: { type: 'INVALID_REQUEST_UNKNOWN', message: 'Record limit reached for this base.' } }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const env = { AIRTABLE_API_KEY: 'qa-airtable-token', AIRTABLE_BASE_ID: 'app_qa' };
+    const request = new Request('https://worker.example/api/booking-enquiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'QA Guest',
+        email: 'qa@example.com',
+        serviceName: 'Lumiere Spa - Couples Massage',
+        consent: true,
+      }),
+    });
+    const result = await worker.fetch(request, env, { waitUntil() {} });
+    const body = await result.json();
+
+    assert.equal(result.status, 502);
+    assert.match(body.error, /422/, 'status code is still reported');
+    assert.match(body.error, /INVALID_REQUEST_UNKNOWN/, "Airtable's error type must be surfaced");
+    assert.match(body.error, /Record limit reached/, "Airtable's message must be surfaced");
+    assert.ok(
+      logged.some((line) => /INVALID_REQUEST_UNKNOWN/.test(line) && /Record limit reached/.test(line)),
+      'the failure must also be logged with the provider detail',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});
