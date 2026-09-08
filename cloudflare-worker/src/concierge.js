@@ -515,6 +515,31 @@ export function guestInsistsOnExternal(message) {
     || startsCorrection && (namesSpecificCuisine || /\b(?:keep|find|search|recommend)\b[^.!?]{0,80}\b(?:restaurant|cuisine|venue|address|place|bar|club)\b/i.test(text));
 }
 
+// Which catalogue item, if any, did the guest name themselves? Scores each
+// candidate by how many of the substantial words from its own name appear in
+// the guest's message, so "Signature Hammam Ritual" beats "Couples Massage"
+// for a guest asking about the hammam, and "CDG/ORY Transfer" beats
+// "Half-Day Disposal" for a guest asking about a CDG transfer. Returns null
+// for a generic ask ("book a massage"), where the caller's category default
+// is the right answer.
+function serviceNamedInMessage(services, rawMessage) {
+  const text = normalized(rawMessage);
+  if (!text) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const service of services) {
+    const words = normalized(service.name)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length >= 5);
+    const score = words.filter((word) => text.includes(word)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = service;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
 export function hasNegation(message) {
   const text = normalized(message);
   if (
@@ -912,7 +937,13 @@ export function enforceContract(model, { language, classification, matching, exc
   const suppressPartnerSuffix = isAngry || isSmalltalk || isInformational || isRefusal || isExplicitlyExternal || classification?.externalDiscovery || classification?.isOperational || classification?.route === 'partner_catalog' || !classification?.hasIntent;
 
   if (!suppressPartnerSuffix && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
-    const service = matching[0];
+    // matching[0] is an arbitrary item from the guest's category, which is the
+    // wrong one whenever the guest named a specific service: "I want the
+    // Signature Hammam Ritual" (EUR 280) surfaced "Couples Massage (EUR 420)",
+    // quoting a price for something the guest did not ask about. Prefer the
+    // catalogue item whose own name the guest actually used, and fall back to
+    // the category default only for a generic ask ("book a massage").
+    const service = serviceNamedInMessage(matching, rawMsg) || matching[0];
     const details = [service.price === null || service.price === '' ? '' : `EUR ${Number(service.price).toFixed(0)}`, service.duration ? `${service.duration} min` : ''].filter(Boolean).join(', ');
     const partnerSuffix = {
       en: `Partner option: ${service.name}${details ? ` (${details})` : ''}. Our team will verify availability before confirming any request.`,

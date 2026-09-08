@@ -2376,3 +2376,41 @@ test('A named catalogue item and a non-English time question skip the category c
     globalThis.fetch = originalFetch;
   }
 });
+
+test('The partner line names the service the guest asked for, not an arbitrary one', async () => {
+  // Live testing: "I want the Signature Hammam Ritual" (EUR 280) produced
+  // "Partner option: Lumière Spa — Couples Massage (EUR 420, 75 min)" because
+  // the suffix took the first item in the category. Quoting the wrong service
+  // and the wrong price to a guest is the same class of fault as a fabricated
+  // confirmation, so it must resolve to the item the guest named.
+  const catalogue = [
+    { fields: { Name: 'Lumière Spa — Couples Massage', Category: 'spa', Description: 'Massage.', Active: true, IsPartner: true, PriceEUR: 420, DurationMins: 75 } },
+    { fields: { Name: 'Lumière Spa — Signature Hammam Ritual', Category: 'spa', Description: 'Hammam.', Active: true, IsPartner: true, PriceEUR: 280, DurationMins: 105 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('/Services')) return Response.json({ records: catalogue });
+    if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+    if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+      // Model produces no usable reply, so the deterministic partner line is
+      // what the guest actually sees -- exactly the live failure case.
+      return Response.json({ choices: [{ message: { content: '' } }] });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const res = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'I want the Signature Hammam Ritual.', sessionId: 'qa_named_partner', testMode: 'read_only' }),
+    }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    const { reply } = await res.json();
+    if (/partner option|option partenaire/i.test(reply)) {
+      assert.doesNotMatch(reply, /Couples Massage/i, 'must not name a service the guest did not ask for');
+      assert.doesNotMatch(reply, /420/, 'must not quote the wrong price');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

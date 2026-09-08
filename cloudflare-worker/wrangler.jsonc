@@ -29,7 +29,7 @@
     // qwen3.6-27b was exhausted by readiness testing; qwen3.8-27b is the same
     // family (so the Qwen transport rules and prompt behaviour still apply) and
     // scored 3/3 valid plans on the production controller prompt.
-    "GROQ_MODEL": "qwen/qwen3.8-27b",
+    "GROQ_MODEL": "openai/gpt-oss-120b",
     "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b"
   }
 }
