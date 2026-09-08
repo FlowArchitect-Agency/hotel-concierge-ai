@@ -342,3 +342,46 @@ test('configuration status is provider-neutral and never returns credentials', (
   assert.deepEqual(status, { configured: true, provider: 'omniroute', model: 'demo' });
   assert.equal(JSON.stringify(status).includes('private'), false);
 });
+
+test('Groq transport sends per-model reasoning settings that the provider actually accepts', async () => {
+  // Groq rejects reasoning_effort:'none' for gpt-oss models with HTTP 400
+  // ("must be one of low, medium, or high"), and gpt-oss leaves `content`
+  // empty unless reasoning_format is hidden. Sending Qwen's settings to a
+  // gpt-oss model would therefore fail every call, so a future failover to it
+  // must not inherit them.
+  const sent = [];
+  const fetchImpl = async (url, options) => {
+    sent.push(JSON.parse(options.body));
+    return Response.json({ choices: [{ message: { content: '{"reply_text":"ok"}' } }] });
+  };
+
+  await completeText({ GROQ_API_KEY: 'k', GROQ_MODEL: 'qwen/qwen3.6-27b' },
+    { purpose: 'response_generator', messages: [{ role: 'user', content: 'hi' }] }, { fetchImpl });
+  assert.equal(sent[0].reasoning_effort, 'none', 'qwen keeps reasoning_effort none');
+  assert.equal(sent[0].reasoning_format, 'hidden');
+
+  await completeText({ GROQ_API_KEY: 'k', GROQ_MODEL: 'openai/gpt-oss-20b' },
+    { purpose: 'response_generator', messages: [{ role: 'user', content: 'hi' }] }, { fetchImpl });
+  assert.equal(sent[1].reasoning_effort, undefined, 'gpt-oss must NOT receive reasoning_effort:none (HTTP 400)');
+  assert.equal(sent[1].reasoning_format, 'hidden', 'gpt-oss needs hidden reasoning to return content');
+});
+
+test('An unqualified fallback model is never selected, even when configured', async () => {
+  // GROQ_FALLBACK_MODEL is set in production but openai/gpt-oss-20b carries no
+  // groq qualification entry, and the nvidia evidence records it as failing
+  // controller qualification. It must stay unselected until real evidence for
+  // this provider/model/purpose exists.
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push(JSON.parse(options.body).model);
+    return new Response('{"error":"rate limited"}', { status: 429 });
+  };
+  const result = await completeText(
+    { GROQ_API_KEY: 'k', GROQ_MODEL: 'qwen/qwen3.6-27b', GROQ_FALLBACK_MODEL: 'openai/gpt-oss-20b' },
+    { purpose: 'semantic_controller', messages: [{ role: 'user', content: 'hi' }] },
+    { fetchImpl },
+  );
+  assert.equal(result.status, 'rate_limited');
+  assert.equal(result.fallback_used, false, 'no fallback should be attempted');
+  assert.ok(calls.every((m) => m === 'qwen/qwen3.6-27b'), 'the unqualified model must never be called');
+});
