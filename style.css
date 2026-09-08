@@ -506,3 +506,103 @@ footer { padding: 2.1rem 0; background: #20221f; border-top: 1px solid #3a3d37; 
 @media (max-width: 620px) { .demo-v2, .operating-layer, .implementation, .control-section, .final-cta { padding-block: 4.6rem; }.demo-v2-intro h2, .product-section-header h2, .control-intro h2 { font-size: clamp(1.9rem, 9vw, 2.5rem); }.demo-v2-copy > p { font-size: .97rem; }.demo-v2-shell { margin-top: 2rem; }.demo-v2 .chat-widget { border-radius: 6px; }.demo-v2 .chat-header { min-height: 66px; padding: .82rem; }.demo-v2 .chat-header-assurance { display: none; }.demo-v2 .chat-messages { height: 360px; padding: 1rem .82rem; }.demo-v2 .chat-msg { max-width: 92%; font-size: .73rem; }.demo-prompt-starters { padding: .72rem .82rem; }.demo-prompt-starters > span { width: 100%; }.demo-v2 .chat-input-area { padding: .76rem .82rem .84rem; }.demo-v2 .chat-footer-note { padding: 0 .82rem .85rem; line-height: 1.45; }.operating-surface { display: block; margin-top: 2.1rem; border-radius: 6px; }.operating-column { padding: .78rem; }.operating-channels { border-right: 0; border-bottom: 1px solid #e3e2dc; }.operating-core { padding: .78rem; }.operating-operations { display: block; }.operating-operations { border-top: 1px solid #e3e2dc; }.operating-row { min-height: 56px; }.operating-capabilities div { min-height: 76px; padding: .55rem; }.implementation-track { margin-top: 2.15rem; }.implementation-stage { display: block; min-height: 0; padding: 1.25rem 0 1.35rem; }.implementation-stage-copy { padding-left: 3.25rem; }.implementation-stage-copy h3 { font-size: .96rem; }.implementation-stage-copy p { font-size: .7rem; }.implementation-artifact { width: 100%; margin-top: 1.15rem; }.control-layout { gap: 2rem; }.control-panel > header, .control-panel dl div, .control-panel > p { padding-inline: .75rem; }.control-panel dl div { grid-template-columns: minmax(0, 1fr); gap: .42rem; align-items: start; }.control-panel dd { justify-self: start; text-align: left; }.final-cta h2 { font-size: clamp(2.25rem, 11vw, 3.15rem); }.final-cta-actions { align-items: stretch; flex-direction: column; }.final-cta-primary, .final-cta-secondary { width: 100%; }.footer-container { align-items: flex-start; flex-direction: column; }.footer-logo { font-size: 1rem; }.footer-copy { width: auto; } }
 
 .discovery-brief-link { margin: -.35rem 0 1rem; color: var(--muted); font-size: .68rem; line-height: 1.45; }.discovery-brief-link a { color: var(--navy); font-weight: 700; text-underline-offset: .2em; }.discovery-brief-link a:hover { color: var(--gold); }
+
+/* ==========================================================================
+   Hero — "an architect's notebook, for a Paris hotel"
+   Asymmetric: the type block holds the left, a hand-drawn Eiffel Tower rises
+   out of the right and bleeds past the top and side edges. Palette continues
+   the Hotel Lumiere website inside the demo (cream / forest / gold) rather
+   than inventing a second one, plus one deep ink for contrast.
+   ========================================================================== */
+:root {
+  --lum-cream: #f4f0e7;
+  --lum-cream-deep: #ece6d9;
+  --lum-forest: #3e4c42;
+  --lum-gold: #e4c48c;
+  --lum-ink: #17201c;          /* the added deep tone */
+  --lum-muted: #6b6f64;
+}
+
+.hero-v2 { padding: clamp(7.5rem, 11vw, 10.5rem) 0 clamp(3rem, 6vw, 5.5rem); color: var(--lum-ink); background: var(--lum-cream); }
+
+/* The stage is deliberately uneven: 1.15fr against .85fr, and the figure
+   column is allowed to overflow its track so the drawing breaks the grid. */
+.hero-stage { position: relative; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); align-items: center; gap: clamp(1rem, 3vw, 3rem); }
+
+.hero-v2-content { max-width: none; margin: 0; text-align: left; }
+.hero-v2 .hero-eyebrow { color: var(--lum-forest); font-size: .62rem; letter-spacing: .22em; }
+.hero-v2 h1 { color: var(--lum-ink); font-size: clamp(2.8rem, 5.5vw, 5.5rem); font-weight: 500; letter-spacing: -.05em; line-height: .9; }
+.hero-v2 h1 span:last-child { color: var(--lum-forest); }
+
+/* The one deliberate oddity: a drawn gold rule under the second line, running
+   slightly past the words. Delivered as a background image because i18n
+   replaces the text of this span and would remove any child element. The
+   sweep is hand-authored, the same wobble as the ink drawing. */
+.hero-h1-under {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 20" preserveAspectRatio="none"><path d="M5 12 C 84 4, 168 17, 248 8 S 412 3, 515 11" fill="none" stroke="%23e4c48c" stroke-width="6" stroke-linecap="round"/></svg>');
+  background-repeat: no-repeat;
+  background-position: left 88%;
+  background-size: 0% .28em;
+  transition: background-size 1100ms cubic-bezier(.37,.01,.2,1) 620ms;
+}
+.hero-h1-under.is-drawn { background-size: 104% .28em; }
+
+.hero-v2 .hero-sub { max-width: 34rem; margin: 1.7rem 0 2.2rem; color: var(--lum-muted); }
+.hero-v2-ctas { justify-content: flex-start; gap: .7rem; }
+.hero-v2 .btn-primary { color: var(--lum-cream); background: var(--lum-ink); border-radius: 2px; }
+.hero-v2 .btn-primary:hover { background: var(--lum-forest); }
+.hero-v2 .btn-primary span { color: var(--lum-gold); }
+.hero-v2 .btn-outline { color: var(--lum-ink); background: transparent; border: 1px solid rgba(62, 76, 66, .28); border-radius: 2px; }
+.hero-v2 .btn-outline:hover { background: rgba(62, 76, 66, .06); }
+.hero-v2 .btn-outline span { color: var(--lum-forest); }
+
+/* --- the drawing ------------------------------------------------------- */
+.hero-figure { position: relative; align-self: stretch; min-height: clamp(420px, 47vw, 620px); color: var(--lum-forest); }
+.hero-tower {
+  position: absolute; right: clamp(-6rem, -5vw, -1.5rem); bottom: 0;
+  width: clamp(300px, 34vw, 470px); height: auto;
+  /* overshoots the top of the section on purpose, so it is cropped by the
+     section's overflow: clip rather than sitting politely inside a box. */
+  max-height: 132%;
+}
+.hero-boat { position: absolute; right: 46%; bottom: 2%; width: clamp(96px, 11vw, 148px); height: auto; color: var(--lum-muted); }
+.hero-figure .ink { fill: none; stroke: currentColor; }
+
+/* --- sparkle accents ---------------------------------------------------- */
+.spark { position: absolute; display: block; width: 15px; height: 15px; opacity: .85; }
+.spark svg { display: block; width: 100%; height: 100%; }
+.spark svg path { fill: currentColor; stroke: currentColor; }
+.spark--2 svg path, .spark--3 svg path, .spark--5 svg path { fill: none; }
+.spark--1 { top: 7%;  right: 9%;  color: #d1543f; }
+.spark--2 { top: 20%; right: 34%; width: 11px; height: 11px; color: #7b62c4; }
+.spark--3 { top: 47%; right: 4%;  width: 12px; height: 12px; color: #b4813c; }
+.spark--4 { top: 62%; right: 41%; width: 10px; height: 10px; color: #3f7d63; }
+.spark--5 { top: 33%; right: 52%; width: 12px; height: 12px; color: #3f6d9e; }
+
+/* Product mockup: nudged off-centre so the hero does not resolve into a
+   tidy symmetrical stack. */
+.hero-product { margin-top: clamp(2.5rem, 5vw, 4.5rem); margin-right: clamp(0rem, 4vw, 3.5rem); }
+
+@media (max-width: 900px) {
+  .hero-stage { grid-template-columns: 1fr; }
+  .hero-v2-content { max-width: none; }
+  .hero-figure { min-height: 300px; margin-top: 2rem; }
+  .hero-tower { right: -2rem; bottom: -8%; width: min(58vw, 300px); max-height: 118%; }
+  .hero-boat { right: auto; left: 2%; bottom: 6%; }
+  .hero-product { margin-right: 0; }
+}
+
+/* Sparkles twinkle on long, deliberately offset loops so they never pulse in
+   unison -- synchronised blinking is the thing that reads as generated. */
+@media (prefers-reduced-motion: no-preference) {
+  .spark { animation: sparkTwinkle 7s ease-in-out infinite; }
+  .spark--2 { animation-duration: 9.5s;  animation-delay: -2.2s; }
+  .spark--3 { animation-duration: 11s;   animation-delay: -5.6s; }
+  .spark--4 { animation-duration: 8.2s;  animation-delay: -3.9s; }
+  .spark--5 { animation-duration: 12.4s; animation-delay: -7.1s; }
+}
+@keyframes sparkTwinkle {
+  0%, 62%, 100% { opacity: .28; transform: scale(.82) rotate(0deg); }
+  74%           { opacity: .95; transform: scale(1.12) rotate(6deg); }
+  86%           { opacity: .5;  transform: scale(.94) rotate(-3deg); }
+}

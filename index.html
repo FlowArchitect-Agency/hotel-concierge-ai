@@ -57,13 +57,82 @@
 <!-- V2 hero: hospitality outside, operations inside. -->
 <section class="hero hero-v2" id="hero">
   <div class="container hero-v2-container">
-    <div class="hero-content hero-v2-content">
-      <p class="hero-eyebrow">ConciergeFlow AI</p>
-      <h1><span>Every guest.</span><span>Already understood.</span></h1>
-      <p class="hero-sub">ConciergeFlow is the AI concierge platform for modern hotels &mdash; understanding guests, handling requests and coordinating service from pre-arrival to checkout.</p>
-      <div class="hero-ctas hero-v2-ctas">
-        <a href="#demo" class="btn-primary">Try the concierge <span aria-hidden="true">&rarr;</span></a>
-        <a href="#platform" class="btn-outline">See how it works <span aria-hidden="true">&darr;</span></a>
+    <div class="hero-stage">
+      <div class="hero-content hero-v2-content">
+        <p class="hero-eyebrow">ConciergeFlow AI</p>
+        <!-- i18n rewrites the text of both spans (#hero h1 span:nth-of-type(n)),
+             so the drawn rule under the second line is a CSS background rather
+             than a child element -- a child SVG here gets wiped on locale change. -->
+        <h1><span>Every guest.</span><span class="hero-h1-under">Already understood.</span></h1>
+        <p class="hero-sub">ConciergeFlow is the AI concierge platform for modern hotels &mdash; understanding guests, handling requests and coordinating service from pre-arrival to checkout.</p>
+        <div class="hero-ctas hero-v2-ctas">
+          <a href="#demo" class="btn-primary">Try the concierge <span aria-hidden="true">&rarr;</span></a>
+          <a href="#platform" class="btn-outline">See how it works <span aria-hidden="true">&darr;</span></a>
+        </div>
+      </div>
+
+      <!-- Original line drawing, authored by hand for this site. Decorative:
+           the heading carries the meaning, so it is hidden from assistive tech. -->
+      <div class="hero-figure" aria-hidden="true">
+        <svg class="hero-tower" viewBox="0 0 660 1060" fill="none" focusable="false">
+          <g class="ink-group" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <!-- legs: outer pair, flaring to the ground -->
+            <path class="ink" stroke-width="2.1" d="M63 1004 C 96 878, 152 772, 206 699" />
+            <path class="ink" stroke-width="2.1" d="M597 1002 C 566 876, 509 771, 454 699" />
+            <!-- legs: inner pair, drawn a touch lighter -->
+            <path class="ink" stroke-width="1.5" d="M157 1003 C 179 899, 214 785, 249 700" />
+            <path class="ink" stroke-width="1.5" d="M503 1001 C 481 897, 447 784, 412 700" />
+            <!-- the great arch beneath the first platform -->
+            <path class="ink" stroke-width="1.7" d="M199 707 C 246 812, 414 814, 461 705" />
+            <path class="ink" stroke-width="1.2" d="M214 707 C 254 792, 406 794, 447 706" />
+            <!-- first platform -->
+            <path class="ink" stroke-width="2.2" d="M112 690 L 549 687" />
+            <path class="ink" stroke-width="1.6" d="M118 706 L 543 703" />
+            <path class="ink" stroke-width="1.1" d="M132 690 L 132 706 M 205 689 L 205 705 M 330 688 L 330 704 M 455 688 L 455 704 M 528 687 L 528 703" />
+            <!-- lattice between the platforms, sparse rather than literal -->
+            <path class="ink" stroke-width="1" d="M212 686 L 274 566 M 274 686 L 212 566 M 448 685 L 386 565 M 386 685 L 448 565" />
+            <path class="ink" stroke-width="1" d="M232 560 L 276 452 M 276 560 L 232 452 M 428 559 L 384 451 M 384 559 L 428 451" />
+            <path class="ink" stroke-width="1.3" d="M214 566 L 446 564" />
+            <!-- shaft rising to the second platform -->
+            <path class="ink" stroke-width="1.9" d="M208 688 L 249 446" />
+            <path class="ink" stroke-width="1.9" d="M452 686 L 411 445" />
+            <!-- second platform -->
+            <path class="ink" stroke-width="2.1" d="M216 441 L 445 438" />
+            <path class="ink" stroke-width="1.5" d="M224 453 L 437 450" />
+            <path class="ink" stroke-width="1.1" d="M244 439 L 244 452 M 330 438 L 330 451 M 416 438 L 416 450" />
+            <!-- upper tower, curving slightly inward as it climbs -->
+            <path class="ink" stroke-width="1.8" d="M251 438 C 270 356, 290 280, 301 213" />
+            <path class="ink" stroke-width="1.8" d="M409 436 C 391 355, 371 279, 359 212" />
+            <path class="ink" stroke-width=".9" d="M262 388 L 397 386 M 275 320 L 385 318 M 288 258 L 372 257" />
+            <path class="ink" stroke-width=".8" d="M266 384 L 300 320 M 300 384 L 266 320 M 393 383 L 359 319 M 359 383 L 393 319" />
+            <!-- top platform, lantern and spire -->
+            <path class="ink" stroke-width="1.9" d="M288 209 L 372 208" />
+            <path class="ink" stroke-width="1.4" d="M296 196 L 364 195 M 303 196 L 306 209 M 357 195 L 354 208" />
+            <path class="ink" stroke-width="1.5" d="M311 195 C 313 176, 316 166, 330 162 C 344 166, 347 176, 349 195" />
+            <path class="ink" stroke-width="1.9" d="M330 161 L 330 92" />
+            <path class="ink" stroke-width="1.2" d="M320 128 L 340 128 M 323 104 L 337 104" />
+            <path class="ink" stroke-width="1.6" d="M330 92 L 330 58" />
+            <!-- ground: one long, slightly uneven line -->
+            <path class="ink" stroke-width="1.6" d="M12 1012 C 150 1003, 264 1015, 372 1007 S 566 1000, 652 1010" />
+          </g>
+        </svg>
+
+        <!-- a bateau-mouche, small and low, well away from the tower's base -->
+        <svg class="hero-boat" viewBox="0 0 240 92" fill="none" focusable="false">
+          <g class="ink-group" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path class="ink" stroke-width="1.7" d="M18 58 C 44 74, 176 76, 220 56 L 206 50 L 30 52 Z" />
+            <path class="ink" stroke-width="1.4" d="M46 50 L 52 32 L 186 31 L 194 50" />
+            <path class="ink" stroke-width="1" d="M66 48 L 66 34 M 92 48 L 92 33 M 118 47 L 118 33 M 144 47 L 144 32 M 170 46 L 170 32" />
+            <path class="ink" stroke-width="1.3" d="M110 31 L 112 18 L 148 18 L 148 30" />
+            <path class="ink" stroke-width="1.2" d="M6 70 C 40 63, 74 76, 108 69 S 178 62, 232 72" />
+          </g>
+        </svg>
+
+        <span class="spark spark--1"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 1.5 L13.4 10.6 L22.5 12 L13.4 13.4 L12 22.5 L10.6 13.4 L1.5 12 L10.6 10.6 Z" /></svg></span>
+        <span class="spark spark--2"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3 L12 21 M3 12 L21 12" stroke-width="2.4" stroke-linecap="round" fill="none" /></svg></span>
+        <span class="spark spark--3"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 5 L19 19 M19 5 L5 19" stroke-width="2.4" stroke-linecap="round" fill="none" /></svg></span>
+        <span class="spark spark--4"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 1.5 L13.4 10.6 L22.5 12 L13.4 13.4 L12 22.5 L10.6 13.4 L1.5 12 L10.6 10.6 Z" /></svg></span>
+        <span class="spark spark--5"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3 L12 21 M3 12 L21 12" stroke-width="2.4" stroke-linecap="round" fill="none" /></svg></span>
       </div>
     </div>
 

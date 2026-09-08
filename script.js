@@ -922,3 +922,79 @@ document.addEventListener('keydown', (event) => {
 });
 
 restoreConversation();
+
+/* ---------------------------------------------------------------------------
+   Hero ink: draw-on, parallax drift.
+   Self-contained and defensive -- it must never be able to break the chat
+   widget or the booking flows below it.
+   ------------------------------------------------------------------------ */
+(function heroInk() {
+  try {
+    const figure = document.querySelector('.hero-figure');
+    if (!figure) return;
+
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+    const strokes = [
+      ...figure.querySelectorAll('.ink'),
+      ...document.querySelectorAll('.hero-rule .ink'),
+    ];
+
+    // Reduced motion: leave every stroke at its finished state and do nothing
+    // else -- no dash offsets to resolve, no scroll listener.
+    if (reduce) {
+      document.querySelector('.hero-h1-under')?.classList.add('is-drawn');
+    }
+
+    if (!reduce) {
+      strokes.forEach((path, i) => {
+        let len = 0;
+        try { len = path.getTotalLength(); } catch { return; }
+        if (!len || !Number.isFinite(len)) return;
+        path.style.strokeDasharray = String(len);
+        path.style.strokeDashoffset = String(len);
+        // Longer lines take longer to draw, which is what makes it read as a
+        // hand moving rather than a uniform machine reveal.
+        const dur = 700 + Math.min(len, 1100);
+        path.style.transition = `stroke-dashoffset ${dur}ms cubic-bezier(.37,.01,.2,1) ${i * 24}ms`;
+      });
+
+      const underline = document.querySelector('.hero-h1-under');
+      const draw = () => {
+        strokes.forEach((p) => { p.style.strokeDashoffset = '0'; });
+        if (underline) underline.classList.add('is-drawn');
+      };
+      if ('IntersectionObserver' in window) {
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            draw();
+            io.disconnect();
+          });
+        }, { threshold: 0.12 });
+        io.observe(figure);
+      } else {
+        draw();
+      }
+
+      const tower = figure.querySelector('.hero-tower');
+      const boat = figure.querySelector('.hero-boat');
+      let queued = false;
+      const drift = () => {
+        queued = false;
+        const y = window.scrollY || window.pageYOffset || 0;
+        if (y > 1400) return;
+        if (tower) tower.style.transform = `translate3d(0, ${(y * -0.055).toFixed(2)}px, 0)`;
+        if (boat) boat.style.transform = `translate3d(${(y * 0.07).toFixed(2)}px, ${(y * -0.02).toFixed(2)}px, 0)`;
+      };
+      window.addEventListener('scroll', () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(drift);
+      }, { passive: true });
+      drift();
+    }
+  } catch (error) {
+    // A decorative flourish must never take the page down with it.
+    console.warn('hero ink skipped:', error);
+  }
+})();
