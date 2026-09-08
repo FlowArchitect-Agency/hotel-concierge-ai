@@ -2414,3 +2414,51 @@ test('The partner line names the service the guest asked for, not an arbitrary o
     globalThis.fetch = originalFetch;
   }
 });
+
+test('An acronym-named service is identifiable and skips the category card', async () => {
+  // "Private Chauffeur — CDG/ORY Transfer" is entirely category vocabulary
+  // except for the airport codes, and those are 3 letters, so the >=4 length
+  // filter left the item with no distinctive words at all. A guest asking to
+  // "arrange a chauffeur transfer from CDG" therefore got "We have 2 transport
+  // options" instead of that transfer.
+  const catalogue = [
+    { fields: { Name: 'Private Chauffeur — Half-Day Disposal', Category: 'transport', Description: 'Disposal.', Active: true, IsPartner: true, PriceEUR: 450 } },
+    { fields: { Name: 'Private Chauffeur — CDG/ORY Transfer', Category: 'transport', Description: 'Airport transfer.', Active: true, IsPartner: true, PriceEUR: 180 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  const env = { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' };
+
+  async function ask(message) {
+    const calls = [];
+    globalThis.fetch = async (url) => {
+      const target = String(url);
+      calls.push(target);
+      if (target.includes('/Services')) return Response.json({ records: catalogue });
+      if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+      if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+        return Response.json({ choices: [{ message: { content: JSON.stringify({
+          reply_text: 'The CDG/ORY Transfer is 180 EUR.', intent: 'service_request', service_type: 'transport', requests: [], requires_human: false,
+        }) } }] });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    };
+    const res = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message, sessionId: 'qa_acronym', testMode: 'read_only' }),
+    }), env, { waitUntil() {} });
+    return { reply: (await res.json()).reply, reachedModel: calls.some((u) => u.includes('api.groq.com')) };
+  }
+
+  try {
+    const named = await ask('Please arrange a chauffeur transfer from CDG.');
+    assert.doesNotMatch(named.reply, /collection\. Here/i, 'a named airport transfer must not get the category card');
+    assert.equal(named.reachedModel, true, 'it must reach the model to answer about that transfer');
+
+    // A generic transport ask has no acronym and must still take the fast path.
+    const generic = await ask('Do you offer airport transfers?');
+    assert.equal(generic.reachedModel, false, 'broad browsing should stay on the card fast path');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

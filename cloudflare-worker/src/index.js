@@ -1451,9 +1451,19 @@ function containsWord(text, word) {
 // specifically -- i.e. everything left after stripping generic hospitality
 // and category/type vocabulary.
 function distinctiveServiceWords(name) {
-  return normalized(name)
+  const raw = String(name ?? '');
+  // Short ALL-CAPS tokens in a service name are acronyms, and they identify the
+  // item precisely -- airport codes above all. "Private Chauffeur — CDG/ORY
+  // Transfer" is otherwise entirely generic (private, chauffeur and transfer
+  // are all category vocabulary), so the >=4 length filter left it with NO
+  // distinctive words at all and nothing could ever match it: a guest asking to
+  // "arrange a chauffeur transfer from CDG" was handed the category card
+  // instead of that transfer. Acronyms already in the generic stoplist (VIP)
+  // stay excluded.
+  const acronyms = new Set((raw.match(/\b[A-Z]{3,5}\b/g) || []).map((word) => word.toLowerCase()));
+  return normalized(raw)
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word.length >= 4 && !GENERIC_SERVICE_NAME_WORDS.has(word));
+    .filter((word) => (word.length >= 4 || acronyms.has(word)) && !GENERIC_SERVICE_NAME_WORDS.has(word));
 }
 
 // Quoted phrases and runs of capitalized words in the guest's own (non-
