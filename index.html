@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=task-10">
+    <link rel="stylesheet" href="style.css?v=nd-360-r1">
 </head>
 <body data-page="index">
 
@@ -364,6 +364,20 @@
 
     <div class="night-demo-summary" aria-label="Demonstration night operational summary">
       <span>Demo night</span><dl><div><dt>14</dt><dd>conversations</dd></div><div><dt>5</dt><dd>service requests</dd></div><div><dt>3</dt><dd>languages</dd></div><div><dt>0</dt><dd>unanswered in this simulation</dd></div></dl>
+    </div>
+  </div>
+</section>
+
+<!-- Chapter 03 opener. Notre-Dame reassembles from the points of its own
+     photogrammetry scan and turns a full circle as you scroll. Decorative: the
+     chapter's actual content is the section below, so the canvas is hidden from
+     assistive tech and the caption is the only thing announced. -->
+<section class="monument-stage" id="handoff-monument">
+  <div class="monument-pin">
+    <canvas id="monument-canvas" aria-hidden="true"></canvas>
+    <div class="monument-caption">
+      <p class="chapter-eyebrow" data-i18n="home.handoff.monument">Notre-Dame de Paris</p>
+      <h2 data-i18n="home.handoff.monumentLine">Rebuilt by hand.</h2>
     </div>
   </div>
 </section>
@@ -732,7 +746,14 @@
 
 <!-- Browser-safe Cloudflare Worker endpoint configuration. Never place a secret in config.js. -->
 <script src="config.js?v=task-10"></script>
-    <script src="i18n.js?v=task-10b"></script>
+    <script src="i18n.js?v=nd-360-r1"></script>
+    <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+    </script>
+    <script type="module" src="monument.js?v=nd-360-r1"></script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
 </body>
 </html>

@@ -465,6 +465,28 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
 @keyframes v2-night-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Chapter 03: a neutral reception surface makes human judgement visibly first-class. */
+/* Chapter 03 opener: a pinned stage the cathedral turns inside. The pin needs a
+   scroll range, so the stage is tall and the pin is one viewport of it. Note the
+   body rule above keeps `overflow-x: hidden` -- that propagates to the viewport
+   and leaves position:sticky working; `hidden` on `html` instead would make the
+   root a scroll container and the pin would never stick. */
+.monument-stage { position: relative; height: 640vh; background: var(--v2-paper); }
+.monument-pin { position: sticky; top: 0; height: 100vh; overflow: hidden;
+  background: linear-gradient(#a9c6dd 0%, #cfdce2 46%, #ece6d9 78%, var(--v2-paper) 100%); }
+.monument-pin canvas { display: block; width: 100%; height: 100%; }
+.monument-caption { position: absolute; top: 50%; left: max(1.35rem, calc(50vw - 620px));
+  z-index: 2; width: min(30vw, 22ch); transform: translateY(-50%);
+  pointer-events: none; opacity: 0; transition: opacity 700ms ease 120ms; }
+.monument-stage.is-assembled .monument-caption { opacity: 1; }
+.monument-caption .chapter-eyebrow { margin-bottom: .9rem; color: #93713f; }
+.monument-caption h2 { margin: 0; color: #232d26;
+  font: 500 clamp(2.2rem, 3.6vw, 3.9rem)/.98 var(--serif); letter-spacing: -.055em; }
+/* If WebGL or the model is unavailable this would be a tall empty band, so
+   collapse it rather than leave six screens of gradient. */
+.monument-stage.is-failed { height: 0; overflow: hidden; }
+@media (max-width: 900px) { .monument-stage { height: 480vh; }
+  .monument-caption { top: auto; bottom: 8vh; left: 1.35rem; width: min(78vw, 20ch); transform: none; } }
+@media (prefers-reduced-motion: reduce) { .monument-stage { height: 100vh; } }
 .human-handoff { padding: clamp(5rem, 8vw, 8rem) 0 clamp(5.5rem, 9vw, 8.5rem); color: var(--v2-ink); background: var(--v2-paper); }.handoff-intro { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(250px, .52fr); gap: clamp(2rem, 7vw, 8rem); align-items: end; max-width: 1050px; margin-bottom: clamp(2.4rem, 5vw, 4.5rem); }.handoff-heading .chapter-eyebrow { margin-bottom: 1.2rem; }.handoff-intro h2 { margin: 0; font: 500 clamp(2.8rem, 4.6vw, 5.2rem)/.96 var(--serif); letter-spacing: -.06em; }.handoff-intro > p { max-width: 370px; margin: 0 0 .25rem; color: var(--v2-muted); font-size: .95rem; line-height: 1.65; }
 .handoff-composition { display: grid; grid-template-columns: minmax(235px, .72fr) 36px minmax(0, 1.28fr); gap: clamp(1rem, 2.5vw, 2.6rem); align-items: stretch; }.handoff-guest-view { display: flex; flex-direction: column; padding: 1.3rem; background: #fbfaf6; border: 1px solid #dedcd4; border-radius: 8px; }.handoff-panel-label { margin-bottom: 1.35rem; color: #88877f; font-size: .57rem; font-weight: 730; letter-spacing: .09em; text-transform: uppercase; }.handoff-guest-name { display: flex; gap: .6rem; align-items: center; }.handoff-guest-name strong, .handoff-guest-name small { display: block; }.handoff-guest-name strong { color: #353630; font-size: .73rem; }.handoff-guest-name small { margin-top: .13rem; color: #85847c; font-size: .58rem; }.handoff-guest-view blockquote { margin: 1.3rem 0; color: #3e403b; font: 500 clamp(1.25rem, 1.8vw, 1.7rem)/1.3 var(--serif); letter-spacing: -.025em; }.handoff-signals { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem .55rem; margin: auto 0 0; padding-top: 1rem; border-top: 1px solid #e2e0d9; }.handoff-signals dt { margin-bottom: .16rem; color: #95938b; font-size: .5rem; letter-spacing: .06em; text-transform: uppercase; }.handoff-signals dd { margin: 0; color: #54554f; font-size: .62rem; font-weight: 660; }
 .handoff-bridge { position: relative; display: grid; min-height: 100%; place-items: center; }.handoff-bridge::before { width: 1px; height: 100%; content: ''; background: #d7d4ca; }.handoff-bridge span { position: absolute; width: 120px; padding: .42rem; color: #8f7a57; background: var(--v2-paper); font-size: .5rem; font-weight: 700; letter-spacing: .07em; line-height: 1.35; text-align: center; text-transform: uppercase; transform: rotate(-90deg); }
