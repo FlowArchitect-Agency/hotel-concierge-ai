@@ -32,6 +32,13 @@ function start(){
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.35;
+  renderer.localClippingEnabled = true;
+
+  // The scan carries the ground it was standing on: a slab of the Ile de la Cite
+  // that reads as a lump of terrain rather than architecture. It is fused into
+  // the same continuous mesh, so it cannot be hidden as a separate object --
+  // this plane cuts it away at the cathedral's footing instead.
+  const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
   scene.add(new THREE.HemisphereLight(0xdff0ff, 0xb9ad93, 2.0));
   const key = new THREE.DirectionalLight(0xfff4e2, 3.0);
@@ -139,6 +146,33 @@ function start(){
     return g;
   }
 
+  // Where does the ground stop and the building start? The terrain slab is a
+  // block sampled around the cathedral, so it is noticeably longer and wider
+  // than the building standing on it. Walking up from the bottom, the first
+  // height at which the footprint contracts is the footing.
+  function groundLevel(meshes, box){
+    const N = 64, lo = box.min.y, span = box.max.y - lo, step = span / N;
+    const reach = new Float32Array(N);
+    const v = new THREE.Vector3();
+    for (const o of meshes){
+      const p = o.geometry.attributes.position;
+      for (let i = 0; i < p.count; i += 3){
+        v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+        const b = Math.min(N - 1, Math.max(0, Math.floor((v.y - lo) / step)));
+        const r = Math.max(Math.abs(v.x - box.min.x), Math.abs(v.x - box.max.x),
+                           Math.abs(v.z - box.min.z), Math.abs(v.z - box.max.z));
+        if (r > reach[b]) reach[b] = r;
+      }
+    }
+    let widest = 0;
+    for (let i = 0; i < N; i++) widest = Math.max(widest, reach[i]);
+    let i = 0;
+    while (i < N && reach[i] >= widest * 0.95) i++;
+    // nothing contracted -- the scan is all building, so keep every bit of it
+    if (i >= N) return box.min.y - 1;
+    return lo + i * step + span * 0.02;   // clear of the footing, not into it
+  }
+
   function load(){
     const draco = new DRACOLoader();
     draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/');
@@ -147,26 +181,46 @@ function start(){
 
     loader.load('assets/3d/notredame.glb', (gltf)=>{
       model = stand(gltf.scene);
-      const box = new THREE.Box3().setFromObject(model);
-      const centre = box.getCenter(new THREE.Vector3());
+      model.updateMatrixWorld(true);
+
+      const meshes = [];
+      model.traverse(o=>{ if (o.isMesh) meshes.push(o); });
+
+      const full = new THREE.Box3().setFromObject(model);
+      const cut = groundLevel(meshes, full);
+      ground.constant = -cut;
+
+      // Centre and frame on what survives the cut, not on the whole scan --
+      // otherwise the removed slab still pulls the camera down and back.
+      const kept = new THREE.Box3();
+      const keptCloud = [];
+      const v = new THREE.Vector3();
+      for (const o of meshes){
+        const p = o.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++){
+          v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+          if (v.y < cut) continue;
+          kept.expandByPoint(v);
+          // every other vertex again, as the cloud shown while dispersed
+          if (i % 2 === 0) keptCloud.push(p.getX(i), p.getY(i), p.getZ(i));
+        }
+      }
+      const centre = kept.getCenter(new THREE.Vector3());
       // Frame on the bounding sphere, not the longest edge: the nave is nearly
       // twice the height, and the longest edge pushes the camera much too far back.
-      radius = box.getBoundingSphere(new THREE.Sphere()).radius;
+      radius = kept.getBoundingSphere(new THREE.Sphere()).radius;
       uniforms.uRadius.value = radius;
       model.position.sub(centre);
+      ground.constant = -(cut - centre.y);   // the plane lives in world space
 
-      const pos = [];
-      model.traverse(o=>{
-        if (!o.isMesh) return;
+      for (const o of meshes){
         o.material.side = THREE.DoubleSide;
+        o.material.clippingPlanes = [ground];
         patch(o.material);
-        const p = o.geometry.attributes.position;
-        for (let i = 0; i < p.count; i += 2) pos.push(p.getX(i), p.getY(i), p.getZ(i));
-      });
+      }
 
-      // the same vertices as a drifting point cloud, shown while dispersed
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('position', new THREE.Float32BufferAttribute(keptCloud, 3));
       points = new THREE.Points(g, new THREE.PointsMaterial({
         color: 0x8a7f66, size: radius * 0.0042,
         transparent: true, opacity: 0, depthWrite: false }));
@@ -216,9 +270,7 @@ function start(){
     // a portrait viewport sees far less width, so pull back to keep the nave in
     const fit = camera.aspect < 1 ? 1.55 : camera.aspect < 1.5 ? 1.2 : 1;
     const d = radius * cur.dist * fit;
-    // aim a little under the centre so the island the cathedral stands on has
-    // room at the bottom of the frame rather than running off it
-    AIM.set(0, -radius * 0.07, 0);
+    AIM.set(0, 0, 0);
     camera.position.set(
       Math.sin(cur.az) * Math.cos(cur.el) * d,
       Math.sin(cur.el) * d + radius * 0.06,
