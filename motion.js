@@ -1,53 +1,55 @@
-/* motion.js — gives the page's own content an entrance as it is scrolled to.
+/* motion.js — the page's content is moved BY the scroll, not triggered by it.
  *
- * Tagging is done here rather than in the markup: there are several hundred
- * elements involved and hand-tagging them would be unmaintainable and would
- * bury the content in presentational attributes. A short rule table names the
- * containers whose children should enter, and how.
+ * Every tagged element has its own window of scroll, roughly half a viewport
+ * long, and its transform is a direct function of where the reader is inside
+ * that window. Stop scrolling and it stops. Scroll back and it goes back. The
+ * reader is moving the parts, which is the point: a triggered animation plays
+ * at its own speed and reads as something the page is doing TO you.
+ *
+ * Movement is dimensional rather than flat. Elements arrive out of depth, some
+ * hinging on an axis, some coming forward from far behind the screen. The
+ * perspective lives inside each element's own transform rather than on a
+ * parent, so no ancestor's containing block or stacking context is disturbed.
+ *
+ * Tagging is done here rather than in the markup: several hundred elements
+ * would otherwise need presentational attributes threaded through the content,
+ * and the direction each one takes is a function of where it sits, which the
+ * markup does not know.
  *
  * Deliberately NOT touched:
  *   - #hero-scene and #handoff-monument. Both contain a position:sticky pin,
- *     and a transformed ancestor becomes the pin's containing block, which
- *     silently stops it sticking. Their copy already animates on its own.
+ *     and a transformed ancestor becomes that pin's containing block, which
+ *     silently stops it sticking. Both already animate on their own terms.
  *   - The fixed navigation and the modal dialogs, which have their own states.
- *   - The live conversation threads. script.js appends messages to those while
- *     the page is open; a child that arrives after the observer has run would
- *     never be revealed, so it would appear blank.
- *
- * The existing `.reveal` system in script.js is left alone and still runs.
+ *   - The live conversation threads. script.js appends messages to those after
+ *     load, and a child arriving after tagging would never be revealed.
+ *   - Nodes already driven by the older `.reveal` system, which still runs.
  */
 (function () {
   var root = document.documentElement;
 
-  /* No JS-driven motion under reduced motion, and none without an observer --
-     in both cases motion.css does nothing and the page renders at rest. */
   if (!('IntersectionObserver' in window)) return;
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-  /* Regions this never enters, for the reasons in the header comment. */
   var SKIP = '#hero-scene, #handoff-monument, #navbar, .site-nav, .chat-widget,'
            + '.hotel-collection-modal, [role="dialog"], .conversation-thread,'
            + '.night-thread, .prearrival-thread';
 
-  /* A node already driven by the older `.reveal` system is not given a second
-     animation of its own -- but its CHILDREN still are. This has to be tested
-     with matches() on the node itself, not closest(): several of the wrappers
-     this file targets carry .reveal, and an ancestor test skipped everything
-     inside them, leaving the demo, the operating layer, implementation and the
-     closing call with nothing moving at all. */
+  /* Tested with matches() on the node itself, never closest(): several of the
+     wrappers this file targets carry .reveal, and an ancestor test would skip
+     everything inside them. */
   var ALREADY = '.reveal';
 
   /* container selector, how its children enter.
-     'sides'  outer children come from their own side, the middle lifts --
-              this is what makes a multi column panel read as assembling.
-     'up'     everything lifts, staggered in document order. Prose stacks keep
-              this: alternating sides through a heading and its paragraph reads
-              as a gimmick rather than as the page arriving.
-     'down'   arrives from above; used for the bars that sit on top of a panel.
-     'alt'    lists of peers come from alternating directions, chosen from how
-              they are actually laid out: a vertical list weaves in from left
-              and right, a horizontal row alternates up and down so the items
-              never cross each other on the way in. */
+     'sides'  outer children hinge in from their own side, the middle one comes
+              forward out of the background -- a three column panel then
+              assembles in depth instead of sliding.
+     'up'     rises and tips upright. Prose stacks keep this: hinging a heading
+              and its paragraph in from opposite sides reads as a gimmick.
+     'down'   drops from above; for the bars that sit on top of a panel.
+     'alt'    peers arrive from alternating directions, chosen from how they are
+              actually laid out -- a vertical list weaves left and right, a
+              horizontal row alternates between rising and coming forward. */
   var RULES = [
     ['.hero-product .product-app-header', 'down'],
     ['.hero-product .product-app-body',   'sides'],
@@ -74,26 +76,54 @@
     ['footer .footer-container',          'up']
   ];
 
-  var STEP = 90;          /* ms between siblings */
-  var MAX_STAGGER = 6;    /* beyond this a group reads as a queue, not a group */
+  /* How much viewport each element's move is spread across. Wider reads as more
+     clearly hand-driven; too wide and nothing ever looks settled. */
+  var ENTER  = 0.98;   /* progress 0 while the element's top is this far down */
+  var SETTLE = 0.42;   /* progress 1 once that edge has risen to here */
+  var LAG    = 0.055;  /* each later sibling's window opens this much later */
 
-  function tag(el, dir, index) {
-    if (!el || el.hasAttribute('data-motion')) return;
-    if (el.closest(SKIP) || el.matches(ALREADY)) return;
-    el.setAttribute('data-motion', dir);
-    if (index) el.style.setProperty('--motion-delay', Math.min(index, MAX_STAGGER) * STEP + 'ms');
+  /* Travel is scaled to the viewport. A fixed sideways offset that reads well on
+     a desktop is most of a phone's width, and since body carries
+     overflow-x: hidden the excess is clipped rather than scrolled -- so the
+     element appears to be sliced off at the edge instead of flying in. Angles
+     are left alone; a hinge looks the same at any size. */
+  var amp = 1;
+  function measure() {
+    amp = Math.max(0.42, Math.min(1, (root.clientWidth || 1440) / 1440));
   }
 
-  var tagged = [];
+  /* The shapes. k counts DOWN from 1 (far off) to 0 (in place), so every term
+     below is simply how much of the arrival is still left to undo. */
+  var SHAPE = {
+    up:    function (k) { return 'perspective(1100px) translate3d(0,' + (52 * k * amp) + 'px,' + (-160 * k * amp) + 'px) rotateX(' + (7 * k) + 'deg)'; },
+    down:  function (k) { return 'perspective(1100px) translate3d(0,' + (-44 * k * amp) + 'px,' + (-120 * k * amp) + 'px) rotateX(' + (-7 * k) + 'deg)'; },
+    left:  function (k) { return 'perspective(1100px) translate3d(' + (-78 * k * amp) + 'px,' + (14 * k * amp) + 'px,' + (-200 * k * amp) + 'px) rotateY(' + (11 * k) + 'deg)'; },
+    right: function (k) { return 'perspective(1100px) translate3d(' + (78 * k * amp) + 'px,' + (14 * k * amp) + 'px,' + (-200 * k * amp) + 'px) rotateY(' + (-11 * k) + 'deg)'; },
+    'in':  function (k) { return 'perspective(1100px) translate3d(0,' + (22 * k * amp) + 'px,' + (-460 * k * amp) + 'px) rotateX(' + (3 * k) + 'deg)'; }
+  };
+
+  function clamp(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  /* Eases only the last of the travel, so things arrive rather than stopping
+     dead. The bulk stays close to linear, and so stays tied to the hand. */
+  function ease(t) { return 1 - Math.pow(1 - t, 2.2); }
+
+  function tag(el, dir, order) {
+    if (!el || el.hasAttribute('data-motion')) return false;
+    if (el.closest(SKIP) || el.matches(ALREADY)) return false;
+    el.setAttribute('data-motion', dir);
+    el._motion = { shape: SHAPE[dir] || SHAPE.up, order: order };
+    return true;
+  }
+
+  var items = [];
   RULES.forEach(function (rule) {
     document.querySelectorAll(rule[0]).forEach(function (container) {
       if (container.closest(SKIP)) return;
       var kids = Array.prototype.filter.call(container.children, function (k) {
-        /* an empty spacer has nothing to animate and would only add delay */
         return k.offsetParent !== null || k.getClientRects().length;
       });
-      /* Laid out side by side, or stacked? Two children sharing a top edge is
-         enough to tell, and it decides which way 'alt' weaves. */
+      /* Side by side, or stacked? Two children sharing a top edge decides it,
+         and that decides which way 'alt' weaves. */
       var isRow = kids.length > 1 &&
         Math.abs(kids[1].getBoundingClientRect().top - kids[0].getBoundingClientRect().top) < 8;
 
@@ -103,38 +133,90 @@
           dir = kids.length < 2 ? 'up'
               : i === 0 ? 'left'
               : i === kids.length - 1 ? 'right'
-              : 'up';
+              : 'in';
         } else if (dir === 'alt') {
           dir = kids.length < 2 ? 'up'
-              : isRow ? (i % 2 ? 'down' : 'up')
+              : isRow ? (i % 2 ? 'in' : 'up')
               : (i % 2 ? 'right' : 'left');
         }
-        tag(kid, dir, i);
-        if (kid.hasAttribute('data-motion')) tagged.push(kid);
+        if (tag(kid, dir, i)) items.push(kid);
       });
     });
   });
 
-  if (!tagged.length) return;
+  if (!items.length) return;
   root.classList.add('motion-on');
+  measure();
 
-  /* One shot: once a thing has arrived it stays arrived. Re-hiding content on
-     the way back up makes a page feel unstable to read. */
+  function progress(el) {
+    var r = el.getBoundingClientRect();
+    var vh = window.innerHeight || root.clientHeight;
+    /* Later siblings lag behind, so the window is pulled UP the viewport, not
+       down: a larger `from` would mean the element starts sooner, which
+       reverses the stagger. */
+    var lag = el._motion.order * LAG;
+    var from = vh * (ENTER - lag);
+    var to   = vh * (SETTLE - lag);
+    return clamp((from - r.top) / (from - to || 1));
+  }
+
+  function paint(el, p) {
+    if (p >= 0.999) {
+      /* Settled: drop the transform rather than leave an identity one behind,
+         so the element stops being a containing block and its compositor layer
+         can be released. */
+      el.style.transform = '';
+      el.style.opacity = '';
+      el.style.willChange = '';
+      return;
+    }
+    el.style.transform = el._motion.shape(1 - p);
+    el.style.opacity = clamp(p * 1.5);
+  }
+
+  /* Only elements near the viewport are recomputed on a frame. */
+  var live = [];
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
-      if (!entry.isIntersecting) return;
-      entry.target.classList.add('is-shown');
-      io.unobserve(entry.target);
+      var el = entry.target;
+      var at = live.indexOf(el);
+      if (entry.isIntersecting) {
+        if (at < 0) { live.push(el); el.style.willChange = 'transform, opacity'; }
+      } else {
+        if (at >= 0) live.splice(at, 1);
+        el.style.willChange = '';
+        /* Above the viewport: leave it finished. Below it: leave it waiting. */
+        if (entry.boundingClientRect.top < 0) { el.style.transform = ''; el.style.opacity = ''; }
+        else { el.style.transform = el._motion.shape(1); el.style.opacity = 0; }
+      }
     });
-  }, { threshold: 0.08, rootMargin: '0px 0px -8% 0px' });
+    tick();
+  }, { rootMargin: '25% 0px 25% 0px' });
 
-  tagged.forEach(function (el) { io.observe(el); });
+  items.forEach(function (el) { io.observe(el); });
 
-  /* Anything already on screen at load should not wait to be scrolled to. */
-  requestAnimationFrame(function () {
-    tagged.forEach(function (el) {
-      var r = el.getBoundingClientRect();
-      if (r.top < innerHeight && r.bottom > 0) { el.classList.add('is-shown'); io.unobserve(el); }
+  /* Reads and writes are kept in separate passes. Measuring one element and
+     then styling it before measuring the next forces a synchronous layout per
+     element per frame, which on a page carrying two WebGL scenes is enough to
+     stall the main thread. */
+  var queued = false;
+  function tick() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(function () {
+      queued = false;
+      var n = live.length, ps = new Array(n), i;
+      for (i = 0; i < n; i++) ps[i] = ease(progress(live[i]));
+      for (i = 0; i < n; i++) paint(live[i], ps[i]);
     });
-  });
+  }
+
+  addEventListener('scroll', tick, { passive: true });
+  addEventListener('resize', function () { measure(); tick(); });
+  /* First state without waiting for a scroll, in the same two passes. */
+  (function () {
+    var ps = items.map(function (el) { return ease(progress(el)); });
+    items.forEach(function (el, i) { paint(el, ps[i]); });
+  })();
+  tick();
 })();
