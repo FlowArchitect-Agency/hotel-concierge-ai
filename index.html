@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=eiffel-r2">
+    <link rel="stylesheet" href="style.css?v=eiffel-r4">
     <link rel="stylesheet" href="eiffel-hero.css?v=1">
 </head>
 <body data-page="index">
@@ -830,7 +830,35 @@
       // from the element it is given, and #hero is taller than the run itself.
       import { mount } from './eiffel-hero.js?v=1';
       const scene = document.getElementById('hero-scene');
-      if (scene) { scene.classList.add('is-staged'); mount(scene, { quality: 'hero' }); }
+      if (scene) {
+        // The copy is written by the build rather than by a timer, so the two
+        // read as one movement: each line is held until the tower reaches the
+        // stage it belongs to, and the last of it lands as the spire tops out.
+        // (This replaces the module CSS's .is-staged stagger, which runs on
+        // animation-delay and would drift out of step with the scroll.)
+        // Thresholds are build percentages, not scroll fractions -- the module
+        // reaches 100% around 60% of the pinned run and holds there, so keying
+        // off scroll would finish the copy less than half way up the tower.
+        const steps = [
+          [0.01, '.hero-eyebrow'],          // footings
+          [0.14, 'h1 span:first-of-type'],  // the four legs leave the ground
+          [0.38, 'h1 span:nth-of-type(2)'], // the great arch closes
+          [0.66, '.hero-sub'],              // second platform
+          [0.93, '.hero-ctas']              // the summit: the copy completes with it
+        ].map(([at, sel]) => [at, scene.querySelector(sel)]).filter(([, el]) => el);
+
+        // With no JS, or with reduced motion (where the pin collapses and there
+        // is no scroll to sync to), the resting state in CSS is fully visible.
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          scene.classList.add('is-sync');
+        }
+        mount(scene, {
+          quality: 'hero',
+          onProgress(p) {
+            for (const [at, el] of steps) el.classList.toggle('is-in', p >= at);
+          }
+        });
+      }
     </script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
 </body>

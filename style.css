@@ -758,3 +758,26 @@ button .ico, a .ico { pointer-events: none; }
 /* mirrors the shape of the rule it overrides (.hero-v2 h1 span:last-child,
    which is more specific than a plain .hero--scene class selector) */
 .hero-v2 .hero--scene h1 span:last-child { color: #FBF8F1; }
+
+/* ── Hero copy, written by the build ─────────────────────────────────────
+   .is-sync is added by script only, so the resting state (visible, set in
+   eiffel-hero.css) still stands with no JS. Each line then waits for the
+   tower to reach its stage. Specificity here has to clear eiffel-hero.css's
+   `.hero--scene .hero-eyebrow { opacity: 1 }` (0,2,0), which loads after this
+   file -- hence the doubled class on the scene. */
+.hero--scene.is-sync .hero-eyebrow,
+.hero--scene.is-sync h1 span,
+.hero--scene.is-sync .hero-sub,
+.hero--scene.is-sync .hero-ctas {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 620ms ease, transform 880ms cubic-bezier(.22, 1, .36, 1);
+}
+.hero--scene.is-sync .is-in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero--scene.is-sync .hero-eyebrow,
+  .hero--scene.is-sync h1 span,
+  .hero--scene.is-sync .hero-sub,
+  .hero--scene.is-sync .hero-ctas { opacity: 1; transform: none; transition: none; }
+}
