@@ -1,16 +1,17 @@
 /* ---------------------------------------------------------------------------
    Notre-Dame, reconstructed on scroll -- the chapter 03 opener.
 
-   Uses the crowdsourced photogrammetry mesh rather than built geometry: hand-
-   made axis-aligned boxes cannot describe Gothic architecture, which is arches,
-   tracery and spires.
+   The cathedral assembles out of its own vertices: they scatter into space and
+   converge into solid stone as you scroll, then the camera turns a full circle.
 
-   The mesh is one continuous scanned surface with no separable parts, so doors
-   and windows cannot fly in independently. What a single mesh does support is
-   assembling the whole thing out of its own points: 63k vertices scatter into
-   space and converge into solid stone. It suits the subject twice over -- the
-   model was itself reconstructed from thousands of photographs, of a building
-   that was being rebuilt.
+   This replaced a crowdsourced photogrammetry scan. The scan had real
+   photographed stone, but its coverage followed where tourists stood -- the apse
+   was torn open and the south flank was a dark guess -- so a full turn had to
+   dodge its own gaps. This model is built rather than scanned: complete and
+   equally sharp from every angle, and a third of the file size.
+
+   Model: "NOTRE DAME DE PARIS" by Arquitecto Tecnico Luis Alberto Galdames
+   Marquez, CC-BY-4.0. Credited in the page, which the licence requires.
 
    Self-contained: touches nothing in script.js and binds no demo state.
    ------------------------------------------------------------------------ */
@@ -31,7 +32,7 @@ function start(){
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.35;
+  renderer.toneMappingExposure = 1.0;
   renderer.localClippingEnabled = true;
 
   // The scan carries the ground it was standing on: a slab of the Ile de la Cite
@@ -40,11 +41,11 @@ function start(){
   // this plane cuts it away at the cathedral's footing instead.
   const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-  scene.add(new THREE.HemisphereLight(0xdff0ff, 0xb9ad93, 2.0));
-  const key = new THREE.DirectionalLight(0xfff4e2, 3.0);
+  scene.add(new THREE.HemisphereLight(0xdff0ff, 0xb9ad93, 1.15));
+  const key = new THREE.DirectionalLight(0xfff4e2, 1.7);
   key.position.set(-70, 120, 90);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0xbdd8f0, 1.3);
+  const rim = new THREE.DirectionalLight(0xbdd8f0, 0.75);
   rim.position.set(90, 40, -80);
   scene.add(rim);
 
@@ -78,6 +79,12 @@ function start(){
     mat.needsUpdate = true;
   }
 
+  // Orientation is a property of the file, not something to guess at. This is a
+  // hand-built model exported Y-up, so it stands correctly as loaded. The
+  // photogrammetry scan it replaced was Z-up (RealityCapture's convention) and
+  // needed a quarter turn about X, or it stood on its west front.
+  const MODEL = { url: 'assets/3d/notredame.glb?v=galdames', uprightX: 0 };
+
   let model = null, points = null, radius = 45;
 
   // A full turn, starting and ending on the west front. Coverage in a
@@ -88,39 +95,24 @@ function start(){
   // the screen. The sharp arc is spent slowly and the sparse one is whipped past
   // from above, where the copper roof reads instead of the unlit south wall.
   const TURN = Math.PI * 2;
-  const AZ0  = 3.28;
+  const AZ0  = 4.71;                 // the west front, head on
+  // An even turn. The model this replaced was a photogrammetry scan whose
+  // coverage followed where tourists stood, so the waypoints had to hurry past
+  // the sides nobody photographed. This one is built rather than scanned and is
+  // equally good from every angle, so the camera can simply go round.
   const STOPS = [
-    { az: AZ0,        el: 0.06, dist: 2.16 },  // the west front
-    { az: AZ0 + 0.50, el: 0.10, dist: 2.09 },  // north-west three-quarter
-    { az: AZ0 + 1.00, el: 0.13, dist: 2.09 },  // the north elevation
-    { az: AZ0 + 1.52, el: 0.15, dist: 2.12 },  // fleche and flying buttresses
-    { az: AZ0 + 2.57, el: 0.13, dist: 2.09 },  // past the north transept
-    { az: AZ0 + 3.62, el: 0.11, dist: 2.09 },  // the chevet
-    { az: AZ0 + 4.72, el: 0.30, dist: 2.42 },  // lifting over the sparse south side
-    { az: AZ0 + TURN, el: 0.06, dist: 2.16 }   // the west front again: one full turn
+    { az: AZ0,        el: 0.06, dist: 2.20 },  // the west front
+    { az: AZ0 + 0.90, el: 0.10, dist: 2.10 },
+    { az: AZ0 + 1.80, el: 0.13, dist: 2.10 },
+    { az: AZ0 + 2.70, el: 0.15, dist: 2.16 },  // the flank, fleche and buttresses
+    { az: AZ0 + 3.60, el: 0.13, dist: 2.10 },  // the chevet
+    { az: AZ0 + 4.50, el: 0.10, dist: 2.10 },
+    { az: AZ0 + 5.40, el: 0.08, dist: 2.10 },
+    { az: AZ0 + TURN, el: 0.06, dist: 2.20 }   // the west front again: one full turn
   ];
 
   const lerp = (a,b,t)=>a+(b-a)*t;
   const easeInOut = t => t<.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
-  const smooth = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
-
-  // Where the photographs ran out. Coverage in a crowdsourced model follows
-  // where people stood, and nobody circles the east end with a camera: the apse
-  // is torn open and the south flank is a dark guess. No free model of this
-  // building is both complete and clean -- the sharpest scans all have this
-  // hole, and the complete ones are melted.
-  //
-  // So the camera does not drive through it pretending. Over that arc the
-  // cathedral falls back to the points it was reconstructed from, and re-forms
-  // as it comes back onto covered ground. The defect becomes the subject: this
-  // is a reconstruction, and it is showing you its own edges.
-  const SPARSE_IN = 2.35, SPARSE_OUT = 5.55, FADE = 0.55, FLOOR = 0.42;
-  function coverage(az){
-    const a = ((az - AZ0) % TURN + TURN) % TURN;
-    if (a <= SPARSE_IN || a >= SPARSE_OUT) return 1;
-    return 1 - (1 - FLOOR) * Math.min(smooth((a - SPARSE_IN) / FADE),
-                                      smooth((SPARSE_OUT - a) / FADE));
-  }
 
   const target = { az: STOPS[0].az, el: STOPS[0].el, dist: STOPS[0].dist, assemble: 0 };
   const cur = Object.assign({}, target);
@@ -154,13 +146,11 @@ function start(){
     }
   }
 
-  // The scan is Z-up with the building's 128m length running along Y -- the
-  // RealityCapture export convention. three.js is Y-up, so untouched it stands
-  // on its west front with the nave pointing at the sky. Rotate it onto its
-  // feet inside a wrapper, so the wrapper stays axis-aligned for centring.
+  // Wrap the model so the wrapper stays axis-aligned for centring whatever
+  // rotation the file needs to stand upright.
   function stand(obj){
     const g = new THREE.Group();
-    obj.rotation.x = -Math.PI / 2;
+    obj.rotation.x = MODEL.uprightX;
     g.add(obj);
     return g;
   }
@@ -198,7 +188,7 @@ function start(){
     const loader = new GLTFLoader();
     loader.setDRACOLoader(draco);
 
-    loader.load('assets/3d/notredame.glb', (gltf)=>{
+    loader.load(MODEL.url, (gltf)=>{
       model = stand(gltf.scene);
       model.updateMatrixWorld(true);
 
@@ -207,7 +197,18 @@ function start(){
 
       const full = new THREE.Box3().setFromObject(model);
       const cut = groundLevel(meshes, full);
-      ground.constant = -cut;
+
+      // A mesh lying entirely under the cut is ground, not building. Drop it
+      // rather than leaving it to the clipping plane: the plane tests the
+      // dispersed position, so during assembly scattered ground rises above the
+      // cut and shows as a slab drifting behind the cathedral. The plane still
+      // handles geometry that straddles the line.
+      for (let i = meshes.length - 1; i >= 0; i--){
+        if (new THREE.Box3().setFromObject(meshes[i]).max.y <= cut){
+          meshes[i].removeFromParent();
+          meshes.splice(i, 1);
+        }
+      }
 
       // Centre and frame on what survives the cut, not on the whole scan --
       // otherwise the removed slab still pulls the camera down and back.
@@ -229,6 +230,13 @@ function start(){
       // twice the height, and the longest edge pushes the camera much too far back.
       radius = kept.getBoundingSphere(new THREE.Sphere()).radius;
       uniforms.uRadius.value = radius;
+      // Models arrive in whatever units their author worked in -- this one is
+      // ~130x the scale of the scan it replaced. Derive the clip planes from the
+      // subject rather than hardcoding them, or the camera sits beyond `far` and
+      // the whole cathedral is clipped away to nothing.
+      camera.near = radius * 0.02;
+      camera.far  = radius * 24;
+      camera.updateProjectionMatrix();
       model.position.sub(centre);
       ground.constant = -(cut - centre.y);   // the plane lives in world space
 
@@ -275,8 +283,7 @@ function start(){
     cur.dist = lerp(cur.dist, target.dist, k);
     cur.assemble = lerp(cur.assemble, target.assemble, k);
 
-    // scroll builds it; the arc the cameras never covered takes it apart again
-    const solid = cur.assemble * coverage(cur.az);
+    const solid = cur.assemble;
     uniforms.uAssemble.value = solid;
     for (const o of [model, points]){
       if (!o || !o.traverse) continue;
