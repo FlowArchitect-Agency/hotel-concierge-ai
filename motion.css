@@ -1,0 +1,34 @@
+/* motion.css — scroll-driven entrances for the page's own content.
+ *
+ * The resting state is the finished page. motion.js adds .motion-on to <html>
+ * only when it is actually going to drive the reveals, so with no JavaScript,
+ * no IntersectionObserver, or reduced motion, everything is simply visible and
+ * nothing here applies.
+ *
+ * Elements are moved with transform, which makes them a containing block while
+ * the transform is non-none. That is why .is-shown resets transform to `none`
+ * rather than to a zero offset, and why motion.js never tags an ancestor of a
+ * position:sticky element -- a transformed ancestor would break the pin.
+ */
+
+html.motion-on [data-motion] {
+  opacity: 0;
+  transition:
+    opacity   680ms cubic-bezier(.22, 1, .36, 1) var(--motion-delay, 0ms),
+    transform 900ms cubic-bezier(.22, 1, .36, 1) var(--motion-delay, 0ms);
+}
+
+/* Direction is assigned from where the element actually sits, so a three
+   column panel gathers inward instead of everything sliding the same way. */
+html.motion-on [data-motion="up"]    { transform: translate3d(0, 38px, 0); }
+html.motion-on [data-motion="down"]  { transform: translate3d(0, -30px, 0); }
+html.motion-on [data-motion="left"]  { transform: translate3d(-52px, 0, 0); }
+html.motion-on [data-motion="right"] { transform: translate3d(52px, 0, 0); }
+html.motion-on [data-motion="scale"] { transform: scale(.94); }
+
+html.motion-on [data-motion].is-shown { opacity: 1; transform: none; }
+
+/* Belt and braces: if the media query flips after load, nothing stays hidden. */
+@media (prefers-reduced-motion: reduce) {
+  html.motion-on [data-motion] { opacity: 1; transform: none; transition: none; }
+}
