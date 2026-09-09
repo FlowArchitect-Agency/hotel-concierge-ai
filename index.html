@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=nd-galdames-r1">
+    <link rel="stylesheet" href="style.css?v=nd-facts-r1">
 </head>
 <body data-page="index">
 
@@ -378,6 +378,17 @@
     <div class="monument-caption">
       <p class="chapter-eyebrow" data-i18n="home.handoff.monument">Notre-Dame de Paris</p>
       <h2 data-i18n="home.handoff.monumentLine">Rebuilt by hand.</h2>
+      <!-- Facts advance with the turn; monument.js toggles .is-on from the same
+           scroll progress that drives the camera. They stack in one fixed-height
+           box so swapping one for the next does not shift the heading above. -->
+      <ul class="monument-facts">
+        <li class="monument-fact"><b data-i18n="home.handoff.fact.1.figure">1163</b><span data-i18n="home.handoff.fact.1.body">Foundation stone laid under Bishop Maurice de Sully. It took 182 years to finish.</span></li>
+        <li class="monument-fact"><b data-i18n="home.handoff.fact.2.figure">1,300 oaks</b><span data-i18n="home.handoff.fact.2.body">The medieval roof frame was known as la for&ecirc;t &mdash; the forest. Each beam came from a single tree.</span></li>
+        <li class="monument-fact"><b data-i18n="home.handoff.fact.3.figure">1859</b><span data-i18n="home.handoff.fact.3.body">The fl&egrave;che was never medieval. Viollet-le-Duc added it during a nineteenth-century restoration.</span></li>
+        <li class="monument-fact"><b data-i18n="home.handoff.fact.4.figure">15 April 2019</b><span data-i18n="home.handoff.fact.4.body">Fire took the roof and the fl&egrave;che in a single evening. The stone vaults held.</span></li>
+        <li class="monument-fact"><b data-i18n="home.handoff.fact.5.figure">12 million</b><span data-i18n="home.handoff.fact.5.body">Visitors a year before the fire &mdash; more than any other monument in Europe.</span></li>
+        <li class="monument-fact"><b data-i18n="home.handoff.fact.6.figure">8 December 2024</b><span data-i18n="home.handoff.fact.6.body">Reopened after five years, raised again by some 250 firms and 2,000 craftspeople.</span></li>
+      </ul>
     </div>
     <!-- CC-BY requires the author be credited wherever the model is shown. -->
     <p class="monument-credit">3D model &ldquo;NOTRE DAME DE PARIS&rdquo; by Arquitecto T&eacute;cnico Luis Alberto Galdames M&aacute;rquez, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a></p>
@@ -748,14 +759,14 @@
 
 <!-- Browser-safe Cloudflare Worker endpoint configuration. Never place a secret in config.js. -->
 <script src="config.js?v=task-10"></script>
-    <script src="i18n.js?v=nd-360-r1"></script>
+    <script src="i18n.js?v=nd-facts-r1"></script>
     <script type="importmap">
     { "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
     } }
     </script>
-    <script type="module" src="monument.js?v=nd-galdames-r1"></script>
+    <script type="module" src="monument.js?v=nd-facts-r1"></script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
 </body>
 </html>

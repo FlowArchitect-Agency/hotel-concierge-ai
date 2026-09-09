@@ -117,6 +117,23 @@ function start(){
   const target = { az: STOPS[0].az, el: STOPS[0].el, dist: STOPS[0].dist, assemble: 0 };
   const cur = Object.assign({}, target);
 
+  // One fact per stretch of the turn, starting once the stone has settled.
+  // They are ordinary translated markup, so they change with the locale and a
+  // screen reader gets all of them regardless of where the scroll happens to be.
+  const FACTS = [...stage.querySelectorAll('.monument-fact')];
+  const FACTS_FROM = 0.12;
+  let shownFact = -2;
+
+  function showFact(p){
+    if (!FACTS.length) return;
+    const i = p < FACTS_FROM ? -1 : Math.min(FACTS.length - 1,
+      Math.floor((p - FACTS_FROM) / ((1 - FACTS_FROM) / FACTS.length)));
+    if (i === shownFact) return;
+    if (FACTS[shownFact]) FACTS[shownFact].classList.remove('is-on');
+    if (FACTS[i]) FACTS[i].classList.add('is-on');
+    shownFact = i;
+  }
+
   function onScroll(){
     const r = stage.getBoundingClientRect();
     const span = r.height - innerHeight;
@@ -133,6 +150,7 @@ function start(){
     target.dist = lerp(a.dist, b.dist, local);
 
     stage.classList.toggle('is-assembled', p > 0.13);
+    showFact(p);
   }
 
   function resize(){
