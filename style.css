@@ -474,6 +474,24 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
 .monument-pin { position: sticky; top: 0; height: 100vh; overflow: hidden;
   background: linear-gradient(#a9c6dd 0%, #cfdce2 46%, #ece6d9 78%, var(--v2-paper) 100%); }
 .monument-pin canvas { display: block; width: 100%; height: 100%; }
+/* A soft veil over the side the text sits on. The camera already keeps the
+   cathedral out of the text column, but stone and type are close in value, so
+   this guarantees the words stay readable whatever angle the turn is at. */
+.monument-pin::after { content: ""; position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(96deg, rgba(245,242,234,.9) 0%, rgba(245,242,234,.66) 24%, rgba(245,242,234,0) 50%); }
+
+.monument-marker { position: absolute; z-index: 2; top: clamp(5.5rem, 13vh, 8.5rem);
+  left: max(1.35rem, calc(50vw - 620px)); width: min(30vw, 340px);
+  pointer-events: none; opacity: 0; transition: opacity 700ms ease 260ms; }
+.monument-stage.is-assembled .monument-marker { opacity: 1; }
+.monument-marker .chapter-eyebrow { margin-bottom: .7rem; color: #93713f; }
+.monument-marker-line { margin: 0; max-width: 30ch; color: #46503f;
+  font: 400 clamp(.88rem, 1vw, 1rem)/1.55 var(--sans); }
+.monument-ticks { display: flex; gap: .38rem; margin: 1.15rem 0 0; padding: 0; list-style: none; }
+.monument-ticks li { width: 20px; height: 2px; background: rgba(62,76,66,.2);
+  transition: background 420ms ease; }
+.monument-ticks li.is-done { background: #93713f; }
 .monument-caption { position: absolute; top: 50%; left: max(1.35rem, calc(50vw - 620px));
   z-index: 2; width: min(42vw, 560px); transform: translateY(-50%);
   pointer-events: none; opacity: 0; transition: opacity 700ms ease 120ms; }
@@ -509,14 +527,12 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
   .monument-figure span, .monument-note { transition-duration: 1ms; }
   .monument-card:not(.is-on) .monument-figure span { transform: translateY(108%); }
 }
-.monument-credit { position: absolute; right: max(1.1rem, calc(50vw - 620px)); bottom: 1.1rem;
-  z-index: 2; max-width: min(46ch, 70vw); margin: 0; color: #6f7a70; font-size: .58rem;
-  line-height: 1.5; letter-spacing: .03em; text-align: right; text-wrap: balance; }
-.monument-credit a { color: #6f7a70; text-underline-offset: 2px; }
-.monument-credit a:hover, .monument-credit a:focus-visible { color: #2f3a32; }
 .monument-stage.is-failed { height: 0; overflow: hidden; }
 @media (max-width: 900px) { .monument-stage { height: 480vh; }
-  .monument-credit { right: 1.1rem; left: 1.1rem; max-width: none; }
+  /* text moves under the cathedral here, so the veil follows it */
+  .monument-pin::after { background: linear-gradient(2deg, rgba(245,242,234,.94) 0%, rgba(245,242,234,.72) 26%, rgba(245,242,234,0) 52%); }
+  .monument-marker { top: 5.5rem; left: 1.2rem; width: calc(100% - 2.4rem); }
+  .monument-marker-line { max-width: 34ch; }
   .monument-caption { top: auto; bottom: 7vh; left: 1.2rem; width: calc(100% - 2.4rem); transform: none; }
   .monument-cards { min-height: clamp(10rem, 30vh, 14rem); }
   .monument-figure { margin-bottom: .85rem; font-size: clamp(2.1rem, 9.5vw, 3.4rem); }
@@ -710,3 +726,7 @@ button .ico, a .ico { pointer-events: none; }
   .hp-step { opacity: 1; transform: none; }
   #hero .request-processing span[aria-hidden]::after { animation: none; opacity: .6; }
 }
+
+.footer-credit { display: block; margin-top: .7rem; max-width: 62ch; opacity: .62;
+  font-size: .68rem; line-height: 1.55; }
+.footer-credit a { color: inherit; text-underline-offset: 2px; }

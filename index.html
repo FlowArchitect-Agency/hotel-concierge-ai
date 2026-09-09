@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=nd-big-r1">
+    <link rel="stylesheet" href="style.css?v=nd-read-r1">
 </head>
 <body data-page="index">
 
@@ -375,6 +375,15 @@
 <section class="monument-stage" id="handoff-monument">
   <div class="monument-pin">
     <canvas id="monument-canvas" aria-hidden="true"></canvas>
+    <!-- Standing chapter marker. Fills the head of the stage, ties the monument
+         back to what the product actually does, and the ticks show how far
+         through the sequence you are. -->
+    <div class="monument-marker">
+      <p class="chapter-eyebrow" data-i18n="home.handoff.eyebrow">03 &mdash; Human handoff</p>
+      <p class="monument-marker-line" data-i18n="home.handoff.monumentAsk">Guests ask about it every day. Your concierge already has the answer.</p>
+      <ol class="monument-ticks" aria-hidden="true"><li class="is-done"></li><li></li><li></li><li></li><li></li><li></li><li></li></ol>
+    </div>
+
     <div class="monument-caption">
       <p class="chapter-eyebrow" data-i18n="home.handoff.monument">Notre-Dame de Paris</p>
       <!-- One card holds the headline slot at a time. monument.js advances them
@@ -412,8 +421,6 @@
         </div>
       </div>
     </div>
-    <!-- CC-BY requires the author be credited wherever the model is shown. -->
-    <p class="monument-credit">3D model &ldquo;NOTRE DAME DE PARIS&rdquo; by Arquitecto T&eacute;cnico Luis Alberto Galdames M&aacute;rquez, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a></p>
   </div>
 </section>
 
@@ -634,6 +641,10 @@
     </div>
     <div class="footer-copy">
       ConciergeFlow AI &#xA9; 2024 | Paris, France
+      <!-- CC-BY requires the author be credited wherever the work is used. The
+           licence allows that credit to sit anywhere reasonable for the medium,
+           so it lives here rather than over the artwork. -->
+      <span class="footer-credit">3D model &ldquo;NOTRE DAME DE PARIS&rdquo; by Arquitecto T&eacute;cnico Luis Alberto Galdames M&aacute;rquez, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a></span>
     </div>
   </div>
 </footer>
@@ -781,14 +792,14 @@
 
 <!-- Browser-safe Cloudflare Worker endpoint configuration. Never place a secret in config.js. -->
 <script src="config.js?v=task-10"></script>
-    <script src="i18n.js?v=nd-facts-r1"></script>
+    <script src="i18n.js?v=nd-read-r1"></script>
     <script type="importmap">
     { "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
     } }
     </script>
-    <script type="module" src="monument.js?v=nd-big-r1"></script>
+    <script type="module" src="monument.js?v=nd-read-r1"></script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
 </body>
 </html>

@@ -25,6 +25,8 @@ if (stage && canvas) start();
 
 function start(){
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // matches the breakpoint where the caption moves under the cathedral
+  const narrow = matchMedia('(max-width: 900px)');
 
   const scene  = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 4000);
@@ -122,6 +124,7 @@ function start(){
   // ordinary translated markup, so they follow the locale and a screen reader
   // gets all of them regardless of where the scroll happens to be.
   const CARDS = [...stage.querySelectorAll('.monument-card')];
+  const TICKS = [...stage.querySelectorAll('.monument-ticks li')];
   const FACTS_FROM = 0.20;
   let shownCard = 0;
 
@@ -139,6 +142,7 @@ function start(){
     CARDS[i].classList.remove('was-above', 'was-below');
     CARDS[i].classList.add('is-on');
     shownCard = i;
+    TICKS.forEach((t, k)=> t.classList.toggle('is-done', k <= i));
   }
 
   function onScroll(){
@@ -321,21 +325,29 @@ function start(){
     model.visible = solid > 0.04;
 
     // a portrait viewport sees far less width, so pull back to keep the nave in
+    // Keep the cathedral out of the text column. How far sideways that is
+    // depends on how wide the frustum is where the subject sits, so derive it
+    // from the frustum rather than picking a constant -- a fixed offset gated at
+    // one aspect ratio left the model centred on the words at every other width.
     const fit = camera.aspect < 1 ? 1.55 : camera.aspect < 1.5 ? 1.2 : 1;
     const d = radius * cur.dist * fit;
-    AIM.set(0, 0, 0);
+    const sideways = narrow.matches ? 0 : 0.16;
+
+    // On a narrow screen the text sits at the bottom instead, so lift the
+    // cathedral clear of it by aiming under its centre.
+    AIM.set(0, narrow.matches ? -radius * 0.24 : 0, 0);
     camera.position.set(
       Math.sin(cur.az) * Math.cos(cur.el) * d,
       Math.sin(cur.el) * d + radius * 0.06,
       Math.cos(cur.az) * Math.cos(cur.el) * d);
     camera.lookAt(AIM);
 
-    // The caption lives in the left gutter on wide screens, so slide the whole
-    // view sideways to clear it -- moving the camera and its aim by the same
-    // vector translates the image without changing the angle we chose.
-    if (camera.aspect >= 1.5){
+    if (sideways){
+      // moving the camera and its aim by the same vector translates the image
+      // without changing the angle the waypoint chose
+      const halfW = d * Math.tan(camera.fov * Math.PI / 360) * camera.aspect;
       RIGHT.crossVectors(camera.getWorldDirection(DIR), camera.up)
-           .normalize().multiplyScalar(-radius * 0.46);
+           .normalize().multiplyScalar(-sideways * 2 * halfW);
       camera.position.add(RIGHT);
       camera.lookAt(AIM.add(RIGHT));
     }
