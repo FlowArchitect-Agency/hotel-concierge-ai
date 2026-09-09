@@ -90,18 +90,37 @@ function start(){
   const TURN = Math.PI * 2;
   const AZ0  = 3.28;
   const STOPS = [
-    { az: AZ0,        el: 0.06, dist: 2.34 },  // the west front
-    { az: AZ0 + 0.50, el: 0.10, dist: 2.26 },  // north-west three-quarter
-    { az: AZ0 + 1.00, el: 0.13, dist: 2.26 },  // the north elevation
-    { az: AZ0 + 1.52, el: 0.15, dist: 2.30 },  // fleche and flying buttresses
-    { az: AZ0 + 2.57, el: 0.13, dist: 2.26 },  // past the north transept
-    { az: AZ0 + 3.62, el: 0.11, dist: 2.26 },  // the chevet
-    { az: AZ0 + 4.72, el: 0.30, dist: 2.62 },  // lifting over the sparse south side
-    { az: AZ0 + TURN, el: 0.06, dist: 2.34 }   // the west front again: one full turn
+    { az: AZ0,        el: 0.06, dist: 2.16 },  // the west front
+    { az: AZ0 + 0.50, el: 0.10, dist: 2.09 },  // north-west three-quarter
+    { az: AZ0 + 1.00, el: 0.13, dist: 2.09 },  // the north elevation
+    { az: AZ0 + 1.52, el: 0.15, dist: 2.12 },  // fleche and flying buttresses
+    { az: AZ0 + 2.57, el: 0.13, dist: 2.09 },  // past the north transept
+    { az: AZ0 + 3.62, el: 0.11, dist: 2.09 },  // the chevet
+    { az: AZ0 + 4.72, el: 0.30, dist: 2.42 },  // lifting over the sparse south side
+    { az: AZ0 + TURN, el: 0.06, dist: 2.16 }   // the west front again: one full turn
   ];
 
   const lerp = (a,b,t)=>a+(b-a)*t;
   const easeInOut = t => t<.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+  const smooth = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+
+  // Where the photographs ran out. Coverage in a crowdsourced model follows
+  // where people stood, and nobody circles the east end with a camera: the apse
+  // is torn open and the south flank is a dark guess. No free model of this
+  // building is both complete and clean -- the sharpest scans all have this
+  // hole, and the complete ones are melted.
+  //
+  // So the camera does not drive through it pretending. Over that arc the
+  // cathedral falls back to the points it was reconstructed from, and re-forms
+  // as it comes back onto covered ground. The defect becomes the subject: this
+  // is a reconstruction, and it is showing you its own edges.
+  const SPARSE_IN = 2.35, SPARSE_OUT = 5.55, FADE = 0.55, FLOOR = 0.42;
+  function coverage(az){
+    const a = ((az - AZ0) % TURN + TURN) % TURN;
+    if (a <= SPARSE_IN || a >= SPARSE_OUT) return 1;
+    return 1 - (1 - FLOOR) * Math.min(smooth((a - SPARSE_IN) / FADE),
+                                      smooth((SPARSE_OUT - a) / FADE));
+  }
 
   const target = { az: STOPS[0].az, el: STOPS[0].el, dist: STOPS[0].dist, assemble: 0 };
   const cur = Object.assign({}, target);
@@ -256,16 +275,18 @@ function start(){
     cur.dist = lerp(cur.dist, target.dist, k);
     cur.assemble = lerp(cur.assemble, target.assemble, k);
 
-    uniforms.uAssemble.value = cur.assemble;
+    // scroll builds it; the arc the cameras never covered takes it apart again
+    const solid = cur.assemble * coverage(cur.az);
+    uniforms.uAssemble.value = solid;
     for (const o of [model, points]){
       if (!o || !o.traverse) continue;
       o.traverse(n=>{
         const sh = n.material && n.material.userData && n.material.userData.shader;
-        if (sh) sh.uniforms.uAssemble.value = cur.assemble;
+        if (sh) sh.uniforms.uAssemble.value = solid;
       });
     }
-    if (points) points.material.opacity = Math.max(0, 1 - cur.assemble * 1.25);
-    model.visible = cur.assemble > 0.04;
+    if (points) points.material.opacity = Math.max(0, 1 - solid * 1.25);
+    model.visible = solid > 0.04;
 
     // a portrait viewport sees far less width, so pull back to keep the nave in
     const fit = camera.aspect < 1 ? 1.55 : camera.aspect < 1.5 ? 1.2 : 1;
