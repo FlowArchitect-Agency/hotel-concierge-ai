@@ -730,3 +730,31 @@ button .ico, a .ico { pointer-events: none; }
 .footer-credit { display: block; margin-top: .7rem; max-width: 62ch; opacity: .62;
   font-size: .68rem; line-height: 1.55; }
 .footer-credit a { color: inherit; text-underline-offset: 2px; }
+
+/* ── Hero carrying the WebGL Champ de Mars ───────────────────────────────
+   The dusk run is a pinned child of #hero rather than the section itself, so
+   the section drops its own top padding and the pin's container carries the
+   nav clearance instead. That clearance still applies when WebGL is missing
+   and the pin collapses to normal flow, so the fallback hero is never tucked
+   under the navigation. Do not put overflow-x:hidden on #hero or any wrapper
+   around it -- that makes the ancestor a scroll container and the pin silently
+   stops sticking. (`overflow: clip`, which .hero-v2 already uses, is safe.) */
+.hero-v2.has-scene { padding-top: 0; }
+.hero-scene-pin > .hero-v2-container {
+  display: flex; height: 100%; align-items: center;
+  padding-top: clamp(5.5rem, 11vh, 8rem); }
+.hero-scene-pin > .hero-v2-container > .hero-stage { width: 100%; }
+.hero-v2.has-scene .hero-product { margin-top: clamp(3rem, 6vw, 5.5rem); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* the pin collapses, so the container spaces itself like an ordinary hero */
+  .hero-scene-pin > .hero-v2-container { height: auto;
+    padding-block: clamp(6rem, 12vh, 9rem) clamp(2.5rem, 5vw, 4.5rem); }
+}
+
+/* The second headline line carries the paper hero's forest green and its own
+   drawn gold rule as a background image. On the dusk scene the green is all but
+   invisible, so invert the text; the gold rule underneath still reads. */
+/* mirrors the shape of the rule it overrides (.hero-v2 h1 span:last-child,
+   which is more specific than a plain .hero--scene class selector) */
+.hero-v2 .hero--scene h1 span:last-child { color: #FBF8F1; }

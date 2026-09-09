@@ -12,7 +12,8 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=nd-read-r1">
+    <link rel="stylesheet" href="style.css?v=eiffel-r2">
+    <link rel="stylesheet" href="eiffel-hero.css?v=1">
 </head>
 <body data-page="index">
 
@@ -58,8 +59,20 @@
 </nav>
 
 <!-- V2 hero: hospitality outside, operations inside. -->
-<section class="hero hero-v2" id="hero">
-  <div class="container hero-v2-container">
+<section class="hero hero-v2 has-scene" id="hero">
+  <!-- The Champ de Mars scene needs scroll travel to assemble across, so it is
+       a tall pinned wrapper rather than the section itself: the module measures
+       progress from the element it is mounted on, and the product preview would
+       inflate that measurement and stall the build before the spire. The preview
+       therefore stays inside #hero -- script.js binds the live conversation
+       through `#hero .conversation-thread` -- but sits after the run.
+
+       .hero-stage was never closed in this file, which put the preview inside
+       the hero grid as a second-row cell. That is closed properly now, and the
+       preview keeps an equivalent grid cell below so its width is unchanged. -->
+  <div class="hero-scene hero--scene" id="hero-scene">
+    <div class="hero-scene-pin">
+      <div class="container hero-v2-container">
     <div class="hero-stage">
       <div class="hero-content hero-v2-content">
         <p class="hero-eyebrow">ConciergeFlow AI</p>
@@ -142,7 +155,18 @@
           <span class="spark spark--4"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 1.5 L13.4 10.6 L22.5 12 L13.4 13.4 L12 22.5 L10.6 13.4 L1.5 12 L10.6 10.6 Z" /></svg></span>
           <span class="spark spark--5"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 3 L12 21 M3 12 L21 12" stroke-width="2.4" stroke-linecap="round" fill="none" /></svg></span>
         </div>
+    </div>
+      </div>
+      <div class="eiffel-readout" aria-hidden="true">
+        <div class="eiffel-readout-row"><span data-eiffel-label>Assembling</span><span data-eiffel-pct>0%</span></div>
+        <div class="eiffel-readout-track"><div class="eiffel-readout-fill" data-eiffel-fill></div></div>
+        <small data-eiffel-stage>Footings</small>
+      </div>
+    </div>
+  </div>
 
+  <div class="container hero-v2-container">
+    <div class="hero-stage">
     <div class="hero-product" aria-label="ConciergeFlow product interface preview">
       <div class="product-app">
         <header class="product-app-header">
@@ -231,6 +255,7 @@
           </aside>
         </div>
       </div>
+    </div>
     </div>
   </div>
 </section>
@@ -800,6 +825,13 @@
     } }
     </script>
     <script type="module" src="monument.js?v=nd-read-r1"></script>
+    <script type="module">
+      // Mounted on the 300vh run, not on #hero: the module reads scroll progress
+      // from the element it is given, and #hero is taller than the run itself.
+      import { mount } from './eiffel-hero.js?v=1';
+      const scene = document.getElementById('hero-scene');
+      if (scene) { scene.classList.add('is-staged'); mount(scene, { quality: 'hero' }); }
+    </script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
 </body>
 </html>
