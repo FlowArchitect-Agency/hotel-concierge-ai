@@ -781,3 +781,49 @@ button .ico, a .ico { pointer-events: none; }
   .hero--scene.is-sync .hero-sub,
   .hero--scene.is-sync .hero-ctas { opacity: 1; transform: none; transition: none; }
 }
+
+/* ── Sections stack, the way ellipsus.com moves ──────────────────────────
+   Each section sticks to the top of the viewport and the next one slides up
+   and covers it, instead of everything scrolling past together. The covered
+   section does not move, so the page reads as a deck of screens being dealt
+   rather than one long strip -- which is the "a page pops up on top of the
+   other one" idea.
+
+   Requirements this relies on:
+   - every stacked section is opaque, or you would see through to the one
+     underneath (checked: all nine have solid backgrounds);
+   - later siblings paint over earlier ones, which sticky gives for free since
+     it makes them positioned, so no z-index ladder is needed;
+   - #hero and #handoff-monument are NOT in the stack. Both already contain a
+     position:sticky pin of their own, and nesting sticky inside sticky does
+     not behave. They stay in normal flow and the stack resumes after them.
+
+   min-height fills the screen so each section is a full "page" before the
+   next covers it -- several are only half a viewport tall on their own -- and
+   align-content centres the contents in the space that creates. */
+#platform, #chapter-prearrival, #night-operations, #human-handoff,
+#demo, #operating-layer, #implementation, #control, #discovery {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  border-top-left-radius: clamp(18px, 2.6vw, 40px);
+  border-top-right-radius: clamp(18px, 2.6vw, 40px);
+  box-shadow: 0 -22px 55px rgba(18, 22, 18, .13);
+}
+
+/* The footer is the last thing dealt. Without a position it would sit in the
+   block layer, underneath every positioned section, and be covered by them. */
+body > footer { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* no deck, just a page */
+  #platform, #chapter-prearrival, #night-operations, #human-handoff,
+  #demo, #operating-layer, #implementation, #control, #discovery {
+    position: static;
+    min-height: 0;
+    display: block;
+    box-shadow: none;
+  }
+}
