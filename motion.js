@@ -190,11 +190,17 @@
 
   function paint(el, p) {
     if (p >= 0.999) {
-      /* Settled: drop the transform rather than leave an identity one behind,
-         so the element stops being a containing block and its compositor layer
-         can be released. */
+      /* Drop the transform rather than leave an identity one behind, so the
+         element stops being a containing block and its layer can be released.
+
+         The opacity must be written explicitly, NOT cleared. The stylesheet's
+         resting state for [data-motion] under .motion-on is opacity 0 -- it is
+         what holds content back before the first frame -- so clearing the
+         inline value hands the element straight back to that rule and it
+         vanishes. Which is precisely what it did: every element disappeared at
+         the exact moment it finished arriving. */
       el.style.transform = '';
-      el.style.opacity = '';
+      el.style.opacity = '1';
       return;
     }
     el.style.transform = el._motion.shape(1 - p);
