@@ -17,6 +17,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const RUN_SEL = '#night-operations, #human-handoff, #demo,' +
                 '#operating-layer, #implementation, #control';
@@ -59,7 +63,7 @@ function start() {
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.22;
+  renderer.toneMappingExposure = 1.05;
 
   const scene  = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 12000);
@@ -190,7 +194,7 @@ function start() {
     floodA.position.set(fl, fh, fl * 0.7);
     floodB.position.set(-fl, fh, -fl * 0.7);
     floodA.distance = floodB.distance = radius * 2.8;
-    floodA.intensity = floodB.intensity = radius * radius * 0.72;
+    floodA.intensity = floodB.intensity = radius * radius * 0.42;
     etoile(box.getSize(new THREE.Vector3()).y);
 
     frame.traverse(function (o) {
@@ -272,14 +276,14 @@ function start() {
 
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(AVE * 1.5, 64),
-      new THREE.MeshStandardMaterial({ color: 0x24242B, roughness: 0.95, metalness: 0 })
+      new THREE.MeshStandardMaterial({ color: 0x15161C, roughness: 0.95, metalness: 0 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0.2 * U;
     pivot.add(ground);
 
     const tarmac = new THREE.MeshStandardMaterial({
-      color: 0x35363E, roughness: 0.66, metalness: 0.08, envMapIntensity: 0.6 });
+      color: 0x22242C, roughness: 0.6, metalness: 0.1, envMapIntensity: 0.7 });
 
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(RING * 0.74, RING * 1.16, 96), tarmac);
@@ -307,9 +311,9 @@ function start() {
         const blk = new THREE.Mesh(
           new THREE.BoxGeometry((44 + Math.random() * 16) * U, bh, (36 + Math.random() * 14) * U),
           new THREE.MeshStandardMaterial({
-            color: 0x3A3A42, roughness: 0.92, metalness: 0.03,
-            emissive: 0xFFFFFF, emissiveIntensity: 0.9,
-            emissiveMap: facadeTex(6, 7, 0.22 + Math.random() * 0.24) })
+            color: 0x14161C, roughness: 0.95, metalness: 0.02,
+            emissive: 0xFFFFFF, emissiveIntensity: 1.6,
+            emissiveMap: facadeTex(6, 7, 0.2 + Math.random() * 0.26) })
         );
         blk.position.set(Math.sin(bth) * rr + (Math.random() - 0.5) * 30 * U,
                          bh / 2,
@@ -319,7 +323,7 @@ function start() {
         /* zinc on top, at the angle every roof in the quarter is at */
         const roof = new THREE.Mesh(
           new THREE.CylinderGeometry(0.62, 1, 1, 4, 1),
-          new THREE.MeshStandardMaterial({ color: 0x363B45, roughness: 0.6, metalness: 0.45 })
+          new THREE.MeshStandardMaterial({ color: 0x1A1E26, roughness: 0.62, metalness: 0.42 })
         );
         const rh = 3.4 * U;
         roof.scale.set(30 * U, rh, 25 * U);
@@ -342,19 +346,23 @@ function start() {
        a little of the streetlight, and it is deliberately small and dark:
        at the size a car is on this screen, an accurate one reads as a brick. */
     carN = 230;
-    const body = new THREE.MeshStandardMaterial({ color: 0x15161B, roughness: 0.36, metalness: 0.6 });
     const lampM = new THREE.MeshBasicMaterial({ color: 0xFFE7C2 });
-    lampM.color.multiplyScalar(3.4);
+    lampM.color.multiplyScalar(2.2);
     const tailM = new THREE.MeshBasicMaterial({ color: 0xFF3A18 });
-    tailM.color.multiplyScalar(2.8);
+    tailM.color.multiplyScalar(1.9);
 
+    /* No bodies. A car at the size it occupies here is four or five pixels,
+       and a five-pixel box with a lit face on it is a cardboard brick -- it
+       was the single thing making the place look like a phone game. What a
+       street actually looks like from up here is two rivers of light going
+       opposite ways, so that is all that is drawn: a warm lamp going away
+       from you, a red one coming towards you, and nothing in between. */
     cars = {
-      body: new THREE.InstancedMesh(new THREE.BoxGeometry(2.4 * U, 1.7 * U, 5.4 * U), body, carN),
-      head: new THREE.InstancedMesh(new THREE.BoxGeometry(1.9 * U, 0.42 * U, 0.4 * U), lampM, carN),
-      tail: new THREE.InstancedMesh(new THREE.BoxGeometry(1.9 * U, 0.38 * U, 0.4 * U), tailM, carN),
+      head: new THREE.InstancedMesh(new THREE.BoxGeometry(2.2 * U, 0.5 * U, 3.2 * U), lampM, carN),
+      tail: new THREE.InstancedMesh(new THREE.BoxGeometry(2.0 * U, 0.45 * U, 2.6 * U), tailM, carN),
       U: U, seed: []
     };
-    for (const key of ['body', 'head', 'tail']) {
+    for (const key of ['head', 'tail']) {
       cars[key].frustumCulled = false;
       pivot.add(cars[key]);
     }
@@ -390,9 +398,6 @@ function start() {
         head = L.th + (L.dir > 0 ? 0 : Math.PI);
       }
       cq.setFromAxisAngle(CUP, head);
-      cp.set(x, 1.0 * U, z);
-      cm.compose(cp, cq, cs);
-      cars.body.setMatrixAt(i, cm);
       cp.set(x + Math.sin(head) * 2.8 * U, 1.0 * U, z + Math.cos(head) * 2.8 * U);
       cm.compose(cp, cq, cs);
       cars.head.setMatrixAt(i, cm);
@@ -400,7 +405,6 @@ function start() {
       cm.compose(cp, cq, cs);
       cars.tail.setMatrixAt(i, cm);
     }
-    cars.body.instanceMatrix.needsUpdate = true;
     cars.head.instanceMatrix.needsUpdate = true;
     cars.tail.instanceMatrix.needsUpdate = true;
   }
@@ -475,9 +479,15 @@ function start() {
 
     /* Between waypoints, eased so the camera settles into each attitude
        rather than sweeping through it at constant speed. */
+    /* Mostly linear between waypoints. Full ease-in-out at every stop made
+       the camera settle eight separate times across the run, and a turn
+       that keeps stopping does not read as a turn at all -- it reads as
+       eight different shots. This keeps a little of the settle and lets the
+       rest run at rate, so it is always visibly going round. */
     const legs = STOPS.length - 1;
     const f = Math.min(0.9999, Math.max(0, eased)) * legs;
-    const i = Math.floor(f), k = easeInOut(f - i);
+    const i = Math.floor(f), t0 = f - i;
+    const k = t0 * 0.68 + easeInOut(t0) * 0.32;
     const A = STOPS[i], B = STOPS[i + 1];
     const az = lerp(A.az, B.az, k),
           el = lerp(A.el, B.el, k),
@@ -497,12 +507,42 @@ function start() {
        that it is going somewhere. */
     driveCars(clock);
 
-    renderer.render(scene, camera);
+    draw();
+  }
+
+  /* Half-float compositing, for one reason: a headlight. Rendered straight
+     to the canvas every lamp clamps to the same flat white dot, and a
+     street of flat white dots is a diagram of traffic. Given room to be
+     brighter than white they bleed, and what you see down an avenue is a
+     river of light -- which is what a city at this hour actually looks
+     like, and the whole reason the traffic is there. */
+  let composer = null, bloom = null;
+  try {
+    const sz = renderer.getDrawingBufferSize(new THREE.Vector2());
+    composer = new EffectComposer(renderer,
+      new THREE.WebGLRenderTarget(sz.x, sz.y, { type: THREE.HalfFloatType, samples: 4 }));
+    composer.addPass(new RenderPass(scene, camera));
+    /* Threshold high: only the lamps. Lower and the floodlit stone blooms
+       too and the whole picture turns to milk. */
+    bloom = new UnrealBloomPass(new THREE.Vector2(sz.x, sz.y), 0.42, 0.42, 0.92);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+  } catch (e) { composer = null; }
+
+  function draw() {
+    if (composer) composer.render(); else renderer.render(scene, camera);
   }
 
   function resize() {
-    const w = host.clientWidth || innerWidth, h = host.clientHeight || innerHeight;
+    const w = host.clientWidth || innerWidth || 1280;
+    const h = host.clientHeight || innerHeight || 800;
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, composer ? 1.4 : 2));
     renderer.setSize(w, h, false);
+    if (composer) {
+      const dpr = renderer.getPixelRatio();
+      composer.setSize(w, h);
+      if (bloom) bloom.setSize(w * dpr, h * dpr);
+    }
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }

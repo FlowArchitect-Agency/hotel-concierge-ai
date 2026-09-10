@@ -949,9 +949,11 @@ body > footer { position: relative; z-index: 1; }
        out of it. Weighted low: earlier this started at the middle of the
        screen and blacked out every gap between the panes, which is where the
        monument is actually meant to be seen. */
-    linear-gradient(180deg, rgba(10, 12, 16, 0) 64%, rgba(10, 12, 16, .5) 83%, rgba(10, 12, 16, .93) 100%),
-    radial-gradient(82% 62% at 50% 40%, rgba(20, 24, 34, 0) 0%, rgba(14, 16, 22, .34) 68%, rgba(10, 12, 16, .68) 100%),
-    linear-gradient(180deg, rgba(30, 36, 52, .34) 0%, rgba(18, 21, 30, .16) 48%, rgba(12, 14, 19, .34) 100%);
+    /* Lighter than it was. The scene behind is a floodlit monument in a
+       city of lit windows, and it is meant to be seen -- three coats of
+       scrim over it left a dark smudge nobody would notice turning. */
+    linear-gradient(180deg, rgba(10, 12, 16, 0) 70%, rgba(10, 12, 16, .3) 88%, rgba(10, 12, 16, .68) 100%),
+    radial-gradient(84% 64% at 50% 40%, rgba(20, 24, 34, 0) 0%, rgba(14, 16, 22, .16) 70%, rgba(10, 12, 16, .42) 100%);
 }
 
 /* Every section has to be positioned now, not just the ones over the monument.
@@ -1003,7 +1005,7 @@ html.has-backdrop #control > .container {
 /* dark panes */
 html.has-backdrop #night-operations > .container,
 html.has-backdrop #control > .container {
-  background: rgba(14, 17, 16, .62);
+  background: rgba(14, 17, 16, .56);
   border: 1px solid rgba(255, 255, 255, .085);
 }
 
@@ -1012,7 +1014,7 @@ html.has-backdrop #human-handoff > .container,
 html.has-backdrop #demo > .container,
 html.has-backdrop #operating-layer > .container,
 html.has-backdrop #implementation > .container {
-  background: rgba(247, 246, 241, .78);
+  background: rgba(247, 246, 241, .74);
   border: 1px solid rgba(255, 255, 255, .5);
 }
 

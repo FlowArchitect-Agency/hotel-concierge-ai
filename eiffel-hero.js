@@ -37,6 +37,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -66,7 +67,6 @@ const DEFAULTS = {
    Everything below is expressed in those metres, so the platform heights are
    the real ones and the camera distances mean what they say. */
 const TOP = 330;
-const PLATFORMS = [57.6, 115.7, 276.1];
 
 
 export function mount(root, options) {
@@ -98,26 +98,149 @@ export function mount(root, options) {
     if (typeof opts.onUnavailable === "function") opts.onUnavailable();
   }
 
-  /* -- the tower's plan, kept only to hang lights on ---------------------
-     The geometry is the capture's now. This profile survives because the
-     lamps, the summit beacon and its sweeping beam have to sit at the right
-     radius for the height they are at, and reading that back off a fused
-     1.4-million-triangle mesh is far more trouble than the seven numbers the
-     tower was actually built to. */
+  /* == the tower ==========================================================
+     Built, not captured. The flight that produced the site was flown to see
+     a city, and no aerial photogrammetry resolves an iron lattice: in the
+     capture the tower comes out a smooth tapering solid with facets a
+     storey across -- the one cardboard object in a scene of real ones.
+
+     So the capture gives up its tower (see the shader below, which cuts a
+     cylinder out of it) and this puts the monument back from the dimensions
+     it was actually built to: 125 m square at the feet, platforms at 57.6,
+     115.7 and 276.1, 300 m to the top of the shaft. Every member is a
+     separate instance, which is also what makes the reconstruction real --
+     the reader is not fading a model in, they are laying about thirteen
+     hundred girders in the order they were riveted, from the ground up.
+     ==================================================================== */
+
+/* ── the profile, as a monotone cubic through the real anchors ── */
   var HS = [0, 8, 18, 30, 42, 57.6, 72, 90, 115.7, 145, 180, 215, 250, 276.1, 292, 300],
-      WS = [62.5, 55.8, 48.2, 41.6, 36.4, 31.2, 27.8, 24.0, 20.1, 16.4, 12.9, 10.1, 7.9, 6.4, 5.4, 4.9];
+      WS = [62.5, 53.5, 45.6, 39.6, 35.4, 32.2, 27.4, 21.4, 15.4, 12.4, 10.4, 9.1, 8.1, 7.4, 6.4, 5.6],
+      MS = (function () {
+    var n = HS.length, d = [], m = [], i;
+    for (i = 0; i < n - 1; i++) d.push((WS[i + 1] - WS[i]) / (HS[i + 1] - HS[i]));
+    m.push(d[0]);
+    for (i = 1; i < n - 1; i++) m.push((d[i - 1] + d[i]) / 2);
+    m.push(d[n - 2]);
+    for (i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+      var a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+      if (s > 9) { var t = 3 / Math.sqrt(s); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+    }
+    return m;
+  })();
   function halfw(h) {
     if (h <= HS[0]) return WS[0];
     if (h >= HS[HS.length - 1]) return WS[WS.length - 1];
-    for (var i = 1; i < HS.length; i++) {
-      if (h <= HS[i]) {
-        var t = (h - HS[i - 1]) / (HS[i] - HS[i - 1]);
-        t = t * t * (3 - 2 * t);
-        return WS[i - 1] + (WS[i] - WS[i - 1]) * t;
+    for (var i = 0; i < HS.length - 1; i++) {
+      if (h >= HS[i] && h <= HS[i + 1]) {
+        var x0 = HS[i], x1 = HS[i + 1], hh = x1 - x0, t = (h - x0) / hh,
+            t2 = t * t, t3 = t2 * t;
+        return (2*t3 - 3*t2 + 1) * WS[i] + (t3 - 2*t2 + t) * hh * MS[i] +
+               (-2*t3 + 3*t2) * WS[i + 1] + (t3 - t2) * hh * MS[i + 1];
       }
     }
     return WS[WS.length - 1];
   }
+  function corner(h, i) {                       /* the four columns, in plan */
+    var w = halfw(h), sx = (i === 0 || i === 3) ? 1 : -1, sz = (i === 0 || i === 1) ? 1 : -1;
+    return new THREE.Vector3(sx * w, h, sz * w);
+  }
+  function gauge(h) { return 1.66 - 0.26 * Math.min(h / 300, 1); }
+
+  /* ── every iron member ── */
+  var members = [], PLATFORMS = [57.6, 115.7, 276.1];   /* the real ones */
+  var levels = [], h;
+  for (h = 0;     h < 57.6;  h += 6.4)  levels.push(h);
+  for (h = 57.6;  h < 115.7; h += 11.6) levels.push(h);
+  for (h = 115.7; h < 276.1; h += 17.8) levels.push(h);
+  for (h = 276.1; h < 300;   h += 7.9)  levels.push(h);
+  levels.push(300);
+  PLATFORMS.forEach(function (p) { if (levels.indexOf(p) < 0) levels.push(p); });
+  levels.sort(function (a, b) { return a - b; });
+
+  /* Below the first platform the tower is FOUR SEPARATE LEGS with open sky
+     between them — each leg its own square box-truss. Only above the platform
+     do they merge into a single shaft. Bracing straight across the base would
+     fill in the arch void that defines the whole silhouette. */
+  var PLAT1 = 57.6, PLAT2 = 115.7;
+  function legSide(h) {
+    if (h <= PLAT1) return 26.0 - 6.5 * (h / PLAT1);
+    return 19.5 - 9.0 * Math.min((h - PLAT1) / (PLAT2 - PLAT1), 1);
+  }
+  function legNode(h, quad, k) {
+    var w = halfw(h), sd = legSide(h),
+        sx = (quad === 0 || quad === 3) ? 1 : -1,
+        sz = (quad === 0 || quad === 1) ? 1 : -1,
+        xs = [w, w - sd, w - sd, w],
+        zs = [w, w, w - sd, w - sd];
+    return new THREE.Vector3(sx * xs[k], h, sz * zs[k]);
+  }
+
+  for (var L = 0; L < levels.length - 1; L++) {
+    var h0 = levels[L], h1 = levels[L + 1], t = gauge(h0), i, qd, k2;
+
+    if (h1 <= PLAT2 + 0.01) {
+      for (qd = 0; qd < 4; qd++) {
+        for (k2 = 0; k2 < 4; k2++)                                   /* the leg's own posts */
+          members.push([legNode(h0, qd, k2), legNode(h1, qd, k2), t * 1.0]);
+        for (k2 = 0; k2 < 4; k2++)                                   /* its belts */
+          members.push([legNode(h1, qd, k2), legNode(h1, qd, (k2 + 1) % 4), t * 0.82]);
+        for (k2 = 0; k2 < 4; k2++) {                                 /* its own X bracing */
+          members.push([legNode(h0, qd, k2), legNode(h1, qd, (k2 + 1) % 4), t * 0.62]);
+          members.push([legNode(h0, qd, (k2 + 1) % 4), legNode(h1, qd, k2), t * 0.62]);
+        }
+      }
+      /* Above the first platform the legs are tied to each other across each
+         face — but nothing crosses the interior, so the core stays open. */
+      if (h0 >= PLAT1 - 0.01) {
+        for (i = 0; i < 4; i++) {
+          members.push([corner(h1, i), corner(h1, (i + 1) % 4), t * 0.5]);
+          members.push([corner(h0, i), corner(h1, (i + 1) % 4), t * 0.42]);
+          members.push([corner(h0, (i + 1) % 4), corner(h1, i), t * 0.42]);
+        }
+      }
+      continue;
+    }
+
+    for (i = 0; i < 4; i++) members.push([corner(h0, i), corner(h1, i), t * 1.3]);
+    for (i = 0; i < 4; i++) members.push([corner(h1, i), corner(h1, (i + 1) % 4), t * 1.02]);
+    for (i = 0; i < 4; i++) {
+      members.push([corner(h0, i), corner(h1, (i + 1) % 4), t * 0.88]);
+      members.push([corner(h0, (i + 1) % 4), corner(h1, i), t * 0.88]);
+    }
+  }
+
+  /* the four great arches */
+  function facePoint(face, u, y) {
+    var w = halfw(y);
+    if (face === 0) return new THREE.Vector3(u * w, y, w);
+    if (face === 1) return new THREE.Vector3(-w, y, u * w);
+    if (face === 2) return new THREE.Vector3(u * w, y, -w);
+    return new THREE.Vector3(w, y, u * w);
+  }
+  function archPoint(face, u, y, zAt) {
+    var w = halfw(zAt);                       /* the face plane stays put as the arch rises */
+    if (face === 0) return new THREE.Vector3(u * w, y, w);
+    if (face === 1) return new THREE.Vector3(-w, y, u * w);
+    if (face === 2) return new THREE.Vector3(u * w, y, -w);
+    return new THREE.Vector3(w, y, u * w);
+  }
+  for (var f = 0; f < 4; f++) {
+    var prev = null, prevIn = null;
+    for (var k = 0; k <= 26; k++) {
+      var sK = k / 26, u = -1 + 2 * sK,
+          y  = 20 + 32 * Math.sqrt(Math.max(0, 1 - u * u)),   /* a wide, shallow sweep */
+          pt = archPoint(f, u * 0.93, y, 26),
+          pi = archPoint(f, u * 0.80, y - 7.5, 26);
+      if (prev)   members.push([prev, pt, 3.0]);
+      if (prevIn) members.push([prevIn, pi, 1.8]);
+      if (k % 4 === 0) members.push([pt, pi, 1.4]);            /* the spandrel ribs */
+      prev = pt; prevIn = pi;
+    }
+  }
+
+  members.sort(function (a, b) { return (a[0].y + a[1].y) - (b[0].y + b[1].y); });
 
   /* -- scene ------------------------------------------------------------ */
   var scene = new THREE.Scene();
@@ -201,24 +324,9 @@ export function mount(root, options) {
     c.fillStyle = "#FFFDF4";
     c.beginPath(); c.arc(sux, suy, SH * 0.026, 0, Math.PI * 2); c.fill();
 
-    /* Crepuscular streaks fanning off it. Faint, and the reason a flat
-       gradient reads as a backdrop and this reads as an evening. */
-    c.save();
-    c.translate(sux, suy);
-    for (var ry2 = 0; ry2 < 9; ry2++) {
-      var a2 = -1.35 + ry2 * 0.32 + Math.random() * 0.1;
-      c.rotate(0);
-      var rg = c.createLinearGradient(0, 0, Math.cos(a2) * SW * 0.5, Math.sin(a2) * SW * 0.5);
-      rg.addColorStop(0, "rgba(255,214,158,.16)");
-      rg.addColorStop(1, "rgba(255,214,158,0)");
-      c.fillStyle = rg;
-      c.beginPath();
-      c.moveTo(0, 0);
-      c.lineTo(Math.cos(a2 - 0.045) * SW, Math.sin(a2 - 0.045) * SW);
-      c.lineTo(Math.cos(a2 + 0.045) * SW, Math.sin(a2 + 0.045) * SW);
-      c.closePath(); c.fill();
-    }
-    c.restore();
+    /* No crepuscular rays. Drawn as triangles fanning off the sun they came
+       out as hard-edged wedges laid over the sky -- straight lines where the
+       air should be softest, and the first thing the eye finds. */
 
     /* The city's own glow, banded along the horizon. */
     var hz = c.createLinearGradient(0, SH * 0.86, 0, SH);
@@ -255,68 +363,45 @@ export function mount(root, options) {
   var group = new THREE.Group();
   scene.add(group);
 
-  /* -- the build front --------------------------------------------------
-     One uniform, uBuild, running 0 to 1, and everything the scroll does to
-     the tower comes out of it. No timeline, no tween state: give it the same
-     number twice and you get the same frame twice. */
-  var uBuild   = { value: 0 },
-      uBand    = { value: 74 },     /* how deep the band of flying iron is  */
-      uScatter = { value: 27 },     /* how far a piece flies before landing */
-      uClear   = { value: 72 },     /* the tower's own footprint, in plan   */
-      uSite    = { value: 150 };    /* beyond this, ground: never disperses */
+  /* -- cutting the tower out of the capture ------------------------------
+     The site stays exactly as it was flown. What has to go is the smooth
+     lump where the tower is, so the built one can stand in its place --
+     a cylinder on the tower's own axis, from a few metres above the
+     pavement upward, so the ground, the paths and the arch's own shadow
+     are all kept. */
+  var uClear = { value: 96 },     /* the tower's footprint, in plan       */
+      uSite  = { value: 132 };    /* fully site again beyond this         */
 
   var PREAMBLE = [
-    'uniform float uBuild;',
-    'uniform float uBand;',
-    'uniform float uScatter;',
     'uniform float uClear;',
     'uniform float uSite;',
-    'varying float vBuilt;',
-    'float h31(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719))) * 43758.5453); }'
+    'varying float vKeep;'
   ].join('\n');
 
   /* Positions are baked into world metres at load, so this reads plainly:
-     how high is this vertex, how far from the tower's axis, and has the
-     front got here yet. */
-  var DISPERSE = [
+     how far is this vertex from the tower's axis, and is it above the
+     pavement. Both conditions have to hold for it to be tower rather than
+     place, and only then is it dropped. */
+  var CUT = [
     '#include <begin_vertex>',
     'float dAxis = length(position.xz);',
-    /* the park, the river, the far blocks: always standing */
     'float site  = smoothstep(uClear, uSite, dAxis);',
-    'float front = uBuild * (' + TOP + '.0 + uBand);',
-    'float rise  = clamp((front - position.y) / uBand, 0.0, 1.0);',
-    /* A second exemption, and between them they say "the tower, and only
-       the tower". Distance from the axis covers the park, the river, the
-       quays and the far blocks. Height covers the ground directly beneath
-       it: without this the lawn flies apart along with the ironwork
-       standing on it, because the front has to start at zero. */
-    'float low   = 1.0 - smoothstep(1.5, 8.0, position.y);',
-    'float built = clamp(max(max(site, low), rise), 0.0, 1.0);',
-    'vBuilt = built;',
-    'vec3 dir = normalize(vec3(h31(position.yzx) - 0.5,',
-    '                          h31(position.zxy) - 0.5,',
-    '                          h31(position.xyz) - 0.5) + 1e-4);',
-    'transformed += dir * pow(1.0 - built, 1.7) * uScatter;'
+    'float low   = 1.0 - smoothstep(3.0, 11.0, position.y);',
+    'vKeep = clamp(max(site, low), 0.0, 1.0);'
   ].join('\n');
 
-  /* Discarded rather than blended: a million triangles of half-transparent
-     ironwork cannot be depth-sorted, and pieces snapping in one at a time is
-     closer to how the thing was actually put together anyway. */
-  var FRAG_PRE = 'varying float vBuilt;';
+  var FRAG_PRE = 'varying float vKeep;';
   var FRAG_CUT = [
-    'if (vBuilt < 0.02) discard;',
+    'if (vKeep < 0.5) discard;',
     '#include <dithering_fragment>'
   ].join('\n');
 
   function patch(mat) {
     mat.onBeforeCompile = function (sh) {
-      sh.uniforms.uBuild = uBuild;
-      sh.uniforms.uBand = uBand;
-      sh.uniforms.uScatter = uScatter;
       sh.uniforms.uClear = uClear;
       sh.uniforms.uSite = uSite;
       sh.vertexShader = PREAMBLE + '\n' +
-        sh.vertexShader.replace('#include <begin_vertex>', DISPERSE);
+        sh.vertexShader.replace('#include <begin_vertex>', CUT);
       sh.fragmentShader = FRAG_PRE + '\n' +
         sh.fragmentShader.replace('#include <dithering_fragment>', FRAG_CUT);
     };
@@ -397,6 +482,69 @@ export function mount(root, options) {
     });
   })();
 
+var iron = new THREE.MeshStandardMaterial({
+    color: C.iron, metalness: 0.95, roughness: 0.33, envMapIntensity: 0.85
+  });
+  /* Eiffel's members are not solid bars: each is a built-up girder, four
+     angle-iron rails riveted around an open web. A single box reads as a
+     matchstick as soon as the camera comes close. This keeps the same unit
+     footprint -- so every instance matrix below is untouched -- but gives
+     the profile four corner rails around a slimmer core, which is what
+     catches the light along an edge and stops the tower looking sawn from
+     plank. Five boxes an instance, ~78k triangles for the whole tower. */
+  var beam = (function () {
+    var core = new THREE.BoxGeometry(0.42, 1, 0.42), parts = [core], o = 0.34, ci;
+    var corners = [[-o, -o], [-o, o], [o, -o], [o, o]];
+    for (ci = 0; ci < 4; ci++) {
+      var rail = new THREE.BoxGeometry(0.32, 1, 0.32);
+      rail.translate(corners[ci][0], 0, corners[ci][1]);
+      parts.push(rail);
+    }
+    try {
+      var merged = mergeGeometries(parts, false);
+      if (merged) return merged;
+    } catch (e) { /* fall through to the plain bar */ }
+    return new THREE.BoxGeometry(1, 1, 1);
+  })();
+  var lattice = new THREE.InstancedMesh(beam, iron, members.length);
+  lattice.frustumCulled = false;
+
+  var mtx = new THREE.Matrix4(), q = new THREE.Quaternion(),
+      up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), mid = new THREE.Vector3();
+  for (var i = 0; i < members.length; i++) {
+    var a = members[i][0], b = members[i][1], th = members[i][2];
+    dir.subVectors(b, a); var len = dir.length() || 0.001;
+    mid.addVectors(a, b).multiplyScalar(0.5);
+    q.setFromUnitVectors(up, dir.clone().normalize());
+    mtx.compose(mid, q, new THREE.Vector3(th, len, th));
+    lattice.setMatrixAt(i, mtx);
+  }
+  lattice.instanceMatrix.needsUpdate = true;
+  lattice.count = 0;
+  group.add(lattice);
+
+  /* platforms, cupola, mast */
+  var deckMat = new THREE.MeshStandardMaterial({ color: 0x3F3225, metalness: 0.9, roughness: 0.42, envMapIntensity: 0.7 });
+  var decks = PLATFORMS.map(function (ph) {
+    var w = halfw(ph) * 2.3;
+    var d = new THREE.Mesh(new THREE.BoxGeometry(w, 1.6, w), deckMat);
+    d.position.y = ph; d.visible = false; group.add(d);
+    return { mesh: d, h: ph };
+  });
+  var cupola = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 6.4, 11, 14), deckMat);
+  cupola.position.y = 303; cupola.visible = false; group.add(cupola);
+  var lantern = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 4.4, 8, 12), deckMat);
+  lantern.position.y = 311; lantern.visible = false; group.add(lantern);
+  var antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.9, 21, 8), iron);
+  antenna.position.y = 325; antenna.visible = false; group.add(antenna);
+  var tip = new THREE.Mesh(new THREE.SphereGeometry(1.15, 10, 8),
+            new THREE.MeshBasicMaterial({ color: 0xFFE9BE }));
+  /* 330 m to the tip, which is what the readout says and what the site
+     capture was scaled by. It used to overshoot by fifteen metres. */
+  tip.position.y = 331; tip.visible = false; group.add(tip);
+  var SUMMIT = [[cupola,0.955],[lantern,0.972],[antenna,0.984],[tip,0.992]];
+
+
   /* -- what the capture cannot carry: the lights ------------------------
      A daytime flight has no lamps in it. These are the tower's own: the
      four corner lamps on each platform, the summit beacon, and the beam it
@@ -421,15 +569,17 @@ export function mount(root, options) {
   group.add(lamps);
 
   var lighthouse = new THREE.Group();
-  lighthouse.position.y = TOP - 8;
+  lighthouse.position.y = TOP - 22;
   (function () {
     var beamMat = new THREE.MeshBasicMaterial({
-      color: 0xFFEBC0, transparent: true, opacity: 0.05,
+      color: 0xFFEBC0, transparent: true, opacity: 0.018,
       side: THREE.DoubleSide, depthWrite: false });
     for (var bm = 0; bm < 2; bm++) {
-      var beam = new THREE.Mesh(new THREE.ConeGeometry(16, 640, 4, 1, true), beamMat);
+      /* Narrow, and faint. A four-sided cone at any width reads as a flat
+         slab laid across the sky rather than as a beam through air. */
+      var beam = new THREE.Mesh(new THREE.ConeGeometry(5.5, 520, 8, 1, true), beamMat);
       beam.rotation.z = Math.PI / 2;
-      beam.position.x = bm ? 320 : -320;
+      beam.position.x = bm ? 260 : -260;
       beam.rotation.y = bm ? 0 : Math.PI;
       lighthouse.add(beam);
     }
@@ -439,7 +589,7 @@ export function mount(root, options) {
   group.add(lighthouse);
 
   var beacon = new THREE.PointLight(0xFFE3AE, 0, 300, 2);
-  beacon.position.set(0, TOP + 12, 0); group.add(beacon);
+  beacon.position.set(0, TOP + 4, 0); group.add(beacon);
 
   /* Something beyond the capture's edge, so where the flight ran out there
      is ground going into haze rather than a hole in the world.
@@ -534,12 +684,22 @@ export function mount(root, options) {
   var BUILD_TO = 0.88;
 
   function apply(p) {
-    /* Belt and braces: the shader must never be handed a NaN, because a
-       NaN there does not read as zero, it reads as "built". */
-    uBuild.value = isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
+    var q = isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
 
-    var topH = uBuild.value * TOP;
+    /* The reconstruction, and it is the whole point: how many of the
+       tower's own members have been riveted. They are sorted by height, so
+       counting up them builds it from the footings to the spire. */
+    var total = members.length;
+    lattice.count = Math.max(0, Math.min(total, Math.floor(q * total)));
+
+    var topH = 0;
+    if (lattice.count > 0) {
+      var last = members[lattice.count - 1];
+      topH = Math.max(last[0].y, last[1].y);
+    }
     builtH = Math.max(28, topH);
+    decks.forEach(function (d) { d.mesh.visible = topH > d.h; });
+    for (var q2 = 0; q2 < SUMMIT.length; q2++) SUMMIT[q2][0].visible = q > SUMMIT[q2][1];
 
     var ln = 0; for (var j = 0; j < lampH.length; j++) if (topH > lampH[j] + 2) ln = j + 1;
     lamps.count = ln;
@@ -612,13 +772,23 @@ export function mount(root, options) {
        cut edge between the reader and the tower. This sweep runs along the
        Champ de Mars, which is both where there is ground to stand on and
        the view the tower was built to be seen from. */
-    var ang = -0.32 + eased * 0.62 + Math.sin(clock * 0.25) * 0.03;
+    /* Turned to stand ON the Champ de Mars looking BACK across the river:
+       the Pont d'Iena, the Seine and the Palais de Chaillot are all in the
+       capture, and they were all behind the camera. */
+    var ang = Math.PI - 0.34 + eased * 0.64 + Math.sin(clock * 0.25) * 0.03;
     var framed = Math.max(camH, C.minFrame);
-    var rad = 155 + framed * 1.16 + held * 60;
+    var rad = 150 + framed * 1.22 + held * 55;
+    /* Low, and looking up the tower. Standing off at height turned the
+       capture into an island in a flat sea, because a high camera looking
+       down puts the horizon near the top of the frame and everything under
+       it has to be filled -- and past the edge of the flight there is
+       nothing to fill it with. From down here the horizon sits low, the
+       tower is against sky, and the ground is the near third of the frame,
+       which is exactly the part the capture actually covers. */
     camera.position.set(Math.sin(ang) * rad,
-                        34 + framed * 0.30 + held * 70 + Math.sin(clock * 0.7) * 3,
+                        28 + framed * 0.11 + held * 46 + Math.sin(clock * 0.7) * 2.5,
                         Math.cos(ang) * rad);
-    camera.lookAt(0, framed * 0.48 - held * 14, 0);
+    camera.lookAt(0, framed * 0.62 + held * 8, 0);
 
     lighthouse.rotation.y = clock * 3.4;
     uplight.intensity = 15000 + Math.sin(clock * 2.2) * 1400;
