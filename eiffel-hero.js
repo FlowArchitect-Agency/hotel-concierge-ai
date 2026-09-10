@@ -26,6 +26,10 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const DEFAULTS = {
     /* Never let the camera inside the 125 m base: below this the opening
@@ -231,13 +235,13 @@ export function mount(root, options) {
        them. Nothing here is meant to be looked at directly -- it exists so
        the ironwork has varied highlights to catch instead of a flat wash. */
     var hasBlur = false;
-    try { c.filter = "blur(9px)"; hasBlur = c.filter === "blur(9px)"; } catch (e) {}
-    for (var cl = 0; cl < 34; cl++) {
-      var cy = SH * (0.40 + Math.random() * 0.44),
+    try { c.filter = "blur(7px)"; hasBlur = c.filter === "blur(7px)"; } catch (e) {}
+    for (var cl = 0; cl < 46; cl++) {
+      var cy = SH * (0.34 + Math.random() * 0.50),
           cx = Math.random() * SW,
-          cw = 70 + Math.random() * 260,
-          ch = 4 + Math.random() * 9,
-          warm = (cy / SH - 0.4) / 0.44;
+          cw = 70 + Math.random() * 300,
+          ch = 4 + Math.random() * 11,
+          warm = Math.min(1, Math.max(0, (cy / SH - 0.34) / 0.50));
       /* Each bar is drawn as a handful of overlapping lobes so the edge is
          ragged rather than a clean ellipse -- a single ellipse at this size
          reads as a lozenge painted on the sky, which is exactly what it is. */
@@ -247,9 +251,12 @@ export function mount(root, options) {
             ly = cy + (Math.random() - 0.5) * ch * 1.4,
             lh = ch * (0.6 + Math.random() * 0.7);
         var cg = c.createLinearGradient(0, ly - lh, 0, ly + lh);
-        cg.addColorStop(0, "rgba(58,48,74," + (0.20 * (1 - warm * 0.5)).toFixed(3) + ")");
-        cg.addColorStop(1, "rgba(255," + Math.round(150 + warm * 70) + ",120," +
-                            (0.07 + warm * 0.17).toFixed(3) + ")");
+        cg.addColorStop(0, "rgba(48,40,66," + (0.42 * (1 - warm * 0.45)).toFixed(3) + ")");
+        cg.addColorStop(0.45, "rgba(" + Math.round(110 + warm * 90) + "," +
+                            Math.round(92 + warm * 60) + ",118," +
+                            (0.26 + warm * 0.2).toFixed(3) + ")");
+        cg.addColorStop(1, "rgba(255," + Math.round(148 + warm * 76) + ",118," +
+                            (0.16 + warm * 0.42).toFixed(3) + ")");
         c.fillStyle = cg;
         c.beginPath();
         if (c.ellipse) c.ellipse(lx, ly, lw, lh, 0, 0, Math.PI * 2);
@@ -260,16 +267,38 @@ export function mount(root, options) {
     if (hasBlur) c.filter = "none";
 
     /* The sun, sitting on the haze just above the horizon, roughly where the
-       key light comes from. This is the highlight the metal reflects. */
-    var sux = SW * 0.62, suy = SH * 0.795;
-    var bloom = c.createRadialGradient(sux, suy, 0, sux, suy, SH * 0.30);
-    bloom.addColorStop(0.00, "rgba(255,244,214,0.95)");
-    bloom.addColorStop(0.06, "rgba(255,214,150,0.72)");
-    bloom.addColorStop(0.26, "rgba(240,150,92,0.30)");
-    bloom.addColorStop(1.00, "rgba(240,150,92,0)");
-    c.fillStyle = bloom; c.fillRect(0, 0, SW, SH);
-    c.fillStyle = "#FFF6DE";
-    c.beginPath(); c.arc(sux, suy, SH * 0.022, 0, Math.PI * 2); c.fill();
+       key light comes from. This is the highlight the metal reflects, and
+       with the scene composited in half float it is also the one thing in
+       the sky bright enough to bleed. */
+    var sux = SW * 0.62, suy = SH * 0.788;
+    var glow = c.createRadialGradient(sux, suy, 0, sux, suy, SH * 0.36);
+    glow.addColorStop(0.00, "rgba(255,248,226,1)");
+    glow.addColorStop(0.05, "rgba(255,222,164,0.86)");
+    glow.addColorStop(0.18, "rgba(248,166,102,0.45)");
+    glow.addColorStop(0.48, "rgba(226,124,84,0.16)");
+    glow.addColorStop(1.00, "rgba(226,124,84,0)");
+    c.fillStyle = glow; c.fillRect(0, 0, SW, SH);
+    c.fillStyle = "#FFFDF4";
+    c.beginPath(); c.arc(sux, suy, SH * 0.026, 0, Math.PI * 2); c.fill();
+
+    /* Crepuscular streaks fanning off it. Faint, and the reason a flat
+       gradient reads as a backdrop and this reads as an evening. */
+    c.save();
+    c.translate(sux, suy);
+    for (var ry2 = 0; ry2 < 9; ry2++) {
+      var a2 = -1.35 + ry2 * 0.32 + Math.random() * 0.1;
+      c.rotate(0);
+      var rg = c.createLinearGradient(0, 0, Math.cos(a2) * SW * 0.5, Math.sin(a2) * SW * 0.5);
+      rg.addColorStop(0, "rgba(255,214,158,.16)");
+      rg.addColorStop(1, "rgba(255,214,158,0)");
+      c.fillStyle = rg;
+      c.beginPath();
+      c.moveTo(0, 0);
+      c.lineTo(Math.cos(a2 - 0.045) * SW, Math.sin(a2 - 0.045) * SW);
+      c.lineTo(Math.cos(a2 + 0.045) * SW, Math.sin(a2 + 0.045) * SW);
+      c.closePath(); c.fill();
+    }
+    c.restore();
 
     /* The city's own glow, banded along the horizon. */
     var hz = c.createLinearGradient(0, SH * 0.86, 0, SH);
@@ -363,7 +392,11 @@ export function mount(root, options) {
   var SUMMIT = [[cupola,0.955],[lantern,0.972],[antenna,0.984],[tip,0.992]];
 
   /* the tower's own lamps */
+  /* Above white on purpose: in half float these stay brighter than the
+     tone curve can hold, which is what makes them bleed like real lamps
+     rather than sitting there as pale dots. */
   var lampMat = new THREE.MeshBasicMaterial({ color: 0xF2D9A6 });
+  lampMat.color.multiplyScalar(2.6);
   var lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(1.5, 8, 6), lampMat, 16);
   lamps.frustumCulled = false;
   var li = 0, lampH = [];
@@ -402,49 +435,253 @@ export function mount(root, options) {
   var beacon = new THREE.PointLight(0xFFE3AE, 0, 260, 2);
   beacon.position.set(0, 345, 0); group.add(beacon);
 
+
+  /* == the texture foundry ================================================
+     Everything below the tower was a single flat colour on a primitive: a
+     box of one grey, a lawn of one green, a sphere of one dark green. That
+     is the whole difference between this and the cathedral -- the cathedral
+     is a scanned building carrying photographed stone, and a solid painted
+     an average colour reads as a solid painted an average colour no matter
+     how well it is lit.
+
+     Nothing is downloaded: every map here is drawn into a canvas at load,
+     which keeps the scene one file and lets each surface carry albedo,
+     roughness and a real normal instead of a constant. ==================== */
+
+  var ANISO = 1;
+  try { ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1); } catch (e) {}
+
+  function cv2d(w, h) {
+    var c = document.createElement("canvas"); c.width = w; c.height = h; return c;
+  }
+  function tex(cvs, srgb, rx, ry) {
+    var t = new THREE.CanvasTexture(cvs);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(rx || 1, ry || 1);
+    t.anisotropy = ANISO;
+    return t;
+  }
+
+  /* Value noise, built by drawing a few random low-resolution grids scaled
+     up -- the canvas does the interpolation, so this is octaves of smooth
+     noise for the cost of a handful of drawImage calls. */
+  function noiseCv(size, octaves, amp, base) {
+    var out = cv2d(size, size), o = out.getContext("2d");
+    o.fillStyle = "#808080"; o.fillRect(0, 0, size, size);
+    for (var k = 0; k < octaves; k++) {
+      /* The base frequency matters more than the octave count. Starting at
+         four, the coarsest layer is a 4x4 grid of blobs that shows up as an
+         obvious repeat the moment the texture is tiled across a lawn. */
+      var n = (base || 4) << k, small = cv2d(n, n), sc = small.getContext("2d");
+      var id = sc.createImageData(n, n), i;
+      for (i = 0; i < n * n; i++) {
+        var v = 128 + (Math.random() - 0.5) * 250;
+        id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = v;
+        id.data[i * 4 + 3] = 255;
+      }
+      sc.putImageData(id, 0, 0);
+      o.globalAlpha = (amp || 0.5) / (k + 1);
+      o.drawImage(small, 0, 0, size, size);
+    }
+    o.globalAlpha = 1;
+    return out;
+  }
+
+  /* Sobel over a height field. Cheap, and the difference between a surface
+     that has a direction under a low sun and one that has none. */
+  function normalCv(heightCv, strength) {
+    var w = heightCv.width, h = heightCv.height;
+    var src = heightCv.getContext("2d").getImageData(0, 0, w, h).data;
+    var out = cv2d(w, h), oc = out.getContext("2d"), id = oc.createImageData(w, h);
+    function H(x, y) {
+      x = (x + w) % w; y = (y + h) % h;
+      return src[(y * w + x) * 4] / 255;
+    }
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var dx = (H(x + 1, y) - H(x - 1, y)) * strength,
+            dy = (H(x, y + 1) - H(x, y - 1)) * strength,
+            l  = Math.sqrt(dx * dx + dy * dy + 1), i = (y * w + x) * 4;
+        id.data[i]     = (-dx / l * 0.5 + 0.5) * 255;
+        id.data[i + 1] = ( dy / l * 0.5 + 0.5) * 255;
+        id.data[i + 2] = (  1 / l * 0.5 + 0.5) * 255;
+        id.data[i + 3] = 255;
+      }
+    }
+    oc.putImageData(id, 0, 0);
+    return out;
+  }
+
+  /* Ground surfaces: gravel, lawn, paving. Tinted noise for the albedo and
+     the same noise as a height field for the normal, so the bumps and the
+     colour agree with each other. */
+  function groundMaps(hex, spread, size, bump, base) {
+    var n = noiseCv(size || 256, 4, 0.62, base || 16);
+    var alb = cv2d(n.width, n.height), a = alb.getContext("2d");
+    var col = new THREE.Color(hex);
+    a.fillStyle = "#" + col.getHexString(); a.fillRect(0, 0, alb.width, alb.height);
+    a.globalAlpha = spread; a.globalCompositeOperation = "overlay";
+    a.drawImage(n, 0, 0);
+    a.globalAlpha = 1; a.globalCompositeOperation = "source-over";
+    return { map: alb, normal: normalCv(n, bump === undefined ? 2.4 : bump), noise: n };
+  }
+
+  /* A Haussmann elevation, or a curtain wall depending on the floor count:
+     courses, window reveals, continuous balconies, a cornice, and grime
+     washing down from every sill. Returns the maps a lit facade needs --
+     what colour it is, which parts are glass, and which windows are on. */
+  function facadeMaps(floors, bays, litRatio, modern) {
+    var W = 256, H = 256, i, j;
+    var alb = cv2d(W, H), a = alb.getContext("2d");
+    var emi = cv2d(W, H), e = emi.getContext("2d");
+    var hgt = cv2d(W, H), g = hgt.getContext("2d");
+    var rgh = cv2d(W, H), r = rgh.getContext("2d");
+
+    a.fillStyle = modern ? "#3B4048" : "#B9AE97"; a.fillRect(0, 0, W, H);
+    e.fillStyle = "#000000"; e.fillRect(0, 0, W, H);
+    g.fillStyle = "#9A9A9A"; g.fillRect(0, 0, W, H);
+    r.fillStyle = "#D8D8D8"; r.fillRect(0, 0, W, H);          /* stone: rough */
+
+    /* Soot gathers at the foot of a wall and rain cleans the top of it. */
+    var wash = a.createLinearGradient(0, 0, 0, H);
+    wash.addColorStop(0, "rgba(255,248,230,.10)");
+    wash.addColorStop(0.55, "rgba(0,0,0,0)");
+    wash.addColorStop(1, "rgba(24,20,16,.26)");
+    a.fillStyle = wash; a.fillRect(0, 0, W, H);
+
+    var fh = H / floors, bw = W / bays;
+
+    if (!modern) {
+      a.fillStyle = "rgba(80,70,54,.09)";
+      for (i = 0; i < H; i += 6) a.fillRect(0, i, W, 1);
+      g.fillStyle = "rgba(0,0,0,.16)";
+      for (i = 0; i < H; i += 6) g.fillRect(0, i, W, 1);
+      a.fillStyle = "rgba(236,228,206,.5)";  a.fillRect(0, 0, W, 7);
+      g.fillStyle = "#E8E8E8";               g.fillRect(0, 0, W, 7);
+      a.fillStyle = "rgba(226,218,196,.35)"; a.fillRect(0, H - fh - 3, W, 3);
+      g.fillStyle = "#D2D2D2";               g.fillRect(0, H - fh - 3, W, 3);
+    }
+
+    for (j = 0; j < floors; j++) {
+      var fy = j * fh;
+      var isGround = j === floors - 1;
+      /* Haussmann hangs a continuous balcony on the second and fifth floors;
+         a curtain wall gets a spandrel band on every one instead. */
+      var balcony = modern ? true : (j === 1 || j === floors - 2);
+
+      if (balcony && fh > 9) {
+        var by = fy + fh * (modern ? 0.86 : 0.9), bh = Math.max(2, fh * 0.1);
+        a.fillStyle = modern ? "rgba(22,26,32,.85)" : "rgba(38,34,28,.72)";
+        a.fillRect(0, by, W, bh);
+        g.fillStyle = "#F0F0F0"; g.fillRect(0, by, W, bh);
+      }
+
+      for (i = 0; i < bays; i++) {
+        var bx = i * bw;
+        var ww = bw * (modern ? 0.74 : 0.44),
+            wh = fh * (isGround && !modern ? 0.62 : 0.5),
+            wx = bx + (bw - ww) / 2,
+            wy = fy + fh * 0.24;
+
+        g.fillStyle = "#2A2A2A"; g.fillRect(wx, wy, ww, wh);   /* reveal */
+        r.fillStyle = "#2E2E2E"; r.fillRect(wx, wy, ww, wh);   /* glass: glossy */
+        a.fillStyle = modern ? "#1B2028" : "#252A31";
+        a.fillRect(wx, wy, ww, wh);
+
+        if (!modern) {
+          a.fillStyle = "rgba(238,230,208,.42)";
+          a.fillRect(wx - 1.5, wy - 2, ww + 3, 2);
+          a.fillRect(wx - 2.5, wy + wh, ww + 5, 2);
+          g.fillStyle = "#EDEDED";
+          g.fillRect(wx - 2.5, wy + wh, ww + 5, 2);
+          var st = a.createLinearGradient(0, wy + wh, 0, wy + wh + fh * 0.4);
+          st.addColorStop(0, "rgba(40,34,26,.22)");
+          st.addColorStop(1, "rgba(40,34,26,0)");
+          a.fillStyle = st; a.fillRect(wx - 2, wy + wh, ww + 4, fh * 0.4);
+        }
+
+        if (Math.random() < litRatio) {
+          var warm = Math.random();
+          e.fillStyle = warm < 0.14 ? "#7FA8D6" : (warm < 0.6 ? "#FFC067" : "#FFDCA4");
+          e.globalAlpha = 0.55 + Math.random() * 0.45;
+          e.fillRect(wx, wy, ww, wh);
+          e.globalAlpha = 1;
+        }
+      }
+    }
+
+    return {
+      map:      tex(alb, true),
+      emissive: tex(emi, true),
+      rough:    tex(rgh, false),
+      normal:   tex(normalCv(hgt, 3.2), false)
+    };
+  }
+
+  /* Paris roofs are zinc: bluish grey, laid in sheets with standing seams. */
+  function zincMaps() {
+    var W = 128, H = 128, cvv = cv2d(W, H), z = cvv.getContext("2d"),
+        hh = cv2d(W, H), g = hh.getContext("2d");
+    z.fillStyle = "#4E555F"; z.fillRect(0, 0, W, H);
+    g.fillStyle = "#808080"; g.fillRect(0, 0, W, H);
+    z.globalAlpha = 0.34; z.globalCompositeOperation = "overlay";
+    z.drawImage(noiseCv(W, 3, 0.5), 0, 0);
+    z.globalAlpha = 1; z.globalCompositeOperation = "source-over";
+    for (var x = 0; x < W; x += 16) {
+      z.fillStyle = "rgba(214,222,232,.22)"; z.fillRect(x, 0, 2, H);
+      z.fillStyle = "rgba(22,26,32,.3)";     z.fillRect(x + 2, 0, 1, H);
+      g.fillStyle = "#EFEFEF";               g.fillRect(x, 0, 2, H);
+    }
+    return { map: tex(cvv, true, 3, 3), normal: tex(normalCv(hh, 2.6), false, 3, 3) };
+  }
+
   /* ground, so the uplight has something to pool on */
+  var groundG = groundMaps(0x141B28, 0.4, 256, 1.6);
   var ground = new THREE.Mesh(
     new THREE.CircleGeometry(2600, 64),
-    new THREE.MeshStandardMaterial({ color: 0x101725, roughness: 0.97, metalness: 0.06, envMapIntensity: 0.14 })
+    new THREE.MeshStandardMaterial({
+      map: tex(groundG.map, true, 26, 26),
+      normalMap: tex(groundG.normal, false, 26, 26),
+      normalScale: new THREE.Vector2(0.7, 0.7),
+      roughness: 0.95, metalness: 0.04, envMapIntensity: 0.14
+    })
   );
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.5; scene.add(ground);
 
   /* ═══ the site: Champ de Mars to the south, the Seine and
          Trocadéro to the north — the tower stands at the join ═══ */
-  /* Windows. A block of untextured stone at dusk is the single thing that
-     most makes a city read as scenery flats -- the buildings are the right
-     shape but nothing is happening inside them. This paints a grid of lit
-     and unlit panes into a small canvas used as an emissive map, so each
-     box lights from within instead of being a uniformly shaded solid. Box
-     UVs run 0..1 per face regardless of the instance's scale, so the grid
-     is authored wider than tall to come out roughly square on a block. */
-  function windowTex(cols, rows, lit) {
-    var cv = document.createElement("canvas"), px = 8;
-    cv.width = cols * px; cv.height = rows * px;
-    var x2 = cv.getContext("2d");
-    x2.fillStyle = "#000000"; x2.fillRect(0, 0, cv.width, cv.height);
-    for (var ry = 0; ry < rows; ry++) {
-      for (var rx = 0; rx < cols; rx++) {
-        if (Math.random() > lit) continue;
-        var warm = Math.random();
-        x2.fillStyle = warm < 0.16 ? "#8FB6D8" : (warm < 0.55 ? "#FFC97E" : "#FFE0AC");
-        x2.globalAlpha = 0.55 + Math.random() * 0.45;
-        x2.fillRect(rx * px + 2, ry * px + 2, px - 4, px - 4);
-      }
-    }
-    var t2 = new THREE.CanvasTexture(cv);
-    t2.colorSpace = THREE.SRGBColorSpace;
-    t2.magFilter = THREE.NearestFilter;
-    return t2;
-  }
+  var lawnG   = groundMaps(0x33482B, 0.42, 256, 1.1, 20);
+  var gravelG = groundMaps(0x6E6759, 0.46, 256, 1.3, 24);
+  var zinc    = zincMaps();
+  /* The Palais de Chaillot and the Ecole Militaire are close enough to read
+     as buildings rather than as blocks, so they get a real elevation. */
+  var palace  = facadeMaps(4, 9, 0.2, false);
 
   var MAT = {
-    lawn:   new THREE.MeshStandardMaterial({ color: 0x33482B, roughness: .97, metalness: 0, envMapIntensity: .18 }),
-    gravel: new THREE.MeshStandardMaterial({ color: 0x736C5E, roughness: .96, metalness: 0, envMapIntensity: .2 }),
-    stone:  new THREE.MeshStandardMaterial({ color: 0x847C6C, roughness: .86, metalness: .05, envMapIntensity: .3,
-              emissive: 0xFFFFFF, emissiveIntensity: 0.55, emissiveMap: windowTex(14, 5, 0.34) }),
-    roof:   new THREE.MeshStandardMaterial({ color: 0x4A4E56, roughness: .7,  metalness: .3 }),
-    hedge:  new THREE.MeshStandardMaterial({ color: 0x33482C, roughness: .95, metalness: 0 })
+    lawn: new THREE.MeshStandardMaterial({
+      color: 0x9FB48C,
+      map: tex(lawnG.map, true, 13, 13),
+      normalMap: tex(lawnG.normal, false, 13, 13),
+      normalScale: new THREE.Vector2(0.45, 0.45),
+      roughness: .97, metalness: 0, envMapIntensity: .18 }),
+    gravel: new THREE.MeshStandardMaterial({
+      color: 0xB9AE97,
+      map: tex(gravelG.map, true, 22, 22),
+      normalMap: tex(gravelG.normal, false, 22, 22),
+      normalScale: new THREE.Vector2(0.42, 0.42),
+      roughness: .96, metalness: 0, envMapIntensity: .2 }),
+    stone: new THREE.MeshStandardMaterial({
+      map: palace.map, normalMap: palace.normal, roughnessMap: palace.rough,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+      emissive: 0xFFFFFF, emissiveIntensity: 0.85, emissiveMap: palace.emissive,
+      roughness: .9, metalness: .04, envMapIntensity: .3 }),
+    roof: new THREE.MeshStandardMaterial({
+      map: zinc.map, normalMap: zinc.normal,
+      normalScale: new THREE.Vector2(0.8, 0.8),
+      roughness: .52, metalness: .55, envMapIntensity: .9 }),
+    hedge: new THREE.MeshStandardMaterial({
+      map: tex(lawnG.map, true, 2, 2), roughness: .95, metalness: 0 })
   };
   function slab(w, d, mat, x, y, z, ry) {
     var m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, d), mat);
@@ -473,10 +710,32 @@ export function mount(root, options) {
   })();
 
   /* ── the Seine ── */
-  var water = new THREE.Mesh(new THREE.PlaneGeometry(5200, 180),
-    new THREE.MeshStandardMaterial({ color: 0x16304F, metalness: .96, roughness: .055, envMapIntensity: 2.0 }));
+  /* A mirror-flat plane is the giveaway that this is a render. The river
+     gets a normal map with a ripple in it, scrolled in the frame loop, so
+     the sky and the tower's lights break up on it the way they do on water.
+     Two layers moving at different speeds, because one reads as a pattern. */
+  var rippleG = groundMaps(0x16304F, 0.5, 256, 5.5);
+  var waterN1 = tex(rippleG.normal, false, 26, 3);
+  var waterN2 = tex(rippleG.normal, false, 11, 2);
+  var water = new THREE.Mesh(new THREE.PlaneGeometry(5200, 180, 1, 1),
+    new THREE.MeshStandardMaterial({
+      color: 0x16304F, metalness: .92, roughness: .13,
+      normalMap: waterN1, normalScale: new THREE.Vector2(0.34, 0.34),
+      envMapIntensity: 2.0 }));
   water.rotation.x = -Math.PI / 2; water.position.set(0, 0.7, -300); scene.add(water);
-  var quayMat = new THREE.MeshStandardMaterial({ color: 0x6F6a5C, roughness: .9, metalness: .05, envMapIntensity: .25 });
+  /* the second layer, just under, catching the light at a different angle */
+  var water2 = new THREE.Mesh(new THREE.PlaneGeometry(5200, 180, 1, 1),
+    new THREE.MeshStandardMaterial({
+      color: 0x1B3A5C, metalness: .9, roughness: .2, transparent: true, opacity: .55,
+      normalMap: waterN2, normalScale: new THREE.Vector2(0.5, 0.5),
+      envMapIntensity: 1.5 }));
+  water2.rotation.x = -Math.PI / 2; water2.position.set(0, 0.72, -300); scene.add(water2);
+  var quayG = groundMaps(0x6F6A5C, 0.55, 256, 3.0);
+  var quayMat = new THREE.MeshStandardMaterial({
+    map: tex(quayG.map, true, 24, 2),
+    normalMap: tex(quayG.normal, false, 24, 2),
+    normalScale: new THREE.Vector2(1.1, 1.1),
+    roughness: .9, metalness: .05, envMapIntensity: .25 });
   [-300 + 96, -300 - 96].forEach(function (qz) {
     var wall = new THREE.Mesh(new THREE.BoxGeometry(5200, 11, 26), quayMat);
     wall.position.set(0, 5, qz); scene.add(wall);
@@ -517,28 +776,77 @@ export function mount(root, options) {
   /* ── trees, in the rows the park is planted in ── */
   (function () {
     var pts = [], i5, z5;
-    var TREE_STEP = C.quality === "full" ? 26 : 44;
+    /* Rounder canopies cost four times the triangles of a faceted one, so
+       the park is planted more sparsely to pay for it. Fewer trees that
+       read as trees beats an avenue of polyhedra. */
+    var TREE_STEP = C.quality === "full" ? 34 : 62;
     for (z5 = 130; z5 < 1060; z5 += TREE_STEP) {
       [-232, -206, 206, 232].forEach(function (tx) { pts.push([tx + (Math.random()-.5)*5, z5 + (Math.random()-.5)*6]); });
     }
-    for (i5 = 0; i5 < (C.quality === "full" ? 90 : 40); i5++) pts.push([(Math.random()-.5)*760, -430 - Math.random()*230]);
-    for (i5 = 0; i5 < (C.quality === "full" ? 70 : 30); i5++) pts.push([(Math.random()<.5?-1:1)*(300+Math.random()*420), -140 - Math.random()*120]);
+    for (i5 = 0; i5 < (C.quality === "full" ? 64 : 26); i5++) pts.push([(Math.random()-.5)*760, -430 - Math.random()*230]);
+    for (i5 = 0; i5 < (C.quality === "full" ? 48 : 20); i5++) pts.push([(Math.random()<.5?-1:1)*(300+Math.random()*420), -140 - Math.random()*120]);
 
-    var trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.1, 1.5, 11, 5),
-                  new THREE.MeshStandardMaterial({ color: 0x54432F, roughness: .95 }), pts.length);
-    var crown = new THREE.InstancedMesh(new THREE.SphereGeometry(8.5, 7, 6),
-                  new THREE.MeshStandardMaterial({ color: 0x3C5730, roughness: .95, envMapIntensity: .3 }), pts.length);
+    /* A sphere on a cylinder is a lollipop. A plane tree in the Champ de
+       Mars is a mass of three or four overlapping lobes with a broken edge,
+       which is all it takes for the silhouette to stop reading as a toy --
+       and it is still one instanced draw for the whole park. */
+    var crownGeo = (function () {
+      var lobes = [], li2;
+      var lv = new THREE.Vector3();
+      for (li2 = 0; li2 < 3; li2++) {
+        var lobe = new THREE.IcosahedronGeometry(1, 2), pos = lobe.attributes.position, vi;
+        /* Displaced by a smooth function of the DIRECTION, not per vertex.
+           An icosahedron is non-indexed -- every triangle carries its own
+           three vertices -- so moving each one independently pulls the
+           faces apart and the tree comes out a sea urchin. Two triangles
+           meeting at a corner both evaluate this to the same number, so the
+           surface stays closed and merely goes lumpy. */
+        var ph = Math.random() * 6.283, ph2 = Math.random() * 6.283;
+        for (vi = 0; vi < pos.count; vi++) {
+          lv.fromBufferAttribute(pos, vi).normalize();
+          var f = 1 + 0.15 * (Math.sin(lv.x * 2.7 + ph) * Math.cos(lv.y * 2.1 + ph2)
+                            + Math.sin(lv.z * 3.3 + ph2) * 0.7);
+          pos.setXYZ(vi, lv.x * f, lv.y * f, lv.z * f);
+        }
+        lobe.computeVertexNormals();
+        var ls = 5.4 + Math.random() * 2.6;
+        lobe.scale(ls * 1.1, ls * 0.86, ls * 1.05);
+        lobe.translate((Math.random() - .5) * 6.5, (Math.random() - .3) * 3.4,
+                       (Math.random() - .5) * 6.5);
+        lobes.push(lobe);
+      }
+      try { return mergeGeometries(lobes, false) || lobes[0]; }
+      catch (e) { return new THREE.SphereGeometry(8.5, 7, 6); }
+    })();
+
+    var trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.8, 1.7, 11, 6),
+                  new THREE.MeshStandardMaterial({
+                    map: tex(gravelG.map, true, 1, 3), color: 0x6B5942,
+                    roughness: .95, envMapIntensity: .2 }), pts.length);
+    var crown = new THREE.InstancedMesh(crownGeo,
+                  new THREE.MeshStandardMaterial({ color: 0x4A6837, roughness: .93,
+                    envMapIntensity: .3 }), pts.length);
     trunk.frustumCulled = false; crown.frustumCulled = false;
     var mm = new THREE.Matrix4(), qq = new THREE.Quaternion();
+    var leaf = new THREE.Color();
     pts.forEach(function (pt, i6) {
       var sc = 0.8 + Math.random() * 0.55;
+      /* Turned, so three lobes do not repeat down a row of forty trees. */
+      qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * Math.PI * 2);
       mm.compose(new THREE.Vector3(pt[0], 5.5 * sc, pt[1]), qq, new THREE.Vector3(sc, sc, sc));
       trunk.setMatrixAt(i6, mm);
-      mm.compose(new THREE.Vector3(pt[0], (11 + 7) * sc, pt[1]), qq,
+      mm.compose(new THREE.Vector3(pt[0], (11 + 5) * sc, pt[1]), qq,
                  new THREE.Vector3(sc, sc * 0.86, sc));
       crown.setMatrixAt(i6, mm);
+      /* No two trees are the same green, and that alone stops a row of them
+         reading as one stamped object repeated. */
+      leaf.setHSL(0.24 + (Math.random() - .5) * 0.05,
+                  0.30 + Math.random() * 0.14,
+                  0.20 + Math.random() * 0.09);
+      crown.setColorAt(i6, leaf);
     });
     trunk.instanceMatrix.needsUpdate = true; crown.instanceMatrix.needsUpdate = true;
+    if (crown.instanceColor) crown.instanceColor.needsUpdate = true;
     scene.add(trunk); scene.add(crown);
   })();
 
@@ -546,38 +854,117 @@ export function mount(root, options) {
   (function () {
     var spots = [], i8, ang8, rr;
     var CITY_N = C.quality === "full" ? 520 : 260;
+    /* The camera orbits the tower at somewhere between 400 and 800 metres,
+       looking in at it, so anything standing inside that ring ends up
+       between the reader and the subject -- and with the blocks carrying
+       real elevations and mansards now, one landing on the axis fills the
+       top of the frame with roof. It is also simply wrong: the Champ de
+       Mars is open ground and the quays are the near edge of the city, not
+       the middle of it. Spots inside the clearing are redrawn. */
+    var CLEAR = 900;
     for (i8 = 0; i8 < CITY_N; i8++) {
-      var side = Math.random();
-      if (side < 0.55) {                                   /* across the river */
-        spots.push([(Math.random() - .5) * 3400, -820 - Math.random() * 1500]);
-      } else if (side < 0.8) {                              /* flanking the park */
-        spots.push([(Math.random() < .5 ? -1 : 1) * (330 + Math.random() * 1300),
-                    -100 + Math.random() * 1500]);
-      } else {                                              /* along the near quay */
-        spots.push([(Math.random() - .5) * 3200, -150 - Math.random() * 90]);
+      for (var tries = 0; tries < 24; tries++) {
+        var side = Math.random(), sx, sz;
+        if (side < 0.55) {                                 /* across the river */
+          sx = (Math.random() - .5) * 3400; sz = -820 - Math.random() * 1500;
+        } else if (side < 0.8) {                            /* flanking the park */
+          sx = (Math.random() < .5 ? -1 : 1) * (330 + Math.random() * 1300);
+          sz = -100 + Math.random() * 1500;
+        } else {                                            /* along the near quay */
+          sx = (Math.random() - .5) * 3200; sz = -150 - Math.random() * 90;
+        }
+        if (sx * sx + sz * sz > CLEAR * CLEAR) { spots.push([sx, sz]); break; }
       }
     }
-    var plain = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x5C5A52, roughness: .92, metalness: .05, envMapIntensity: .22,
-        emissive: 0xFFFFFF, emissiveIntensity: 0.5, emissiveMap: windowTex(16, 7, 0.16) }),
-      spots.length);
-    var lit = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x494740, roughness: .8, metalness: .08,
-        emissive: 0xFFFFFF, emissiveIntensity: 1.15, emissiveMap: windowTex(16, 7, 0.46) }), spots.length);
-    plain.frustumCulled = false; lit.frustumCulled = false;
-    var m8 = new THREE.Matrix4(), q8 = new THREE.Quaternion(), np = 0, nl = 0;
+    /* Six floors, seven bays, a zinc roof: a Paris block, not a tinted box.
+       A cube's UVs run 0..1 on every face whatever the instance is scaled
+       to, so one facade cannot serve both a mansard block and a tower --
+       the floors would stretch to four times the height on the tall ones.
+       Hence two classes, each with two elevations so a row of them does not
+       repeat, and BoxGeometry's six material groups put the roof on top and
+       the shadowed underside below rather than wrapping windows over both.
+       Order is [+x, -x, +y, -y, +z, -z]. */
+    function blockMesh(floors, bays, litRatio, modern, n) {
+      var f = facadeMaps(floors, bays, litRatio, modern);
+      var side = new THREE.MeshStandardMaterial({
+        map: f.map, normalMap: f.normal, roughnessMap: f.rough,
+        normalScale: new THREE.Vector2(0.85, 0.85),
+        emissive: 0xFFFFFF, emissiveIntensity: modern ? 2.6 : 2.1, emissiveMap: f.emissive,
+        roughness: 1, metalness: modern ? 0.35 : 0.05, envMapIntensity: modern ? 0.75 : 0.28
+      });
+      var top = new THREE.MeshStandardMaterial({
+        map: zinc.map, normalMap: zinc.normal, normalScale: new THREE.Vector2(0.8, 0.8),
+        roughness: .5, metalness: .6, envMapIntensity: .95
+      });
+      var under = new THREE.MeshStandardMaterial({ color: 0x14161A, roughness: 1 });
+      var m = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
+        [side, side, top, under, side, side], n);
+      m.frustumCulled = false;
+      m.count = 0;
+      scene.add(m);
+      return m;
+    }
+
+    var CLASSES = [
+      blockMesh(6, 7, 0.30, false, spots.length),   /* haussmann, quiet     */
+      blockMesh(6, 7, 0.52, false, spots.length),   /* haussmann, lit up    */
+      blockMesh(18, 8, 0.34, true,  spots.length),  /* tower, quiet         */
+      blockMesh(18, 8, 0.58, true,  spots.length)   /* tower, lit up        */
+    ];
+    var fill = [0, 0, 0, 0];
+
+    var m8 = new THREE.Matrix4(), q8 = new THREE.Quaternion(),
+        up8 = new THREE.Vector3(0, 1, 0), tone = new THREE.Color(), roofs = [];
     spots.forEach(function (sp8) {
       var far = Math.abs(sp8[1]) > 900 || Math.abs(sp8[0]) > 900;
       var w8 = 48 + Math.random() * 46;
-      var h8 = far && Math.random() < 0.06 ? 120 + Math.random() * 90 : 26 + Math.random() * 34;
-      m8.compose(new THREE.Vector3(sp8[0], h8 / 2, sp8[1]),
-                 new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.random() * 0.5),
+      var tall = far && Math.random() < 0.06;
+      var h8 = tall ? 120 + Math.random() * 90 : 26 + Math.random() * 34;
+      var ci = (tall ? 2 : 0) + (Math.random() < 0.34 ? 1 : 0);
+      q8.setFromAxisAngle(up8, Math.random() * 0.5);
+      m8.compose(new THREE.Vector3(sp8[0], h8 / 2, sp8[1]), q8,
                  new THREE.Vector3(w8, h8, w8 * (0.75 + Math.random() * 0.6)));
-      if (Math.random() < 0.3) lit.setMatrixAt(nl++, m8); else plain.setMatrixAt(np++, m8);
+      var mesh = CLASSES[ci], k8 = fill[ci]++;
+      mesh.setMatrixAt(k8, m8);
+      /* Limestone is never one colour across a street. A little spread in
+         hue and lightness per building is what turns a row of identical
+         extrusions into a skyline. */
+      tone.setHSL(0.09 + (Math.random() - .5) * 0.05,
+                  0.10 + Math.random() * 0.10,
+                  (tall ? 0.42 : 0.55) + (Math.random() - .5) * 0.16);
+      mesh.setColorAt(k8, tone);
+
+      if (!tall) {
+        var rh = 6 + Math.random() * 5, dz = w8 * (0.75 + Math.random() * 0.6);
+        /* The 4-sided cylinder's flat starts at 45 degrees, so it is turned
+           an eighth of a turn to sit square on the block under it. */
+        var rq = new THREE.Quaternion().setFromAxisAngle(up8, Math.PI / 4);
+        rq.premultiply(q8);
+        roofs.push(new THREE.Matrix4().compose(
+          new THREE.Vector3(sp8[0], h8 + rh / 2, sp8[1]), rq,
+          new THREE.Vector3(w8 * 0.72, rh, dz * 0.72)));
+      }
     });
-    plain.count = np; lit.count = nl;
-    plain.instanceMatrix.needsUpdate = true; lit.instanceMatrix.needsUpdate = true;
-    scene.add(plain); scene.add(lit);
+    for (var ci2 = 0; ci2 < CLASSES.length; ci2++) {
+      CLASSES[ci2].count = fill[ci2];
+      CLASSES[ci2].instanceMatrix.needsUpdate = true;
+      if (CLASSES[ci2].instanceColor) CLASSES[ci2].instanceColor.needsUpdate = true;
+    }
+    /* The mansard. Every Paris block is a stone wall stopped by a cornice
+       with a steep grey roof set back above it, and the roofline is most of
+       what you actually recognise a Paris skyline by -- a flat-topped box
+       could be any city. One tapered instance per block, sat on the parapet
+       of the ones that were given a Haussmann elevation. */
+    var mans = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.62, 1, 1, 4, 1),
+      new THREE.MeshStandardMaterial({
+        map: zinc.map, normalMap: zinc.normal, normalScale: new THREE.Vector2(0.7, 0.7),
+        roughness: .55, metalness: .5, envMapIntensity: .9 }),
+      roofs.length);
+    mans.frustumCulled = false;
+    for (var ri = 0; ri < roofs.length; ri++) mans.setMatrixAt(ri, roofs[ri]);
+    mans.instanceMatrix.needsUpdate = true;
+    scene.add(mans);
   })();
 
   /* ── people, walking the esplanade and the gardens ── */
@@ -656,6 +1043,41 @@ export function mount(root, options) {
   key.shadow.normalBias = 1.1;
   key.shadow.camera.updateProjectionMatrix();
 
+  /* == compositing =======================================================
+     Rendering straight to the canvas clips every value at white, so a lit
+     window, a lamp and the beacon all come out the same flat cream and the
+     scene reads as a drawing of night rather than night. This renders into
+     a half-float target instead, where a light can be brighter than white,
+     and lets the bright parts bleed the way a camera's does before the tone
+     curve brings it back. It is the difference between paint and light.
+
+     Same gate as the shadow: a machine that cannot afford a second pass
+     gets the scene rendered directly, which is exactly what it was. */
+  var composer = null, bloom = null;
+  if (HEAVY) {
+    try {
+      var sz0 = renderer.getDrawingBufferSize(new THREE.Vector2());
+      var hdr = new THREE.WebGLRenderTarget(sz0.x, sz0.y, {
+        type: THREE.HalfFloatType,
+        samples: 4                       /* antialias:true does not reach a
+                                            render target; this does */
+      });
+      composer = new EffectComposer(renderer, hdr);
+      composer.addPass(new RenderPass(scene, camera));
+      /* Threshold high enough that the dusk sky itself does not bloom --
+         only the things that are actually emitting. */
+      bloom = new UnrealBloomPass(new THREE.Vector2(sz0.x, sz0.y), 0.9, 0.55, 0.78);
+      composer.addPass(bloom);
+      /* OutputPass is what applies the tone map and the colour space now:
+         the renderer only does that when it draws to the canvas itself. */
+      composer.addPass(new OutputPass());
+    } catch (e) { composer = null; }
+  }
+
+  function draw() {
+    if (composer) composer.render(); else renderer.render(scene, camera);
+  }
+
   if (HEAVY) {
     scene.traverse(function (o) {
       if (!o.isMesh && !o.isInstancedMesh) return;
@@ -708,8 +1130,18 @@ export function mount(root, options) {
 
   function resize() {
     var w = canvas.clientWidth || 1, hgt = canvas.clientHeight || 1;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    /* Compositing means every pixel is touched several times over -- the
+       scene, then the bloom's mip chain, then the tone pass. On a retina
+       hero that is four times the work of the plain path, so the ratio is
+       capped lower when it is on. Bloom softens edges anyway, which is
+       exactly the detail the extra samples were buying. */
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, composer ? 1.5 : 2));
     renderer.setSize(w, hgt, false);
+    if (composer) {
+      var dpr = renderer.getPixelRatio();
+      composer.setSize(w, hgt);
+      if (bloom) bloom.setSize(w * dpr, hgt * dpr);
+    }
     camera.aspect = w / hgt; camera.updateProjectionMatrix();
   }
 
@@ -746,11 +1178,15 @@ export function mount(root, options) {
       if (bt.position.x > 2100) bt.position.x = -2100;
       if (bt.position.x < -2100) bt.position.x = 2100;
     }
+    /* the river runs; two normal layers at different speeds, so the
+       highlights break up instead of sliding as one sheet */
+    waterN1.offset.set(clock * 0.06, clock * 0.018);
+    waterN2.offset.set(-clock * 0.035, clock * 0.03);
     lighthouse.rotation.y = clock * 3.4;
     rove.position.set(Math.sin(clock * 0.9 + 2) * 250, 150 + Math.sin(clock * 1.3) * 70, Math.cos(clock * 0.9 + 2) * 250);
     uplight.intensity = 2.4 + Math.sin(clock * 2.2) * 0.22;
 
-    renderer.render(scene, camera);
+    draw();
     raf = visible ? requestAnimationFrame(frame) : null;
   }
 
@@ -779,5 +1215,5 @@ export function mount(root, options) {
     if (visible && !raf) { resize(); onScroll(); raf = requestAnimationFrame(frame); }
   }, { rootMargin: "120px" }).observe(section);
 
-  resize(); onScroll(); apply(0.012); renderer.render(scene, camera);
+  resize(); onScroll(); apply(0.012); draw();
 }
