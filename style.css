@@ -927,7 +927,11 @@ body > footer { position: relative; z-index: 1; }
   z-index: 0;
   pointer-events: none;
   opacity: 0;
-  background: radial-gradient(120% 90% at 50% 34%, #2C3140 0%, #191C24 52%, #101218 100%);
+  /* Daylight. The canvas over this is transparent, so this IS the sky the
+     Arc stands in -- the same arrangement the cathedral's pin uses, and the
+     reason that one reads as part of the page rather than a dark window cut
+     into it. */
+  background: linear-gradient(#A9C6DD 0%, #C6D8E3 34%, #E4E0D4 68%, var(--v2-paper) 100%);
   transition: opacity 900ms ease;
 }
 .backdrop.is-ready.is-live { opacity: 1; }
@@ -942,18 +946,13 @@ body > footer { position: relative; z-index: 1; }
   content: "";
   position: absolute;
   inset: 0;
+  /* A pale veil, not a shroud. It exists only to keep the panes' contrast
+     honest where the sky behind them is brightest -- the monument is meant
+     to be plainly visible turning behind them, and the old dark scrim left
+     it a smudge nobody would notice moving. */
   background:
-    /* The model is a capture, so it ends where the photographs ran out: a torn
-       edge a few metres above the pavement, with nothing under it. Rather than
-       pretend otherwise, the foot of the frame darkens and the monument stands
-       out of it. Weighted low: earlier this started at the middle of the
-       screen and blacked out every gap between the panes, which is where the
-       monument is actually meant to be seen. */
-    /* Lighter than it was. The scene behind is a floodlit monument in a
-       city of lit windows, and it is meant to be seen -- three coats of
-       scrim over it left a dark smudge nobody would notice turning. */
-    linear-gradient(180deg, rgba(10, 12, 16, 0) 70%, rgba(10, 12, 16, .3) 88%, rgba(10, 12, 16, .68) 100%),
-    radial-gradient(84% 64% at 50% 40%, rgba(20, 24, 34, 0) 0%, rgba(14, 16, 22, .16) 70%, rgba(10, 12, 16, .42) 100%);
+    linear-gradient(180deg, rgba(245, 242, 234, .32) 0%, rgba(245, 242, 234, 0) 34%,
+                            rgba(245, 242, 234, 0) 74%, rgba(245, 242, 234, .40) 100%);
 }
 
 /* Every section has to be positioned now, not just the ones over the monument.
@@ -999,13 +998,13 @@ html.has-backdrop #control > .container {
   border-radius: clamp(14px, 1.6vw, 22px);
   -webkit-backdrop-filter: blur(9px) saturate(118%);
           backdrop-filter: blur(9px) saturate(118%);
-  box-shadow: 0 30px 70px rgba(9, 11, 15, .38), 0 1px 0 rgba(255, 255, 255, .05) inset;
+  box-shadow: 0 34px 80px rgba(40, 44, 52, .22), 0 1px 0 rgba(255, 255, 255, .5) inset;
 }
 
 /* dark panes */
 html.has-backdrop #night-operations > .container,
 html.has-backdrop #control > .container {
-  background: rgba(14, 17, 16, .56);
+  background: rgba(16, 19, 18, .82);
   border: 1px solid rgba(255, 255, 255, .085);
 }
 
@@ -1014,7 +1013,7 @@ html.has-backdrop #human-handoff > .container,
 html.has-backdrop #demo > .container,
 html.has-backdrop #operating-layer > .container,
 html.has-backdrop #implementation > .container {
-  background: rgba(247, 246, 241, .74);
+  background: rgba(250, 249, 245, .8);
   border: 1px solid rgba(255, 255, 255, .5);
 }
 
@@ -1027,9 +1026,12 @@ html.has-backdrop #demo,
 html.has-backdrop #operating-layer,
 html.has-backdrop #implementation,
 html.has-backdrop #control {
-  /* Air between the panes, so the monument is seen whole in the gaps rather
-     than only through the glass. This is where the run breathes. */
-  padding: clamp(3rem, 7vw, 7rem) 0;
+  /* Air between the panes, so the monument is seen whole in the gaps -- and
+     so a section is finished before the next is on screen. At the old
+     spacing the operating layer was still being read while implementation
+     was already climbing over the bottom of the window, which is the
+     complaint about a slide "not even done". */
+  padding: clamp(5.5rem, 13vw, 15rem) 0;
 }
 
 /* .demo-v2 clips its own overflow, which would cut the glass corners off. */
