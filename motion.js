@@ -76,11 +76,23 @@
     ['footer .footer-container',          'up']
   ];
 
-  /* How much viewport each element's move is spread across. Wider reads as more
-     clearly hand-driven; too wide and nothing ever looks settled. */
-  var ENTER  = 0.98;   /* progress 0 while the element's top is this far down */
-  var SETTLE = 0.42;   /* progress 1 once that edge has risen to here */
+  /* How much viewport each element's move is spread across.
+     ENTER is above 1, so an element starts moving just BEFORE it appears and is
+     already part way in when it first crosses the bottom edge. SETTLE sits low
+     on the screen on purpose: settling it half way up meant everything in the
+     lower half of the viewport was mid-fade at all times, so reading down the
+     page you met text that was not there yet. Now anything above the bottom
+     third is fully arrived. */
+  var ENTER  = 1.06;   /* progress 0 while the element's top is this far down */
+  var SETTLE = 0.55;   /* progress 1 once that edge has risen to here */
   var LAG    = 0.055;  /* each later sibling's window opens this much later */
+
+  /* Opacity finishes well before the movement does. Legibility and motion are
+     different jobs: the words should be readable almost immediately, and then
+     keep travelling into place while you scroll. Tying them together is what
+     makes scroll animation feel like content withheld rather than content
+     arriving. */
+  var FADE = 2.6;
 
   /* Travel is scaled to the viewport. A fixed sideways offset that reads well on
      a desktop is most of a phone's width, and since body carries
@@ -103,9 +115,12 @@
   };
 
   function clamp(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
-  /* Eases only the last of the travel, so things arrive rather than stopping
-     dead. The bulk stays close to linear, and so stays tied to the hand. */
-  function ease(t) { return 1 - Math.pow(1 - t, 2.2); }
+  /* Barely eased. A strong ease-out spends most of the movement in the first
+     part of the window, so by the time the element is legible it has almost
+     stopped -- which reads as text popping in rather than travelling. This is
+     close to linear, so the distance moved stays proportional to the distance
+     scrolled, with just enough curve to land softly. */
+  function ease(t) { return 1 - Math.pow(1 - t, 1.4); }
 
   function tag(el, dir, order) {
     if (!el || el.hasAttribute('data-motion')) return false;
@@ -148,6 +163,7 @@
   root.classList.add('motion-on');
   measure();
 
+  var atEnd = false;
   function progress(el) {
     var r = el.getBoundingClientRect();
     var vh = window.innerHeight || root.clientHeight;
@@ -157,6 +173,9 @@
     var lag = el._motion.order * LAG;
     var from = vh * (ENTER - lag);
     var to   = vh * (SETTLE - lag);
+    /* At the very foot of the document there is no scroll left to finish with,
+       so anything still travelling would be stranded part way. */
+    if (atEnd) return 1;
     return clamp((from - r.top) / (from - to || 1));
   }
 
@@ -171,7 +190,7 @@
       return;
     }
     el.style.transform = el._motion.shape(1 - p);
-    el.style.opacity = clamp(p * 1.5);
+    el.style.opacity = clamp(p * FADE);
   }
 
   /* Only elements near the viewport are recomputed on a frame. */
@@ -206,6 +225,7 @@
     requestAnimationFrame(function () {
       queued = false;
       var n = live.length, ps = new Array(n), i;
+      atEnd = (window.pageYOffset + window.innerHeight) >= (root.scrollHeight - 2);
       for (i = 0; i < n; i++) ps[i] = ease(progress(live[i]));
       for (i = 0; i < n; i++) paint(live[i], ps[i]);
     });
