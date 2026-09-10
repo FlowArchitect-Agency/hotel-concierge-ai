@@ -188,7 +188,10 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
 @media (max-width: 900px) { .hero { min-height: auto; }.hero-grid { grid-template-columns: 1fr; }.hero-content { max-width: 680px; }.hero-mockup { width: min(440px, 86%); margin: 1rem auto 0; }.problem-grid, .steps-container { grid-template-columns: 1fr; }.floating-badge.top { right: -8%; }.floating-badge.bottom { left: -9%; }.footer-container { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 620px) { nav { padding-inline: 1rem; }.nav-container, .container, .footer-container { width: min(100% - 2rem, 1180px); }.logo { font-size: 1.05rem; }.logo img { height: 36px !important; }.nav-cta { display: none; } section { padding: 5rem 0; }.hero { padding-top: 7.8rem; }.hero h1 { font-size: clamp(2.55rem, 12vw, 3.6rem); }.hero-sub { font-size: .95rem; }.hero-ctas { align-items: stretch; flex-direction: column; }.btn-primary { width: 100%; }.btn-outline { justify-content: center; }.hero-trust { align-items: flex-start; }.phone-frame { transform: none; }.phone-screen { min-height: 460px; }.floating-badge { display: none; }.chat-wrapper { margin-top: 2.2rem; }.chat-header { padding: .9rem; }.chat-header-assurance { display: none; }.chat-messages { height: 520px; padding: 1rem; }.chat-msg { max-width: 93%; }.chat-msg-copy { font-size: .86rem; }.recommendation-rail { grid-auto-columns: minmax(230px, 88%); }.partner-offer-rail { grid-auto-columns: minmax(264px, 88%); }.chat-input-area { padding-inline: .9rem; }.chat-input { min-height: 48px; font-size: 16px; }.chat-send { flex-basis: 48px; width: 48px; height: 48px; }.chat-widget.fullscreen { inset: 0; height: 100dvh; border-radius: 0; }.chat-widget.fullscreen .chat-header { flex: 0 0 auto; }.chat-widget.fullscreen .chat-messages { height: auto; padding-bottom: 1rem; }.chat-widget.fullscreen .chat-input-area { padding: .8rem .9rem calc(.8rem + env(safe-area-inset-bottom)); }.chat-widget.fullscreen .chat-footer-note { padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }.room-booking-action { max-width: 100%; }.footer-links { gap: .8rem; }.booking-fields-two, .booking-fields-three, .discovery-dialog .booking-fields-three { grid-template-columns: 1fr; }.booking-dialog, .discovery-dialog { padding: 1.4rem 1.1rem; }.booking-service-summary { align-items: flex-start; flex-direction: column; gap: .35rem; } }
 /* Keep the long hotel collection inside the chat scroller rather than expanding the page. */
-.chat-messages { min-height: 0; overscroll-behavior-y: contain; }.hotel-collection-panel { min-width: 0; }.hotel-collection-list { max-height: 320px; scrollbar-gutter: stable; }
+/* `contain` here swallowed the page scroll whenever the pointer was over the
+   thread, so the reader got stuck in the demo and could not carry on down the
+   page. The thread still scrolls; it just hands the scroll back at its end. */
+.chat-messages { min-height: 0; overscroll-behavior-y: auto; }.hotel-collection-panel { min-width: 0; }.hotel-collection-list { max-height: 320px; scrollbar-gutter: stable; }
 
 /* The complete service catalogue is intentionally a focused concierge view, not a second long chat message. */
 .collection-open { overflow: hidden; }.hotel-collection-launcher { display: grid; gap: .45rem; width: 100%; margin: .15rem 0 .8rem; padding: 1rem; color: var(--ink); background: #eee5d6; border-radius: 10px; box-shadow: 0 13px 30px rgba(28,37,43,.08); }.hotel-collection-launcher h3 { margin: 0; color: var(--navy); font: 600 1.25rem/1.15 var(--serif); }.hotel-collection-launcher > p:not(.hotel-collection-eyebrow) { margin: 0; color: var(--muted); font-size: .74rem; line-height: 1.5; }.hotel-collection-open { justify-self: start; min-height: 36px; margin-top: .22rem; padding: .58rem .82rem; color: var(--white); background: var(--navy); border-radius: 999px; cursor: pointer; font: 700 .6rem var(--sans); letter-spacing: .1em; text-transform: uppercase; transition: transform 180ms ease, background 180ms ease; }.hotel-collection-open:hover { background: var(--navy-soft); transform: translateY(-1px); }
@@ -820,21 +823,30 @@ button .ico, a .ico { pointer-events: none; }
   margin-bottom: 62vh;
 }
 
-/* The leading edge alternates so nine sections do not all arrive identically:
-   square-ish cards, then a wide shallow arc, the way crency.agency cuts one
-   section into the next. */
-#platform, #night-operations, #demo, #implementation, #discovery {
-  border-top-left-radius: clamp(18px, 2.6vw, 40px);
-  border-top-right-radius: clamp(18px, 2.6vw, 40px);
-}
-#chapter-prearrival, #human-handoff, #operating-layer, #control {
-  border-top-left-radius: 50% 4.5vw;
-  border-top-right-radius: 50% 4.5vw;
+/* One modest leading edge for all of them. The wide elliptical arc produced a
+   black scythe-shaped sliver wherever a dark section was the one being covered:
+   the curve exposed the section beneath through its corners, and against a pale
+   ground that read as a stray black shape floating over the page. Variety comes
+   from how the contents arrive instead, which is where it belongs. */
+#platform, #chapter-prearrival, #night-operations, #human-handoff,
+#demo, #operating-layer, #implementation, #control, #discovery {
+  border-top-left-radius: clamp(16px, 2.2vw, 34px);
+  border-top-right-radius: clamp(16px, 2.2vw, 34px);
 }
 
-/* The last card has nothing following it, so its hold would only be a band of
-   empty page above the footer -- which is what that gap was. */
-#discovery { margin-bottom: 0; }
+/* The closing call and the footer are one body. Left in the deck, #discovery
+   locked to the top while the footer scrolled up underneath it, which is what
+   made the end of the page feel broken. Out of the deck they travel together
+   and the page simply ends. */
+#discovery {
+  position: static;
+  min-height: 0;
+  margin-bottom: 0;
+  box-shadow: none;
+  border-radius: 0;
+  transform: none;
+  filter: none;
+}
 
 /* The footer is the last thing dealt. Without a position it would sit in the
    block layer, underneath every positioned section, and be covered by them. */

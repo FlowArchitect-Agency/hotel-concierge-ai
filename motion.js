@@ -145,6 +145,7 @@
     if (el.closest(SKIP)) return false;
     el.setAttribute('data-motion', dir);
     el._motion = { shape: SHAPE[dir] || SHAPE.up, order: order };
+    el._deck = el.closest(DECK_SEL);
     return true;
   }
 
@@ -187,9 +188,12 @@
 
   if (!items.length) return;
 
+  var DECK_SEL = '#platform, #chapter-prearrival, #night-operations,'
+               + '#human-handoff, #demo, #operating-layer, #implementation,'
+               + '#control';
   var DECK = ['#platform', '#chapter-prearrival', '#night-operations',
               '#human-handoff', '#demo', '#operating-layer', '#implementation',
-              '#control', '#discovery']
+              '#control']
     .map(function (sel) { return document.querySelector(sel); })
     .filter(Boolean);
 
@@ -257,6 +261,15 @@
     /* At the very foot of the document there is no scroll left to finish with,
        so anything still travelling would be stranded part way. */
     if (atEnd) return 1;
+
+    /* Once a stacked section has scrolled all the way through and locked, none
+       of its contents move relative to the viewport again -- so anything still
+       part way through its travel is frozen there for good. That is why the
+       last rows of a section were caught unfinished as the next one arrived.
+       A locked section's contents have arrived, by definition. */
+    var sec = el._deck;
+    if (sec && (sec.offsetTop + sec.offsetHeight - window.pageYOffset) <= vh + 2) return 1;
+
     return clamp((from - r.top) / (from - to || 1));
   }
 
