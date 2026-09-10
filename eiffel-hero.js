@@ -25,6 +25,7 @@
  *   });
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const DEFAULTS = {
     /* Never let the camera inside the 125 m base: below this the opening
@@ -201,9 +202,11 @@ export function mount(root, options) {
      Metal without something to reflect reads as plastic — this is what
      makes it look like iron. */
   var sky = document.createElement("canvas");
-  sky.width = 16; sky.height = 512;
+  var SW = 1024, SH = 512;
+  sky.width = SW; sky.height = SH;
   (function () {
-    var g = sky.getContext("2d").createLinearGradient(0, 0, 0, 512);
+    var c = sky.getContext("2d");
+    var g = c.createLinearGradient(0, 0, 0, SH);
     g.addColorStop(0.00, C.skyTop);
     g.addColorStop(0.26, C.skyUpper);
     g.addColorStop(0.46, C.skyMid);
@@ -213,7 +216,66 @@ export function mount(root, options) {
     g.addColorStop(0.87, C.skyBand);
     g.addColorStop(0.93, "#5A4A44");
     g.addColorStop(1.00, "#221C1B");
-    var c = sky.getContext("2d"); c.fillStyle = g; c.fillRect(0, 0, 16, 512);
+    c.fillStyle = g; c.fillRect(0, 0, SW, SH);
+
+    /* Stars in the upper band, fading out before the colour turns warm. */
+    c.fillStyle = "#FFFFFF";
+    for (var st = 0; st < 260; st++) {
+      var sy = Math.pow(Math.random(), 1.7) * SH * 0.42;
+      c.globalAlpha = 0.5 * (1 - sy / (SH * 0.42)) * (0.3 + Math.random() * 0.7);
+      c.fillRect(Math.random() * SW, sy, 1.4, 1.4);
+    }
+    c.globalAlpha = 1;
+
+    /* Cloud bars, lit warm underneath and cool on top, the way dusk stacks
+       them. Nothing here is meant to be looked at directly -- it exists so
+       the ironwork has varied highlights to catch instead of a flat wash. */
+    var hasBlur = false;
+    try { c.filter = "blur(9px)"; hasBlur = c.filter === "blur(9px)"; } catch (e) {}
+    for (var cl = 0; cl < 34; cl++) {
+      var cy = SH * (0.40 + Math.random() * 0.44),
+          cx = Math.random() * SW,
+          cw = 70 + Math.random() * 260,
+          ch = 4 + Math.random() * 9,
+          warm = (cy / SH - 0.4) / 0.44;
+      /* Each bar is drawn as a handful of overlapping lobes so the edge is
+         ragged rather than a clean ellipse -- a single ellipse at this size
+         reads as a lozenge painted on the sky, which is exactly what it is. */
+      for (var lo = 0; lo < 5; lo++) {
+        var lw = cw * (0.34 + Math.random() * 0.4),
+            lx = cx + (lo / 4 - 0.5) * cw * 1.3,
+            ly = cy + (Math.random() - 0.5) * ch * 1.4,
+            lh = ch * (0.6 + Math.random() * 0.7);
+        var cg = c.createLinearGradient(0, ly - lh, 0, ly + lh);
+        cg.addColorStop(0, "rgba(58,48,74," + (0.20 * (1 - warm * 0.5)).toFixed(3) + ")");
+        cg.addColorStop(1, "rgba(255," + Math.round(150 + warm * 70) + ",120," +
+                            (0.07 + warm * 0.17).toFixed(3) + ")");
+        c.fillStyle = cg;
+        c.beginPath();
+        if (c.ellipse) c.ellipse(lx, ly, lw, lh, 0, 0, Math.PI * 2);
+        else c.rect(lx - lw, ly - lh, lw * 2, lh * 2);
+        c.fill();
+      }
+    }
+    if (hasBlur) c.filter = "none";
+
+    /* The sun, sitting on the haze just above the horizon, roughly where the
+       key light comes from. This is the highlight the metal reflects. */
+    var sux = SW * 0.62, suy = SH * 0.795;
+    var bloom = c.createRadialGradient(sux, suy, 0, sux, suy, SH * 0.30);
+    bloom.addColorStop(0.00, "rgba(255,244,214,0.95)");
+    bloom.addColorStop(0.06, "rgba(255,214,150,0.72)");
+    bloom.addColorStop(0.26, "rgba(240,150,92,0.30)");
+    bloom.addColorStop(1.00, "rgba(240,150,92,0)");
+    c.fillStyle = bloom; c.fillRect(0, 0, SW, SH);
+    c.fillStyle = "#FFF6DE";
+    c.beginPath(); c.arc(sux, suy, SH * 0.022, 0, Math.PI * 2); c.fill();
+
+    /* The city's own glow, banded along the horizon. */
+    var hz = c.createLinearGradient(0, SH * 0.86, 0, SH);
+    hz.addColorStop(0, "rgba(255,186,110,0.34)");
+    hz.addColorStop(1, "rgba(24,18,20,0)");
+    c.fillStyle = hz; c.fillRect(0, SH * 0.86, SW, SH * 0.14);
   })();
   var skyTex = new THREE.CanvasTexture(sky);
   skyTex.mapping = THREE.EquirectangularReflectionMapping;
@@ -243,7 +305,27 @@ export function mount(root, options) {
   var iron = new THREE.MeshStandardMaterial({
     color: C.iron, metalness: 0.95, roughness: 0.33, envMapIntensity: 0.85
   });
-  var beam = new THREE.BoxGeometry(1, 1, 1);
+  /* Eiffel's members are not solid bars: each is a built-up girder, four
+     angle-iron rails riveted around an open web. A single box reads as a
+     matchstick as soon as the camera comes close. This keeps the same unit
+     footprint -- so every instance matrix below is untouched -- but gives
+     the profile four corner rails around a slimmer core, which is what
+     catches the light along an edge and stops the tower looking sawn from
+     plank. Five boxes an instance, ~78k triangles for the whole tower. */
+  var beam = (function () {
+    var core = new THREE.BoxGeometry(0.42, 1, 0.42), parts = [core], o = 0.34, ci;
+    var corners = [[-o, -o], [-o, o], [o, -o], [o, o]];
+    for (ci = 0; ci < 4; ci++) {
+      var rail = new THREE.BoxGeometry(0.32, 1, 0.32);
+      rail.translate(corners[ci][0], 0, corners[ci][1]);
+      parts.push(rail);
+    }
+    try {
+      var merged = mergeGeometries(parts, false);
+      if (merged) return merged;
+    } catch (e) { /* fall through to the plain bar */ }
+    return new THREE.BoxGeometry(1, 1, 1);
+  })();
   var lattice = new THREE.InstancedMesh(beam, iron, members.length);
   lattice.frustumCulled = false;
 
@@ -329,16 +411,46 @@ export function mount(root, options) {
 
   /* ═══ the site: Champ de Mars to the south, the Seine and
          Trocadéro to the north — the tower stands at the join ═══ */
+  /* Windows. A block of untextured stone at dusk is the single thing that
+     most makes a city read as scenery flats -- the buildings are the right
+     shape but nothing is happening inside them. This paints a grid of lit
+     and unlit panes into a small canvas used as an emissive map, so each
+     box lights from within instead of being a uniformly shaded solid. Box
+     UVs run 0..1 per face regardless of the instance's scale, so the grid
+     is authored wider than tall to come out roughly square on a block. */
+  function windowTex(cols, rows, lit) {
+    var cv = document.createElement("canvas"), px = 8;
+    cv.width = cols * px; cv.height = rows * px;
+    var x2 = cv.getContext("2d");
+    x2.fillStyle = "#000000"; x2.fillRect(0, 0, cv.width, cv.height);
+    for (var ry = 0; ry < rows; ry++) {
+      for (var rx = 0; rx < cols; rx++) {
+        if (Math.random() > lit) continue;
+        var warm = Math.random();
+        x2.fillStyle = warm < 0.16 ? "#8FB6D8" : (warm < 0.55 ? "#FFC97E" : "#FFE0AC");
+        x2.globalAlpha = 0.55 + Math.random() * 0.45;
+        x2.fillRect(rx * px + 2, ry * px + 2, px - 4, px - 4);
+      }
+    }
+    var t2 = new THREE.CanvasTexture(cv);
+    t2.colorSpace = THREE.SRGBColorSpace;
+    t2.magFilter = THREE.NearestFilter;
+    return t2;
+  }
+
   var MAT = {
     lawn:   new THREE.MeshStandardMaterial({ color: 0x33482B, roughness: .97, metalness: 0, envMapIntensity: .18 }),
     gravel: new THREE.MeshStandardMaterial({ color: 0x736C5E, roughness: .96, metalness: 0, envMapIntensity: .2 }),
-    stone:  new THREE.MeshStandardMaterial({ color: 0x847C6C, roughness: .86, metalness: .05, envMapIntensity: .3 }),
+    stone:  new THREE.MeshStandardMaterial({ color: 0x847C6C, roughness: .86, metalness: .05, envMapIntensity: .3,
+              emissive: 0xFFFFFF, emissiveIntensity: 0.55, emissiveMap: windowTex(14, 5, 0.34) }),
     roof:   new THREE.MeshStandardMaterial({ color: 0x4A4E56, roughness: .7,  metalness: .3 }),
     hedge:  new THREE.MeshStandardMaterial({ color: 0x33482C, roughness: .95, metalness: 0 })
   };
   function slab(w, d, mat, x, y, z, ry) {
     var m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, d), mat);
-    m.position.set(x, y, z); if (ry) m.rotation.y = ry; scene.add(m); return m;
+    m.position.set(x, y, z); if (ry) m.rotation.y = ry;
+    m.receiveShadow = true; m.castShadow = true;
+    scene.add(m); return m;
   }
 
   /* ── the Champ de Mars: formal lawns running away from the tower ── */
@@ -446,11 +558,12 @@ export function mount(root, options) {
       }
     }
     var plain = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x5C5A52, roughness: .92, metalness: .05, envMapIntensity: .22 }),
+      new THREE.MeshStandardMaterial({ color: 0x5C5A52, roughness: .92, metalness: .05, envMapIntensity: .22,
+        emissive: 0xFFFFFF, emissiveIntensity: 0.5, emissiveMap: windowTex(16, 7, 0.16) }),
       spots.length);
     var lit = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshStandardMaterial({ color: 0x494740, roughness: .8, metalness: .08,
-        emissive: 0xFFC272, emissiveIntensity: 0.5 }), spots.length);
+        emissive: 0xFFFFFF, emissiveIntensity: 1.15, emissiveMap: windowTex(16, 7, 0.46) }), spots.length);
     plain.frustumCulled = false; lit.frustumCulled = false;
     var m8 = new THREE.Matrix4(), q8 = new THREE.Quaternion(), np = 0, nl = 0;
     spots.forEach(function (sp8) {
@@ -515,6 +628,45 @@ export function mount(root, options) {
   var uplight = new THREE.PointLight(0xFFB861, 260000, 640, 2); uplight.position.set(0, 10, 0); scene.add(uplight);
   var upper = new THREE.PointLight(0xFFC87A, 90000, 460, 2); upper.position.set(0, 150, 0); group.add(upper);
   var rove = new THREE.PointLight(0xD8B577, 60000, 520, 2); scene.add(rove);
+
+  /* ── shadows ──────────────────────────────────────────────────────────
+     Without them every solid in the scene is lit identically on every face
+     and the whole park reads as painted card. One caster is enough: the
+     low key light throws the tower's own lattice across the Champ de Mars,
+     which is both the cheapest and the most legible shadow in the frame.
+     The ortho box is framed on the tower rather than the site, so the
+     2048 map is spent entirely on the ironwork. */
+  /* A second full pass over the tower is not free. Phones and low-core
+     machines get the scene without it rather than a slideshow with it --
+     everything else about the frame is unchanged, so nothing looks broken,
+     it just loses the cast shadow. */
+  var HEAVY = !(window.matchMedia && window.matchMedia("(pointer: coarse)").matches) &&
+              (navigator.hardwareConcurrency || 4) >= 4 &&
+              Math.min(window.innerWidth, window.innerHeight) > 520;
+  var SHADOW_MAP = (navigator.hardwareConcurrency || 4) >= 8 ? 2048 : 1024;
+
+  renderer.shadowMap.enabled = HEAVY;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  key.castShadow = HEAVY;
+  key.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+  key.shadow.camera.left = -300; key.shadow.camera.right = 300;
+  key.shadow.camera.top = 360;   key.shadow.camera.bottom = -70;
+  key.shadow.camera.near = 60;   key.shadow.camera.far = 1600;
+  key.shadow.bias = -0.0007;
+  key.shadow.normalBias = 1.1;
+  key.shadow.camera.updateProjectionMatrix();
+
+  if (HEAVY) {
+    scene.traverse(function (o) {
+      if (!o.isMesh && !o.isInstancedMesh) return;
+      /* Unlit materials neither cast a believable shadow nor receive one --
+         the lamps and the beacon tip are meant to be sources, not solids. */
+      if (o.material && o.material.isMeshBasicMaterial) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
+    ground.castShadow = false;
+  }
 
   /* ── drive ── */
   var progress = 0, eased = 0, clock = 0, visible = false, raf = null;
