@@ -11,8 +11,8 @@ import {
   isPostCheckoutPositive,
   isPostCheckoutScenario,
   matchingServices,
+  operationalServiceType,
   OPERATIONAL_REPLIES,
-  parseExternalResults,
   parseGuestInput,
   parseModelJson,
   normalizeServiceType,
@@ -21,8 +21,23 @@ import {
   postCheckoutPositiveReply,
   shouldSearchExternal,
 } from './concierge.js';
+import {
+  applySemanticPlan,
+  buildSemanticControllerPrompt,
+  parseSemanticControllerOutput,
+} from './semantic-controller.js';
+import { buildToolRequests, createToolExecutor, toolResultMap } from './tools/index.js';
+import { buildDiscoveryBriefPdf } from './discovery-brief-pdf.js';
+import { completeStructured, llmConfigurationStatus } from './llm/index.js';
+import {
+  buildResponseContract,
+  buildResponseRepairPrompt,
+  contextualSafeFallback,
+  validateResponseAdherence,
+} from './response-contract.js';
 
 const RECENT_REQUESTS = new Map();
+let recentRequestsLastSweptAt = 0;
 const RECENT_WHATSAPP_MESSAGES = new Map();
 const SERVICE_CACHE_TTL_MS = 120_000;
 const WHATSAPP_MESSAGE_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -106,10 +121,27 @@ function twimlResponse(message = '', status = 200) {
   });
 }
 
+// A Worker isolate can stay warm and keep handling requests for a long time,
+// and this map never used to remove a key once an IP went idle -- only the
+// array under each key shrank. Real traffic from many distinct visitor IPs
+// would let it grow without bound for the life of the isolate. Sweeping
+// fully-idle IPs out periodically (not on every call, to avoid an O(map
+// size) scan on every request once it's large) keeps it bounded to
+// currently-active IPs instead.
+const RECENT_REQUESTS_SWEEP_INTERVAL_MS = 60_000;
+function sweepRecentRequests(now) {
+  if (now - recentRequestsLastSweptAt < RECENT_REQUESTS_SWEEP_INTERVAL_MS) return;
+  recentRequestsLastSweptAt = now;
+  for (const [ip, timestamps] of RECENT_REQUESTS) {
+    if (!timestamps.length || now - timestamps[timestamps.length - 1] >= 60_000) RECENT_REQUESTS.delete(ip);
+  }
+}
+
 function rateLimited(request) {
   const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for');
   if (!ip) return false;
   const now = Date.now();
+  sweepRecentRequests(now);
   const timestamps = (RECENT_REQUESTS.get(ip) || []).filter((value) => now - value < 60_000);
   timestamps.push(now);
   RECENT_REQUESTS.set(ip, timestamps);
@@ -261,7 +293,8 @@ async function sendWhatsAppText(env, recipient, text) {
 }
 
 function requireSecrets(env) {
-  const missing = ['GROQ_API_KEY', 'AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID'].filter((name) => !env[name]);
+  const missing = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID'].filter((name) => !env[name]);
+  if (!llmConfigurationStatus(env).configured) missing.push('LLM provider configuration');
   if (missing.length) throw new Error(`Service configuration is incomplete: ${missing.join(', ')}`);
 }
 
@@ -275,19 +308,116 @@ function requireLeadsAirtable(env) {
   if (missing.length) throw new Error(`Lead capture configuration is incomplete: ${missing.join(', ')}`);
 }
 
+const AIRTABLE_MAX_ATTEMPTS = 3;
+const AIRTABLE_RETRY_BASE_MS = 250;
+const AIRTABLE_MAX_RETRY_AFTER_MS = 3_000;
+
+function airtableRetryDelayMs(retryAfter, attempt) {
+  const numericSeconds = Number(retryAfter);
+  if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+    return Math.min(Math.round(numericSeconds * 1_000), AIRTABLE_MAX_RETRY_AFTER_MS);
+  }
+  const retryAt = Date.parse(String(retryAfter || ''));
+  if (Number.isFinite(retryAt)) {
+    return Math.min(Math.max(retryAt - Date.now(), 0), AIRTABLE_MAX_RETRY_AFTER_MS);
+  }
+  return Math.min(AIRTABLE_RETRY_BASE_MS * (2 ** attempt), AIRTABLE_MAX_RETRY_AFTER_MS);
+}
+
+function waitForAirtableRetry(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+// Marks an error as an upstream/provider failure rather than bad guest input.
+// Route handlers pick the HTTP status by pattern-matching the error message,
+// and provider messages can contain validation-ish words (Airtable's own
+// "INVALID_REQUEST_UNKNOWN" being the obvious trap), which would report an
+// upstream outage to the browser as a 400 client error. The flag is checked
+// before any message matching.
+function upstreamFailure(message) {
+  const error = new Error(message);
+  error.isUpstream = true;
+  return error;
+}
+
+// Extracts Airtable's own error type/message from a failed response. Never
+// throws and never returns the request body (which would echo guest text into
+// logs); the response body here is Airtable's error envelope only.
+async function airtableErrorDetail(result) {
+  try {
+    const raw = (await result.text()).slice(0, 600);
+    if (!raw) return 'no response body';
+    try {
+      const error = JSON.parse(raw)?.error;
+      if (typeof error === 'string') return error;
+      if (error?.type || error?.message) return [error.type, error.message].filter(Boolean).join(' - ');
+    } catch { /* not JSON; fall through to the raw text */ }
+    return raw;
+  } catch {
+    return 'error body unreadable';
+  }
+}
+
 async function airtable(env, table, { method = 'GET', params, fields, recordId = '', baseId = env.AIRTABLE_BASE_ID } = {}) {
   const recordPath = recordId ? `/${encodeURIComponent(recordId)}` : '';
   const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}${recordPath}`);
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }
-  const result = await fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, 'Content-Type': 'application/json' },
-    body: fields ? JSON.stringify({ fields, typecast: true }) : undefined,
-  });
-  if (!result.ok) throw new Error(`Airtable ${table} request failed (${result.status}).`);
-  return result.json();
+  for (let attempt = 0; attempt < AIRTABLE_MAX_ATTEMPTS; attempt += 1) {
+    const result = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, 'Content-Type': 'application/json' },
+      body: fields ? JSON.stringify({ fields, typecast: true }) : undefined,
+    });
+    if (result.ok) return result.json();
+    if (result.status !== 429 || attempt === AIRTABLE_MAX_ATTEMPTS - 1) {
+      // Airtable's status alone does not identify the problem: a plan record
+      // cap, a bad field name and a revoked token all surface as 4xx. Carry the
+      // provider's own error type/message into the thrown error and the log,
+      // otherwise every failure here is indistinguishable in Workers Logs --
+      // which is how an exhausted record cap can silently drop guest bookings.
+      const detail = await airtableErrorDetail(result);
+      console.error(`Airtable ${method} ${table} failed (${result.status}): ${detail}`);
+      throw upstreamFailure(`Airtable ${table} request failed (${result.status}): ${detail}`);
+    }
+    await waitForAirtableRetry(airtableRetryDelayMs(result.headers.get('Retry-After'), attempt));
+  }
+  throw upstreamFailure(`Airtable ${table} request failed after ${AIRTABLE_MAX_ATTEMPTS} attempts (rate limited).`);
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function uploadAirtableAttachment(env, { recordId, fieldId, filename, bytes, baseId = env.LEADS_AIRTABLE_BASE_ID }) {
+  if (!fieldId) throw new Error('Discovery Brief PDF field configuration is incomplete.');
+  const url = `https://content.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(recordId)}/${encodeURIComponent(fieldId)}/uploadAttachment`;
+  for (let attempt = 0; attempt < AIRTABLE_MAX_ATTEMPTS; attempt += 1) {
+    const result = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        filename,
+        contentType: 'application/pdf',
+        file: bytesToBase64(bytes),
+      }),
+    });
+    if (result.ok) return result.json();
+    if (result.status !== 429 || attempt === AIRTABLE_MAX_ATTEMPTS - 1) {
+      throw new Error(`Airtable discovery brief attachment upload failed (${result.status}).`);
+    }
+    await waitForAirtableRetry(airtableRetryDelayMs(result.headers.get('Retry-After'), attempt));
+  }
+  throw new Error(`Airtable discovery brief attachment upload failed after ${AIRTABLE_MAX_ATTEMPTS} attempts.`);
 }
 
 async function fetchServices(env, { bypassCache = false } = {}) {
@@ -334,13 +464,21 @@ async function fetchManagerMetrics(env) {
   let offset = '';
   do {
     const payload = await airtable(env, 'Requests', {
-      params: { pageSize: 100, ...(offset ? { offset } : {}) },
+      params: {
+        pageSize: 100,
+        // Keep demo traffic out of the production aggregate before it reaches
+        // the response calculation; the in-memory check below remains a
+        // defensive guard for legacy or inconsistent Airtable rows.
+        filterByFormula: 'NOT({Is_Demo})',
+        ...(offset ? { offset } : {}),
+      },
     });
     records.push(...(payload.records || []));
     offset = String(payload.offset || '');
   } while (offset);
 
   const operationalTickets = records.filter((record) => {
+    if (record?.fields?.Is_Demo === true) return false;
     const serviceType = String(record?.fields?.ServiceType || '').trim().toLowerCase();
     return OPERATIONAL_REQUEST_TYPES.has(serviceType);
   }).length;
@@ -426,13 +564,14 @@ async function fetchFacts(env) {
   const fallback = `- Hotel: ${env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris'}\n- City: ${env.HOTEL_CITY || 'Paris'}`;
   try {
     const payload = await airtable(env, 'Settings', { params: { pageSize: 50 } });
-    const lines = (payload.records || []).map((record) => {
+    const entries = (payload.records || []).map((record) => {
       const fields = record.fields || {};
-      return fields.Key ? `- ${fields.Key}: ${fields.Value ?? ''}` : '';
+      return fields.Key ? { key: String(fields.Key), value: String(fields.Value ?? '') } : null;
     }).filter(Boolean);
-    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', text: lines.join('\n') || fallback };
+    const text = entries.map((entry) => `- ${entry.key}: ${entry.value}`).join('\n') || fallback;
+    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', entries, text };
   } catch {
-    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', text: fallback };
+    return { hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', entries: [], text: fallback };
   }
 }
 
@@ -485,102 +624,261 @@ function languagePreferenceResponse(input) {
   };
 }
 
-function locationSearchHint(location) {
-  const value = String(location || '').trim();
-  if (/eiffel tower|tour eiffel/i.test(value)) return 'Paris 7th arrondissement';
-  return value;
-}
-
-async function googleSearch(env, query, classification) {
-  const url = new URL('https://app.scrapingbee.com/api/v1/store/google');
-  url.searchParams.set('search', query);
-  url.searchParams.set('country_code', 'fr');
-  url.searchParams.set('language', 'en');
-  url.searchParams.set('light_request', 'true');
-  try {
-    const result = await fetch(url, { headers: { Authorization: `Bearer ${env.SCRAPINGBEE_API_KEY}` } });
-    if (!result.ok) return [];
-    return parseExternalResults(await result.json(), classification);
-  } catch {
-    return [];
-  }
-}
-
-async function externalSearch(env, input, classification) {
-  if (!env.SCRAPINGBEE_API_KEY) return [];
-  const city = env.HOTEL_CITY || 'Paris';
-  const location = locationSearchHint(classification.location);
-  // Keep purpose-built searches for cuisines and final-day itineraries: they
-  // carry stronger constraints than a general semantic summary. The planner
-  // supplies a query only for genuinely unfamiliar discovery requests.
-  const plannedQuery = !classification.cuisine && classification.category !== 'itinerary'
-    ? String(classification.searchQuery || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 180)
-    : '';
-  const primaryQuery = plannedQuery
-    ? `${plannedQuery} official website`
-    : classification.cuisine
-      ? `${classification.cuisine.label} restaurant ${location || city} official website`
-      : classification.category === 'itinerary'
-        ? `${city} Louvre museum Seine cruise official website`
-        : `${classification.category || 'local service'} ${city} official website`;
-  const options = await googleSearch(env, primaryQuery, classification);
-  if (options.length) return options;
-
-  // A combined itinerary query can occasionally return no useful result from
-  // a changing search index. Retry with a broader, guest-safe itinerary
-  // phrasing before asking the guest to refine a perfectly clear request.
-  if (classification.category === 'itinerary') {
-    return googleSearch(env, `${city} museum visit and Seine cruise official website`, classification);
-  }
-
-  // Google results are volatile. If a narrowly located cuisine search yields
-  // no directly verifiable venue, retry once with the same strict cuisine but
-  // city-wide scope instead of telling the guest we found nothing.
-  if (classification.cuisine && location) {
-    return googleSearch(env, `${classification.cuisine.label} restaurant ${city} official website`, classification);
-  }
-  return [];
-}
-
 function preferenceForOneRecommendation(message) {
   const text = String(message ?? '').toLowerCase();
   return /\b(the best|best one|only one|just one|one that'?s best|one excellent)\b/.test(text);
 }
 
-async function callGroq(env, prompt, { maxTokens = 350, router = false } = {}) {
-  const models = [
-    router ? (env.GROQ_ROUTER_MODEL || env.GROQ_MODEL || 'qwen/qwen3.6-27b') : (env.GROQ_MODEL || 'qwen/qwen3.6-27b'),
-    env.GROQ_FALLBACK_MODEL || 'openai/gpt-oss-20b',
-  ].filter((model, index, values) => model && values.indexOf(model) === index);
-  let failure = '';
-  for (const model of models) {
-    try {
-      const body = {
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-        ...(model.startsWith('qwen/') ? { reasoning_effort: 'none', reasoning_format: 'hidden' } : {}),
-      };
-      const result = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!result.ok) {
-        failure = `http_${result.status}`;
-        continue;
-      }
-      const data = await result.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (content) return { content, providerFailure: '' };
-      failure = 'empty_response';
-    } catch {
-      failure = 'request_error';
-    }
+function serviceFromTool(service) {
+  return {
+    name: String(service?.name || '').trim(),
+    category: String(service?.category || '').trim(),
+    description: String(service?.description || '').trim(),
+    tags: String(service?.tags || '').trim(),
+    subType: String(service?.sub_type || '').trim(),
+    price: service?.price_eur ?? null,
+    duration: service?.duration_mins ?? null,
+    location: String(service?.location || '').trim(),
+    phone: String(service?.phone || '').trim(),
+    imageUrl: String(service?.image_url || '').trim(),
+    websiteUrl: String(service?.website_url || '').trim(),
+    isPartner: Boolean(service?.is_partner),
+    active: true,
+  };
+}
+
+function uniqueServices(services) {
+  const seen = new Set();
+  return services.filter((service) => {
+    const key = String(service?.name || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizedEntity(value) {
+  return normalized(String(value || '')).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function isRejectedEntity(name, plan) {
+  const candidate = normalizedEntity(name);
+  if (!candidate) return false;
+  return (plan?.rejectedEntities || []).some((entity) => {
+    const rejected = normalizedEntity(entity);
+    // The semantic controller resolves the entity. Code only performs a
+    // bounded name comparison to avoid rendering that same verified item.
+    return rejected && (candidate === rejected || candidate.includes(rejected) || rejected.includes(candidate));
+  });
+}
+
+function withoutRejectedServices(services, plan) {
+  return (services || []).filter((service) => !isRejectedEntity(service?.name, plan));
+}
+
+function withoutRejectedOptions(options, plan) {
+  return (options || []).filter((option) => !isRejectedEntity(option?.name, plan));
+}
+
+function visibleToolResults(toolResults, plan) {
+  const hotelServices = toolResults?.hotel_services;
+  const externalSearch = toolResults?.external_search;
+  return {
+    ...toolResults,
+    hotel_services: hotelServices?.data?.services
+      ? { ...hotelServices, data: { ...hotelServices.data, services: withoutRejectedServices(hotelServices.data.services, plan) } }
+      : hotelServices,
+    external_search: externalSearch?.data?.results
+      ? { ...externalSearch, data: { ...externalSearch.data, results: withoutRejectedOptions(externalSearch.data.results, plan) } }
+      : externalSearch,
+  };
+}
+
+function isReadOnlyTask13Diagnostic(input) {
+  return input?.testMode === 'read_only' && /^task13(?:b|e)_/i.test(String(input?.testRunId || ''));
+}
+
+function readOnlyObservability(input, metadata) {
+  // This diagnostic shape is deliberately opt-in and test-only; it never
+  // changes public chat responses and contains no prompt/reasoning/secrets.
+  if (!isReadOnlyTask13Diagnostic(input)) return null;
+  return metadata;
+}
+
+function attachReadOnlyObservability(result, input, metadata) {
+  const observability = readOnlyObservability(input, metadata);
+  return observability ? { ...result, observability } : result;
+}
+
+const RESPONSE_ADHERENCE_SEVERITY = Object.freeze({
+  tool_failure_presented_as_success: 'HARD_SAFETY',
+  resolved_reference_not_addressed: 'SEMANTIC',
+  active_constraints_not_reflected: 'SEMANTIC',
+  rejected_entity_reintroduced: 'SEMANTIC',
+  superseded_goal_continued: 'SEMANTIC',
+  response_mode_mismatch: 'METADATA',
+  addressed_goal_metadata_mismatch: 'METADATA',
+  addressed_reference_metadata_mismatch: 'METADATA',
+  missing_reply: 'SOFT_QUALITY',
+});
+
+function redactDiagnosticText(value, max = 2_400) {
+  return String(value ?? '')
+    .replace(/(?:gsk_|sk-|nvapi-|AIza|bearer\s+)[a-z0-9._-]+/ig, '[redacted credential-like content]')
+    .replace(/[\r\n]+/g, '\n')
+    .slice(0, max);
+}
+
+function diagnosticText(value, max = 420) {
+  return redactDiagnosticText(value, max).trim();
+}
+
+function responseContractSnapshot(contract = {}) {
+  return {
+    response_mode: diagnosticText(contract.response_mode, 80),
+    active_goal: diagnosticText(contract.active_goal, 160),
+    reference_type: diagnosticText(contract.reference, 80),
+    reference_summary: diagnosticText(contract.reference_summary, 420),
+    active_constraints: (contract.active_constraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    preference_constraints: (contract.preference_constraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    rejected_entities: (contract.rejected_entities || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    superseded_goals: (contract.superseded_goals || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    required_behaviors: (contract.required_behavior || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    prohibited_behaviors: (contract.prohibited_behavior || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+  };
+}
+
+function semanticPlanSnapshot(plan = {}) {
+  return {
+    valid: Boolean(plan?.valid),
+    interaction_type: diagnosticText(plan?.interactionType, 80),
+    active_goal: diagnosticText(plan?.activeGoal, 160),
+    reference_target: diagnosticText(plan?.referenceTarget, 80),
+    guest_goal: diagnosticText(plan?.guestGoal, 420),
+    context_summary: diagnosticText(plan?.contextSummary, 420),
+    active_constraints: (plan?.activeConstraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    preference_constraints: (plan?.preferenceConstraints || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    rejected_entities: (plan?.rejectedEntities || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+    superseded_goals: (plan?.supersededGoals || []).map((item) => diagnosticText(item, 120)).filter(Boolean),
+  };
+}
+
+function normalizedResponseSnapshot(model = {}) {
+  return {
+    reply: diagnosticText(model.reply, 800),
+    intent: diagnosticText(model.intent, 80),
+    service_type: diagnosticText(model.serviceType, 80),
+    requires_human: Boolean(model.requiresHuman),
+    requests: Array.isArray(model.requests) ? model.requests.slice(0, 3).map((request) => ({
+      service_name: diagnosticText(request?.serviceName, 160),
+      source: request?.source === 'external' ? 'external' : 'partner',
+      summary: diagnosticText(request?.summary, 420),
+      est_value_eur: Number.isFinite(Number(request?.estValueEur)) ? Number(request.estValueEur) : null,
+      is_upsell: Boolean(request?.isUpsell),
+    })) : [],
+    response_mode: diagnosticText(model.responseMode, 80),
+    addressed_goal: diagnosticText(model.addressedGoal, 160),
+    addressed_reference: diagnosticText(model.addressedReference, 220),
+  };
+}
+
+function safeRawResponseContent(provider = {}) {
+  const raw = diagnosticText(provider?.content, 3_200);
+  if (!raw) return '';
+  // Structured responses should be JSON. Preserve only public-parser fields;
+  // any unexpected field could contain hidden reasoning and is excluded.
+  const json = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
+  try {
+    const parsed = JSON.parse(json);
+    return JSON.stringify({
+      reply_text: diagnosticText(parsed.reply_text ?? parsed.reply, 800),
+      language_detected: diagnosticText(parsed.language_detected, 40),
+      intent: diagnosticText(parsed.intent, 80),
+      service_type: diagnosticText(parsed.service_type, 80),
+      requests: Array.isArray(parsed.requests) ? parsed.requests.slice(0, 3).map((request) => ({
+        service_name: diagnosticText(request?.service_name, 160),
+        source: request?.source === 'external' ? 'external' : 'partner',
+        summary: diagnosticText(request?.summary, 420),
+        est_value_eur: Number.isFinite(Number(request?.est_value_eur)) ? Number(request.est_value_eur) : null,
+        is_upsell: Boolean(request?.is_upsell),
+      })) : [],
+      requires_human: Boolean(parsed.requires_human),
+      response_mode: diagnosticText(parsed.response_mode, 80),
+      addressed_goal: diagnosticText(parsed.addressed_goal, 160),
+      addressed_reference: diagnosticText(parsed.addressed_reference, 220),
+    });
+  } catch {
+    return '[unavailable: non-JSON response content]';
   }
-  return { content: '', providerFailure: failure || 'provider_unavailable' };
+}
+
+function responseActionTruthStatus(reply) {
+  const text = diagnosticText(reply, 800);
+  const failures = [];
+  if (/\b(?:booking|reservation|request) (?:is |has been )?confirmed\b/i.test(text)) failures.push('unverified_action_confirmation');
+  if (/\bavailability (?:is |has been )?confirmed\b/i.test(text)) failures.push('unverified_availability_confirmation');
+  if (/\b(?:staff|team|housekeeping|transport) (?:has been )?(?:notified|alerted|dispatched)\b/i.test(text)) failures.push('unverified_staff_notification');
+  return { status: failures.length ? 'FAIL' : 'PASS', failure_codes: failures };
+}
+
+function responseGroundingStatus(failures = []) {
+  const groundingFailures = failures.filter((failure) => failure === 'tool_failure_presented_as_success');
+  return { status: groundingFailures.length ? 'FAIL' : 'PASS', failure_codes: groundingFailures };
+}
+
+function responseAttemptSnapshot({ attempt, provider, model, adherence, contract }) {
+  const failures = [...new Set(adherence?.failures || [])];
+  return {
+    attempt,
+    response_contract: responseContractSnapshot(contract),
+    raw_provider_content: safeRawResponseContent(provider),
+    parsed_normalized_response: normalizedResponseSnapshot(model),
+    candidate_guest_message: diagnosticText(model?.reply, 800),
+    response_mode: diagnosticText(model?.responseMode, 80),
+    addressed_goal: diagnosticText(model?.addressedGoal, 160),
+    addressed_reference: diagnosticText(model?.addressedReference, 220),
+    adherence_result: adherence?.passed ? 'PASS' : 'FAIL',
+    failure_codes: failures,
+    failure_severity: Object.fromEntries(failures.map((failure) => [failure, RESPONSE_ADHERENCE_SEVERITY[failure] || 'SOFT_QUALITY'])),
+    grounding: responseGroundingStatus(failures),
+    action_truth: responseActionTruthStatus(model?.reply),
+  };
+}
+
+function hasMeaningfulConversation(history) {
+  return (history || []).some((item) => String(item?.message || item?.content || '').trim());
+}
+
+async function semanticConversationController(env, input, history, { facts, pendingContext = '', hint = {} } = {}) {
+  const prompt = buildSemanticControllerPrompt({
+    input,
+    history,
+    context: {
+      guestContext: facts?.text || `${facts?.hotelName || env.HOTEL_NAME || 'Hotel'} in ${facts?.hotelCity || env.HOTEL_CITY || 'Paris'}`,
+      pendingContext,
+    },
+    capabilities: ['hotel_facts', 'hotel_services', 'external_search', 'guest_request', 'human_takeover'],
+  });
+  // The validated controller contract is deliberately compact. Keeping this
+  // within the existing router budget avoids spending latency on explanation
+  // the controller is not allowed to provide.
+  const provider = await completeStructured(env, {
+    purpose: 'semantic_controller',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 320,
+    conversation_id: input.userId,
+  }, {
+    parse: (content) => {
+      const plan = parseSemanticControllerOutput(content, { language: input.language, hint });
+      return plan.valid ? plan : null;
+    },
+  });
+  const plan = provider.structured || parseSemanticControllerOutput('', { language: input.language, hint });
+  return {
+    plan: { ...plan, providerFailure: provider.status === 'success' ? '' : provider.status },
+    providerFailure: provider.status === 'success' ? '' : provider.status,
+    llm: provider,
+  };
 }
 
 const ROUTES = new Set(['greeting', 'hotel_faq', 'partner_catalog', 'partner_request', 'external_discovery', 'conversation']);
@@ -610,13 +908,14 @@ Classify every message using exactly one route:
 - hotel_faq: a question that can be answered only from hotel facts supplied later, such as check-in or hotel amenities.
 - partner_catalog: asking what the hotel offers or who its partners are.
 - partner_request: clearly asking to reserve or arrange a conventional hotel service.
+- stay_planning: asking for broad help to organize a hotel stay, trip, or weekend without asking to find a specific external venue.
 - external_discovery: asking for a recommendation, itinerary, venue, activity, event, shopping, transportation, food, nightlife, or any unusual/new need that requires current information beyond a known hotel catalogue.
 - conversation: only when none of the above applies.
 
-Critical rule: do not require a keyword match. If the guest wants help finding, choosing, suggesting, planning, seeing, buying, celebrating, or doing something in Paris, use external_discovery even if the request is unusual or written in another language. Follow-up requests inherit the earlier guest need from history.
+Critical rule: do not require a keyword match for a clearly external need. Use external_discovery for a specific external venue, activity, event, nightlife, shopping, or current Paris itinerary. Do not treat a vague follow-up such as "what do you suggest?", "which one?", or "something else" as external on its own: first resolve it against the immediately preceding hotel conversation. Follow-up requests inherit the earlier guest need from history.
 
 Return exactly:
-{"route":"greeting|hotel_faq|partner_catalog|partner_request|external_discovery|conversation","category":"accommodation|spa|restaurant|transport|tour|experience|itinerary|null","search_query":"a concise Paris web-search query or empty string"}
+{"route":"greeting|hotel_faq|partner_catalog|partner_request|stay_planning|external_discovery|conversation","category":"accommodation|spa|restaurant|transport|tour|experience|itinerary|null","search_query":"a concise Paris web-search query or empty string"}
 
 For external_discovery, search_query must describe the guest's exact need, include Paris when appropriate, and contain no instruction or commentary. Otherwise return an empty search_query.
 
@@ -628,10 +927,16 @@ ${input.message}`;
 }
 
 async function enrichSemanticRoute(env, input, history, classification) {
+  if (classification.route === 'stay_planning') return classification;
   const basicGreeting = !classification.hasIntent && !String(input.message || '').trim().includes(' ');
   if (basicGreeting) return classification;
-  const provider = await callGroq(env, routerPrompt(input, history), { maxTokens: 180, router: true });
-  const route = routerJson(provider.content);
+  const provider = await completeStructured(env, {
+    purpose: 'intent_router',
+    messages: [{ role: 'user', content: routerPrompt(input, history) }],
+    max_tokens: 180,
+    conversation_id: input.userId,
+  }, { parse: routerJson });
+  const route = provider.structured;
   if (!route) return classification;
   const externalDiscovery = route.route === 'external_discovery';
   const actionable = !['greeting', 'conversation'].includes(route.route);
@@ -676,13 +981,26 @@ async function cancelRequests(env, userId, target) {
   return { cancelled: open.length, alreadyCancelled };
 }
 
+// Persistence runs in ctx.waitUntil, so a rejection here can never reach the
+// guest -- they have already been told their request was taken. Swallowing it
+// silently is therefore the worst option: a full Airtable base or a revoked
+// token would drop real bookings with no trace. Log every failure loudly and
+// keep going, so the reply still goes out but the loss is visible in Workers
+// Logs and can be alerted on.
+function logPersistFailure(what) {
+  return (error) => {
+    console.error(`PERSIST FAILURE (${what}) -- guest-visible reply was already sent, this record is LOST: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  };
+}
+
 async function persistConversation(env, input, outcome) {
   const time = new Date().toISOString();
   const guestName = String(input?.guestName || input?.guest_name || input?.name || '').trim() || (input?.isDemo || input?.is_demo ? 'Demo Guest' : 'Guest');
   const flags = demoFlagFields(input);
 
   await Promise.all([
-    upsertGuest(env, input).catch(() => undefined),
+    upsertGuest(env, input).catch(logPersistFailure('Guests upsert')),
     airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
@@ -695,7 +1013,7 @@ async function persistConversation(env, input, outcome) {
         Timestamp: input.receivedAt,
         ...flags,
       },
-    }).catch(() => undefined),
+    }).catch(logPersistFailure('Conversations: guest message')),
     airtable(env, 'Conversations', {
       method: 'POST',
       fields: {
@@ -708,7 +1026,7 @@ async function persistConversation(env, input, outcome) {
         Timestamp: time,
         ...flags,
       },
-    }).catch(() => undefined),
+    }).catch(logPersistFailure('Conversations: assistant reply')),
   ]);
   const requests = outcome.requests.filter((item) => item.summary);
   await Promise.all(requests.map((item) => airtable(env, 'Requests', {
@@ -728,7 +1046,7 @@ async function persistConversation(env, input, outcome) {
       HandoverAt: time,
       ...flags,
     },
-  }).catch((err) => console.error('Error creating request in Airtable:', err))));
+  }).catch(logPersistFailure(`Requests: booking "${item.serviceName || item.summary}"`))));
 }
 
 const PARTNER_CARD_IMAGES = {
@@ -889,25 +1207,181 @@ function hotelAlternativeReply(language, cuisine, options) {
   return build({ cuisine, options });
 }
 
-function isHotelCollectionQuestion(message) {
+function isHotelCollectionQuestion(message, classification = {}) {
   const text = String(message || '')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-  // Guests frequently transpose the "i" and "v" in "services" on mobile.
-  // Treat this as the same catalogue request rather than sending it through a
-  // slow, generic model route that can return only one category.
-  const catalogueTerm = /\b(?:catalog(?:ue)?|directory|guide|brochure|services?|serivces?|sevrices?|servcies?|amenities|offerings?|collection|partners?|experiences?|servicios?|servizi|view services|our services)\b/;
-  const catalogueQuestion = /\b(?:what|which|show|see|view|browse|open|list|send|can you|do you|quels?|montrez|voir|que)\b/;
+  // A category question must never become a full directory just because it
+  // contains a broad noun such as "experiences".  Only unmistakably broad
+  // phrasing opens the complete collection.
+  const explicitDirectory = /\b(?:complete|full|entire|digital)\s+(?:directory|catalog(?:ue)?|brochure)\b|\b(?:send|show|view)\s+(?:me\s+)?(?:the\s+)?(?:hotel\s+)?(?:directory|brochure)\b/;
+  const explicitEverything = /\b(?:all|every|complete|full|entire)\s+(?:of\s+)?(?:your|the|our)?\s*(?:services?|experiences?|offerings?|collection|catalog(?:ue)?)\b|\bshow\s+me\s+everything\b|\bwhat\s+(?:services?\s+and\s+)?experiences?\s+(?:are|do)\b/;
+  const compactBroad = /^(?:view\s+services?|services?|catalog(?:ue)?|directory|show\s+everything)$/i.test(text.trim());
+  const genericServiceQuestion = /\b(?:what|which|show|see|view|browse|open|list|send|do|does|can)\b[^?.!]{0,72}\b(?:services?|serivces?|sevrices?|servcies?|amenities|offerings?|partners?)\b/;
   const broadHotelOffer = /\bwhat\s+(?:do|can)\s+(?:you|the hotel)\s+(?:offer|arrange|provide)\b/;
-  const spaMenu = /\b(?:spa|wellness|massage|treatments?)\s+(?:menu|catalog(?:ue)?|list|brochure)\b/;
-  return spaMenu.test(text) || (catalogueTerm.test(text) && catalogueQuestion.test(text)) || broadHotelOffer.test(text) || /^(?:view\s+services?|services?|catalog(?:ue)?|directory)$/i.test(text.trim());
+  const categorySpecific = Boolean(classification.category || classification.cuisine);
+  if (categorySpecific && !explicitDirectory.test(text) && !explicitEverything.test(text)) return false;
+  return explicitDirectory.test(text) || explicitEverything.test(text) || genericServiceQuestion.test(text) || broadHotelOffer.test(text) || compactBroad;
+}
+
+function explicitDirectoryRequest(message) {
+  const text = normalized(message);
+  return /\b(?:directory|brochure|digital guide|full catalog(?:ue)?|complete catalog(?:ue)?)\b/i.test(text);
+}
+
+const HOTEL_CATEGORY_LABELS = {
+  accommodation: 'Rooms & Suites',
+  restaurant: 'Dining',
+  spa: 'Spa & Wellness',
+  transport: 'Transport',
+  tour: 'Paris experiences',
+  experience: 'Private experiences',
+};
+
+function hotelCategoryReply(language, category, count) {
+  const label = HOTEL_CATEGORY_LABELS[category] || 'hotel experiences';
+  const copies = {
+    en: `We have ${count} ${label.toLowerCase()} option${count === 1 ? '' : 's'} in the Hôtel Lumière collection. Here ${count === 1 ? 'is' : 'are'} the relevant choice${count === 1 ? '' : 's'}.`,
+    fr: `Nous avons ${count} option${count === 1 ? '' : 's'} ${label === 'Dining' ? 'de restauration' : `dans ${label}`} dans la collection de l’Hôtel Lumière. Voici les choix correspondants.`,
+    es: `Tenemos ${count} opcion${count === 1 ? '' : 'es'} de ${label} en la colección de Hôtel Lumière. Aquí tiene las opciones correspondientes.`,
+    it: `Abbiamo ${count} opzion${count === 1 ? 'e' : 'i'} ${label} nella collezione dell’Hôtel Lumière. Ecco le scelte pertinenti.`,
+    de: `Wir haben ${count} passende ${label}-Option${count === 1 ? '' : 'en'} in der Hôtel-Lumière-Kollektion. Hier sind die relevanten Auswahlmöglichkeiten.`,
+  };
+  return copies[language] || copies.en;
+}
+
+function historyEntries(input) {
+  return Array.isArray(input.chatHistory) ? input.chatHistory : [];
+}
+
+function hasFollowUpKey(input, key) {
+  const pattern = key === 'first_time_paris'
+    ? /first time in paris|premiere fois a paris|primera vez en paris|erste(?:r)? (?:besuch|mal) in paris/i
+    : new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  return historyEntries(input).some((item) => pattern.test(normalized(item?.message || item?.content || '')));
+}
+
+function shouldOfferFirstTimeFollowUp(input) {
+  const scenario = String(input.scenario || '').replace(/_/g, '-').toLowerCase();
+  const text = normalized(input.message);
+  const declined = /\b(?:no thanks|no thank you|not now|busy|later|leave me alone|no,? thank)\b/i.test(text);
+  return scenario === 'pre-arrival'
+    && input.conversationOwner !== 'staff'
+    && !declined
+    && !hasFollowUpKey(input, 'first_time_paris');
+}
+
+function firstTimeParisNextStep(input) {
+  if (!shouldOfferFirstTimeFollowUp(input)) return null;
+  const text = {
+    en: 'By the way, is this your first time in Paris?',
+    fr: 'Au fait, est-ce votre première fois à Paris ?',
+    es: 'Por cierto, ¿es su primera vez en París?',
+    it: 'A proposito, è la sua prima volta a Parigi?',
+    de: 'Darf ich fragen: Ist es Ihr erster Besuch in Paris?',
+  };
+  return { type: 'guest_follow_up', key: 'first_time_paris', text: text[input.language] || text.en, delay_ms: 1800 };
+}
+
+function stayPlanningResponse(input, classification) {
+  if (classification.route !== 'stay_planning') return null;
+  const replies = {
+    en: 'Absolutely. I’d be happy to help plan your stay. Would you like to begin with dining, experiences, wellness, or a little of everything?',
+    fr: 'Bien sûr. Je serais ravi de vous aider à préparer votre séjour. Souhaitez-vous commencer par la gastronomie, les expériences, le bien-être ou un peu de tout ?',
+    es: 'Por supuesto. Estaré encantado de ayudarle a planificar su estancia. ¿Prefiere empezar por gastronomía, experiencias, bienestar o un poco de todo?',
+    it: 'Certamente. Sarò lieto di aiutarla a pianificare il soggiorno. Vuole iniziare da ristorazione, esperienze, benessere o un po’ di tutto?',
+    de: 'Sehr gern. Ich helfe Ihnen bei der Planung Ihres Aufenthalts. Möchten Sie mit Dining, Erlebnissen, Wellness oder einer Mischung beginnen?',
+  };
+  return {
+    reply: replies[input.language] || replies.en,
+    language: input.language,
+    intent: 'stay_planning',
+    external_option_names: [],
+    recommendations: [],
+    partner_offers: [],
+    provider_failure: '',
+    requires_human: false,
+  };
+}
+
+function relationshipFollowUpResponse(input) {
+  const history = historyEntries(input);
+  const messages = history.map((item) => ({
+    role: String(item?.role || '').toLowerCase(),
+    text: String(item?.message || item?.content || ''),
+  }));
+  const firstTimeQuestionIndex = messages.map((item) => item.text).reduce((last, text, index) => (
+    /first time in paris|première fois à paris|primera vez en par[ií]s/i.test(text) ? index : last
+  ), -1);
+  const hasActiveFirstTimeThread = firstTimeQuestionIndex >= 0 && firstTimeQuestionIndex >= messages.length - 8;
+  if (!hasActiveFirstTimeThread || input.conversationOwner === 'staff') return null;
+  const text = normalized(input.message);
+  const declined = /\b(?:no thanks|no thank you|not now|busy|later|leave me alone|please stop|pas maintenant|non merci)\b/i.test(text);
+  if (declined) {
+    const declineReply = input.language === 'fr'
+      ? 'Bien sûr. Je reste à votre disposition quand vous le souhaiterez.'
+      : input.language === 'es'
+        ? 'Por supuesto. Estaré a su disposición cuando lo desee.'
+        : 'Of course. I’ll be here whenever you are ready.';
+    return { reply: declineReply, language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
+  }
+  const isReturningVisitor = /^(?:no|non|nope)\b|\b(?:already|been|visited|visit[ée]e?|five times|several times|deja|déjà|venu|venue|visite|veces|estado)\b/i.test(text);
+  const asksWhy = /\b(?:why|pourquoi|por que|porque|how come)\b/i.test(text);
+  const asksForSuggestion = /\b(?:what do you suggest|what would you suggest|what do you recommend|what should we do|what about|suggest|recommend|conseillez|sugger|recomiend)\b/i.test(text);
+  const needsClarification = /^(?:what|what\?|which one|and|really|how come|why)\s*[!??.]*$/i.test(text);
+  const returningReplies = {
+    en: asksWhy
+      ? 'Only so I can tailor the ideas. Since you already know Paris, I can skip the obvious first-time sights and focus on something more local, restorative, or celebratory. What sounds right?'
+      : 'That is helpful to know. Since you already know Paris, I can skip the obvious first-time sights and help with something more local, restorative, or celebratory. What are you in the mood for?',
+    fr: asksWhy
+      ? 'C’est simplement pour adapter mes idées. Puisque vous connaissez déjà Paris, je peux éviter les incontournables de première visite et privilégier une suggestion plus locale, reposante ou festive. Qu’est-ce qui vous ferait plaisir ?'
+      : 'C’est utile à savoir. Puisque vous connaissez déjà Paris, je peux éviter les incontournables de première visite et privilégier une suggestion plus locale, reposante ou festive. Qu’est-ce qui vous ferait plaisir ?',
+    es: asksWhy
+      ? 'Solo para adaptar mejor las ideas. Como ya conoce París, puedo dejar de lado los lugares más evidentes y proponer algo más local, relajante o especial. ¿Qué le apetece?'
+      : 'Es útil saberlo. Como ya conoce París, puedo dejar de lado los lugares más evidentes y proponer algo más local, relajante o especial. ¿Qué le apetece?',
+  };
+  const firstVisitReplies = {
+    en: asksWhy
+      ? 'I ask only so I can tailor the ideas. For a first visit, I can help you balance Paris classics with time to enjoy the hotel. Would you prefer dining, wellness, or a Paris experience?'
+      : 'Wonderful. Do you already have plans for your stay, or would you like a few ideas from us?',
+    fr: asksWhy
+      ? 'Je vous le demande simplement pour adapter mes idées. Pour une première visite, je peux vous aider à équilibrer les incontournables de Paris et le plaisir de l’hôtel. Préférez-vous la gastronomie, le bien-être ou une expérience parisienne ?'
+      : 'Merveilleux. Avez-vous déjà des projets pour votre séjour, ou souhaitez-vous quelques idées de notre part ?',
+    es: asksWhy
+      ? 'Lo pregunto solo para adaptar las ideas. Para una primera visita, puedo ayudarle a equilibrar los clásicos de París con tiempo para disfrutar del hotel. ¿Prefiere gastronomía, bienestar o una experiencia parisina?'
+      : 'Qué bien. ¿Ya tiene planes para su estancia o le gustaría recibir algunas ideas?',
+  };
+  const clarificationReplies = {
+    en: 'I only meant that a returning guest may prefer something beyond the usual first-time sights. I can help you choose between a hotel experience, dining, wellness, or a more local Paris idea.',
+    fr: 'Je voulais simplement dire qu’un habitué de Paris peut préférer autre chose que les incontournables d’une première visite. Je peux vous orienter vers une expérience à l’hôtel, la gastronomie, le bien-être ou une idée plus locale à Paris.',
+    es: 'Solo quería decir que quien ya conoce París quizá prefiera algo distinto de los lugares típicos de una primera visita. Puedo orientarle hacia una experiencia del hotel, gastronomía, bienestar o una idea más local en París.',
+  };
+  const suggestionReplies = {
+    en: 'For a returning visit, I would begin with something that feels considered rather than obligatory: a relaxed wellness moment, a memorable dinner, or a private Paris experience. Which direction appeals most?',
+    fr: 'Pour un nouveau séjour à Paris, je commencerais par quelque chose de choisi plutôt que convenu : un moment de bien-être, un dîner mémorable ou une expérience parisienne privée. Quelle direction vous attire le plus ?',
+    es: 'Para una nueva visita a París, empezaría por algo pensado y no obligatorio: un momento de bienestar, una cena memorable o una experiencia privada en París. ¿Qué opción le atrae más?',
+  };
+  const isFirstVisit = /^(?:yes|yeah|yep|oui|si|sí|certo|ja)\b/i.test(text);
+  let reply = null;
+  if (isReturningVisitor) reply = returningReplies[input.language] || returningReplies.en;
+  else if (isFirstVisit) reply = firstVisitReplies[input.language] || firstVisitReplies.en;
+  else if (asksForSuggestion) reply = suggestionReplies[input.language] || suggestionReplies.en;
+  else if (needsClarification) reply = clarificationReplies[input.language] || clarificationReplies.en;
+  if (!reply) return null;
+  return { reply, language: input.language, intent: 'stay_planning', external_option_names: [], recommendations: [], partner_offers: [], provider_failure: '', requires_human: false };
 }
 
 function guestInsistsOnExternal(message) {
   const text = String(message || '').trim().toLowerCase();
-  return /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text)
-    || /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text);
+  const startsCorrection = /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text);
+  const namesSpecificCuisine = /\b(?:indian|indien|indienne|indiano|indiana|japanese|japonais|japonaise|giapponese|japones|sushi|italian|italien|italienne|italiano|italiana|pizza|spanish|espagnol|espagnole|espanol|espanola|tapas|paella|bakery|boulangerie|patisserie|viennoiserie|croissant|vegan|vegetalien|vegano)\b/i.test(text);
+  // A conversational correction often starts with "no", "actually", or
+  // "instead". It is only an external preference when the guest names an
+  // outside-the-hotel option or preserves a specific cuisine constraint;
+  // otherwise history can retain the hotel context.
+  return /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text)
+    || startsCorrection && (namesSpecificCuisine || /\b(?:keep|find|search|recommend)\b[^.!?]{0,80}\b(?:restaurant|cuisine|venue|address|place|bar|club)\b/i.test(text));
 }
 
 function categoryPartnerServices(services, category) {
@@ -935,10 +1409,116 @@ function hasBookingIntent(message) {
   return /\b(book|reserve|confirm|yes)\b/.test(text);
 }
 
+// Generic hospitality/branding and service-*type* words that appear across
+// many catalogue entries and are therefore never distinctive enough, on
+// their own, to identify one specific item (e.g. every chauffeur service
+// says "Private", and "tour" describes a whole category of items, not one
+// of them). Deliberately excludes real landmark/proper-noun words such as
+// "Eiffel", "Louvre", "Versailles" -- those are exactly the words that let
+// two different real items in the same category be told apart (see the
+// nameMatches disambiguation below), even though concierge.js's own
+// CATEGORY_RULES also uses them as *category-classification* keywords for
+// an unrelated purpose. Conflating the two lists previously broke that
+// disambiguation (a blanket merge made "louvre"/"versailles" generic too);
+// keep this list hand-curated to genuinely generic type words only.
+// The gap this list closes: "book the Eiffel Tower Sunset Helicopter Tour"
+// (a service that doesn't exist) named its target only via the word "tour",
+// which used to slip through as if it were a distinctive identifier and
+// matched the one unrelated real tour in the catalogue.
+const GENERIC_SERVICE_NAME_WORDS = new Set([
+  'private', 'hotel', 'lumiere', 'vip', 'after', 'hours', 'day', 'trip', 'signature', 'the', 'and', 'for', 'with',
+  // tour/experience-type nouns
+  'tour', 'tours', 'excursion', 'excursions', 'cruise', 'cruises', 'museum', 'museums',
+  'sightsee', 'sightseeing', 'guide', 'guided', 'experience', 'experiences',
+  'chef', 'sommelier', 'tasting', 'shopping', 'shopper', 'photographer', 'proposal', 'anniversary', 'honeymoon',
+  // spa/wellness-type nouns
+  'spa', 'massage', 'massages', 'sauna', 'hammam', 'wellness', 'treatment', 'treatments', 'facial',
+  // dining-type nouns
+  'restaurant', 'restaurants', 'dining', 'dinner', 'lunch', 'breakfast', 'table', 'reservation', 'food', 'cuisine', 'michelin', 'meal',
+  // transport-type nouns
+  'taxi', 'uber', 'chauffeur', 'car', 'driver', 'transfer', 'transfers', 'airport', 'pickup', 'shuttle', 'ride',
+  // stay/room-type nouns and catch-alls
+  'suite', 'suites', 'room', 'rooms', 'stay', 'accommodation', 'menu', 'package', 'service', 'services', 'option', 'options',
+]);
+
+// hasTerm() is a concierge.js-local helper, not exported -- this is an
+// equivalent standalone word-boundary check.
+function containsWord(text, word) {
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'u').test(text);
+}
+
+// The words in a catalogue item's own name that could plausibly identify it
+// specifically -- i.e. everything left after stripping generic hospitality
+// and category/type vocabulary.
+function distinctiveServiceWords(name) {
+  const raw = String(name ?? '');
+  // Short ALL-CAPS tokens in a service name are acronyms, and they identify the
+  // item precisely -- airport codes above all. "Private Chauffeur — CDG/ORY
+  // Transfer" is otherwise entirely generic (private, chauffeur and transfer
+  // are all category vocabulary), so the >=4 length filter left it with NO
+  // distinctive words at all and nothing could ever match it: a guest asking to
+  // "arrange a chauffeur transfer from CDG" was handed the category card
+  // instead of that transfer. Acronyms already in the generic stoplist (VIP)
+  // stay excluded.
+  const acronyms = new Set((raw.match(/\b[A-Z]{3,5}\b/g) || []).map((word) => word.toLowerCase()));
+  return normalized(raw)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => (word.length >= 4 || acronyms.has(word)) && !GENERIC_SERVICE_NAME_WORDS.has(word));
+}
+
+// Quoted phrases and runs of capitalized words in the guest's own (non-
+// lowercased) message read as the guest naming something specific by title
+// ("book me the \"Eiffel Tower Sunset Helicopter Tour\"", or the same
+// without quotes). Used only to decide whether trusting a lone remaining
+// candidate would be a guess rather than a real match -- never to identify
+// which item was meant.
+function extractNamedPhrases(rawMessage) {
+  const text = String(rawMessage ?? '');
+  const phrases = [];
+  for (const match of text.matchAll(/["“]([^"”]{3,80})["”]/g)) phrases.push(match[1]);
+  for (const match of text.matchAll(/\b(?:\p{Lu}[\p{Ll}'’-]*\s+){1,6}\p{Lu}[\p{Ll}'’-]*\b/gu)) phrases.push(match[0]);
+  return phrases;
+}
+
+// True when the guest's message names something specific enough (by its own
+// distinctive vocabulary) that it doesn't share a single word with the sole
+// remaining candidate -- i.e. they are very likely asking for an item that
+// simply isn't in the catalogue, not using a generic category phrase like
+// "book the tour" or "book a massage". Guards the single-candidate fallback
+// below, which otherwise cannot tell "the only tour we have" apart from
+// "a specific, different tour that doesn't exist" -- the exact gap that let
+// a nonexistent "Eiffel Tower Sunset Helicopter Tour" request get silently
+// confirmed as the one real Louvre tour.
+function namesUnmatchedSpecificItem(rawMessage, service) {
+  const serviceWords = new Set(distinctiveServiceWords(service.name));
+  for (const phrase of extractNamedPhrases(rawMessage)) {
+    const phraseWords = normalized(phrase)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length >= 4 && !GENERIC_SERVICE_NAME_WORDS.has(word));
+    if (phraseWords.length < 2) continue;
+    if (!phraseWords.some((word) => serviceWords.has(word))) return true;
+  }
+  return false;
+}
+
 function preferredBookingService(services, category, message) {
+  const text = normalized(message);
+
+  // A guest naming a specific item by a distinctive word from its own name
+  // (e.g. "Louvre", "Versailles") should resolve to that exact item -- even
+  // when the deterministic category guess for this message put it in the
+  // wrong bucket. An item's own name can contain words that score a
+  // different category than the one it is actually filed under (the Louvre
+  // tour's name scores "tour", but Airtable files it under "experience"),
+  // which previously sent the search into the wrong category's candidate
+  // list entirely. This checks every active partner service, not just the
+  // guessed category, and only auto-resolves when exactly one item matches.
+  const allPartners = services.filter((service) => service.isPartner);
+  const nameMatches = allPartners.filter((service) => distinctiveServiceWords(service.name).some((word) => containsWord(text, word)));
+  if (nameMatches.length === 1) return nameMatches[0];
+
   const candidates = categoryPartnerServices(services, category);
   if (!candidates.length) return null;
-  const text = normalized(message);
   const matching = candidates.find((service) => {
     const name = normalized(service.name);
     return (text.includes('couples') && name.includes('couples'))
@@ -946,7 +1526,21 @@ function preferredBookingService(services, category, message) {
       || (text.includes('airport') && name.includes('airport'))
       || (text.includes('cdg') && name.includes('cdg'));
   });
-  return matching || candidates[0];
+  if (matching) return matching;
+  // Otherwise, only fall back to a single available candidate when the
+  // category is genuinely unambiguous (exactly one partner service exists
+  // for it) AND the guest doesn't appear to be naming a different, specific
+  // item that just happens to share this category. With two or more
+  // candidates and no confident match, or a named item this sole candidate
+  // shares no vocabulary with, guessing is exactly the wrong-entity/
+  // fabricated-confirmation failure mode this fast path must avoid --
+  // return null so the caller falls through to the semantic-controller-
+  // driven guest_request tool instead, which grounds its confirmation in the
+  // model's own guest_goal text (or, for a genuinely unmatched item, can
+  // honestly say it isn't offered instead of confirming the wrong one).
+  if (candidates.length !== 1) return null;
+  const sole = candidates[0];
+  return namesUnmatchedSpecificItem(message, sole) ? null : sole;
 }
 
 function partnerBookingOutcome(input, classification, services) {
@@ -1006,54 +1600,59 @@ async function cancellationOutcome(env, input, classification, services) {
 function hotelCatalogueResponse(input, classification, services) {
   const collection = partnerOffers(services, { limit: null });
   const categoryCount = new Set(collection.map((service) => service.category)).size;
-  const isSpaOnly = classification?.category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(input.message);
-
-  const media = isSpaOnly ? {
-    type: 'document',
-    format: 'PDF',
-    title: 'Hôtel Lumière — Spa & Wellness Brochure',
-    filename: 'Lumiere_Spa_Wellness_Menu.pdf',
-    size: '2.4 MB',
-    pages: '12 pages',
-    url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Spa_Wellness_Menu.pdf',
-    thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
-  } : {
-    type: 'document',
-    format: 'PDF',
-    title: 'Hôtel Lumière — Digital Directory & Experiences Brochure 2026',
-    filename: 'Lumiere_Guest_Directory_2026.pdf',
-    size: '4.2 MB',
-    pages: '24 pages',
-    url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Guest_Directory_2026.pdf',
-    thumbnail: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=700&q=84',
+  const replies = {
+    en: 'Of course. We can help with rooms, dining, spa & wellness, transfers, and private Paris experiences. What would you like to explore first?',
+    fr: 'Bien sûr. Nous pouvons vous aider avec les chambres, la gastronomie, le spa & bien-être, les transferts et les expériences privées à Paris. Que souhaitez-vous découvrir en premier ?',
+    es: 'Por supuesto. Podemos ayudarle con habitaciones, gastronomía, spa y bienestar, traslados y experiencias privadas en París. ¿Qué le gustaría explorar primero?',
+    it: 'Certamente. Possiamo aiutarla con camere, ristorazione, spa e benessere, trasferimenti ed esperienze private a Parigi. Cosa desidera esplorare per primo?',
+    de: 'Sehr gern. Wir helfen mit Zimmern, Dining, Spa & Wellness, Transfers und privaten Pariser Erlebnissen. Was möchten Sie zuerst entdecken?',
   };
-
-  const spaReplies = {
-    en: 'Here is our complete Spa & Wellness menu and treatment brochure. Please let me know if you would like to book a treatment.',
-    fr: 'Voici notre carte complète du Spa & Bien-être. N’hésitez pas à me faire savoir si vous souhaitez réserver un soin.',
-    es: 'Aquí tiene nuestro menú completo de Spa & Bienestar. Por favor avíseme si desea reservar algún tratamiento.',
-    it: 'Ecco il nostro menu completo di Spa & Benessere. Mi faccia sapere se desidera prenotare un trattamento.',
-    de: 'Hier finden Sie unser vollständiges Spa & Wellness-Menü. Bitte lassen Sie mich wissen, wenn Sie eine Behandlung buchen möchten.',
-    ar: 'إليكم قائمة السبا والعافية الكاملة وكتيب العلاجات. يرجى إعلامي إذا كنتم ترغبون في حجز علاج.',
-    ja: '当ホテルのスパ＆ウェルネスのメニューおよび施術案内をお届けいたします。施術のご予約をご希望の際はお申し付けください。',
-    zh: '这是我们的完整水疗与健康护理手册。如果您想预约任何项目，请随时告知我。',
-  };
-  const reply = isSpaOnly ? (spaReplies[input.language] || spaReplies.en) : catalogueText(collection);
 
   return {
-    reply,
+    reply: replies[input.language] || replies.en,
     language: input.language,
     intent: 'partner_catalog',
     external_option_names: [],
     recommendations: [],
     partner_offers: [],
-    hotel_collection: [],
+    hotel_collection: collection,
     catalogue_count: collection.length,
     catalogue_categories: categoryCount,
     provider_failure: '',
     requires_human: false,
-    media,
+    media: explicitDirectoryRequest(input.message) ? detectMediaBrochure('hotel directory') : null,
+    quickReplies: ['Rooms & Suites', 'Dining', 'Spa & Wellness'],
+    next_step: firstTimeParisNextStep(input),
   };
+}
+
+// A question about a SPECIFIC attribute of a service -- what it costs, how
+// long it runs, what it includes -- must be answered with that attribute. The
+// category-card shortcut below is for broad browsing ("what dining do you
+// offer"), and answering "How much is the Signature Hammam Ritual?" with
+// "We have 2 spa & wellness options" is a non-answer: the price is in the
+// catalogue the model already receives. Deliberately excludes availability
+// wording ("what dining experiences are available"), which is browsing.
+const SPECIFIC_ATTRIBUTE_QUESTION = /\b(how much|how many|price|prices|pricing|cost|costs|rate|rates|fee|fees|expensive|combien|prix|tarif|cuanto|cuánto|precio|how long|duration|last)\b|\bwhat(?:'s| is| does)?\b[^?]{0,40}\b(include|included|includes)\b/i;
+
+// A question about WHEN something happens is a hotel-facts question, not a
+// request to browse the catalogue. The English forms were already guarded
+// above, but a guest asking the same thing in French was still being handed
+// restaurant cards ("à quelle heure est le petit-déjeuner ?" ->
+// "Nous avons 2 options de restauration"), because only the English wording
+// bailed out. Facts questions must reach the facts path in every language.
+const TIME_OR_HOURS_QUESTION = /\b(what time|when do|when does|when is|opening hours|closing time|how late|hours of)\b|à quelle heure|quelle heure|horaires?\b|a qué hora|qué hora|horario|a che ora|orari\b|wie viel uhr|öffnungszeiten/i;
+
+// True when the guest names a specific catalogue item by a word distinctive to
+// that item's own name ("Versailles", "ritual", "Louvre"). They are asking for
+// that item, so answering with a category card ("We have 2 spa & wellness
+// options") is a non-answer. Brand and category vocabulary is already excluded
+// by GENERIC_SERVICE_NAME_WORDS, so broad browsing ("what dining experiences
+// are available at Hôtel Lumière?") still reaches the card path.
+function namesSpecificCatalogueItem(message, services) {
+  const text = normalized(message);
+  return services.some((service) => distinctiveServiceWords(service.name)
+    .some((word) => containsWord(text, word)));
 }
 
 function hotelFirstResponse(input, classification, services) {
@@ -1061,11 +1660,13 @@ function hotelFirstResponse(input, classification, services) {
   if (/\b(what time|when did|did i|did we|which time|what day|how much did|remind me|what was)\b/.test(text)) {
     return null;
   }
+  if (SPECIFIC_ATTRIBUTE_QUESTION.test(text) || TIME_OR_HOURS_QUESTION.test(input.message)) {
+    return null;
+  }
   if (classification?.wantsExternal || guestInsistsOnExternal(input.message)) {
     return null;
   }
-  const media = detectMediaBrochure(input.message, classification.category);
-  if (isHotelCollectionQuestion(input.message)) {
+  if (isHotelCollectionQuestion(input.message, classification)) {
     return hotelCatalogueResponse(input, classification, services);
   }
 
@@ -1073,6 +1674,13 @@ function hotelFirstResponse(input, classification, services) {
   if (!hotelServiceCategories.has(classification.category)) return null;
   const hotelOptions = categoryPartnerServices(services, classification.category);
   if (!hotelOptions.length) return null;
+  // "I want the Signature Hammam Ritual" must not be answered with "We have 2
+  // spa & wellness options" -- the guest already chose.
+  if (namesSpecificCatalogueItem(input.message, hotelOptions)) return null;
+  // A spa menu can use its own verified brochure. Narrow dining and room
+  // questions deliberately stay card-first and never receive the general
+  // directory as a side effect.
+  const media = classification.category === 'spa' ? detectMediaBrochure(input.message, classification.category) : null;
 
   if (classification.cuisine && !guestInsistsOnExternal(input.message)) {
     const offeredNames = hotelOptions.slice(0, 2).map((service) => service.name).join(' / ');
@@ -1091,7 +1699,7 @@ function hotelFirstResponse(input, classification, services) {
 
   if (classification.cuisine && guestInsistsOnExternal(input.message)) return null;
   return {
-    reply: hotelPartnerReply(input.language),
+    reply: hotelCategoryReply(input.language, classification.category, hotelOptions.length),
     language: input.language,
     intent: 'partner_request',
     external_option_names: [],
@@ -1179,6 +1787,130 @@ function compactText(value, field, { required = false, max = 500 } = {}) {
   return text;
 }
 
+const HOTEL_DISCOVERY_OPTIONS = Object.freeze({
+  pms: ['Mews', 'OPERA / OPERA Cloud', 'FOLS', 'Misterbooking', 'Infhotik', 'Cloudbeds', 'Amenitiz', 'Thaïs', 'Other', 'Not sure'],
+  yesNoNotSure: ['Yes', 'No', 'Not sure'],
+  serviceUsage: ['Less than 10%', '10–25%', '25–50%', 'More than 50%', 'Not sure'],
+  requestedServices: ['Airport transfers', 'Restaurant / dining', 'Spa & wellness', 'Room upgrades', 'Early check-in / late checkout', 'Tours & local experiences', 'Room service', 'Other'],
+  lowServiceReasons: ['Guests may not know the services exist', 'Guests discover them too late', 'Staff do not always have time to promote them', 'Most communication happens by email', 'Language barriers', 'Guests prefer arranging things independently', 'Other'],
+  preArrivalContact: ['Yes', 'Sometimes', 'No'],
+  contactMethods: ['Email', 'Booking.com / OTA messaging', 'WhatsApp', 'SMS', 'Phone', 'Hotel app', 'Other'],
+  discoveryChannels: ['Reception staff', 'Hotel website', 'Booking confirmation email', 'Pre-arrival emails', 'Printed brochures', 'In-room materials / QR codes', 'WhatsApp / SMS', 'Hotel app', 'Guests usually ask themselves', 'Other'],
+  languageDifficulty: ['Never', 'Occasionally', 'Regularly', 'Very often'],
+  repeatedQuestions: ['Breakfast hours', 'Wi-Fi', 'Check-in / checkout', 'Transport / airport', 'Restaurant recommendations', 'Hotel services', 'Spa', 'Directions / local recommendations', 'Room questions', 'Other'],
+  requestHandling: ['Reception handles them directly', 'Reception calls the appropriate department', 'Internal phone / radio', 'WhatsApp staff group', 'Hotel/PMS task-management system', 'Written notes', 'Other'],
+  responseSpeed: ['Almost immediately', 'Under 5 minutes', '5–15 minutes', 'More than 15 minutes', 'It varies significantly'],
+  managementInsights: ['Most common guest questions', 'Most requested services', 'Guest complaints', 'Response times', 'Service / ancillary revenue', 'Guest preferences', 'Staff workload', 'Other'],
+  improvementGoals: ['Increase ancillary-service revenue', 'Reduce repetitive reception work', 'Improve guest response time', 'Improve multilingual communication', 'Improve guest satisfaction', 'Generate more guest feedback / reviews', 'Better understand guest needs', 'Improve pre-arrival communication', 'Other'],
+});
+
+function discoveryChoice(value, field, options, { required = false } = {}) {
+  const choice = compactText(value, field, { required, max: 120 });
+  if (choice && !options.includes(choice)) throw new Error(`Invalid ${field.toLowerCase()}.`);
+  return choice;
+}
+
+function discoveryList(value, field, options, { maxItems = 12 } = {}) {
+  if (value === undefined || value === null || value === '') return [];
+  if (!Array.isArray(value)) throw new Error(`${field} must be a list.`);
+  if (value.length > maxItems) throw new Error(`${field} has too many selections.`);
+  const selections = [...new Set(value.map((item) => compactText(item, field, { max: 120 })).filter(Boolean))];
+  if (selections.some((item) => !options.includes(item))) throw new Error(`Invalid ${field.toLowerCase()} selection.`);
+  return selections;
+}
+
+function discoveryInteger(value, field, { max = 5000 } = {}) {
+  const text = compactText(value, field, { max: 6 });
+  if (!text) return null;
+  const numeric = Number(text);
+  if (!Number.isInteger(numeric) || numeric < 1 || numeric > max) throw new Error(`${field} must be between 1 and ${max}.`);
+  return numeric;
+}
+
+function discoveryPercentage(value, field) {
+  const text = compactText(value, field, { max: 6 });
+  if (!text) return null;
+  const numeric = Number(text);
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 100) throw new Error(`${field} must be between 0 and 100.`);
+  return Math.round(numeric * 10) / 10;
+}
+
+function discoveryOtherDetail(selections, detail, field) {
+  const hasOther = Array.isArray(selections) ? selections.includes('Other') : selections === 'Other';
+  if (hasOther && !detail) throw new Error(`${field} is required when Other is selected.`);
+  return hasOther ? detail : '';
+}
+
+function salesBriefListWithOther(label, selections, detail) {
+  const values = Array.isArray(selections)
+    ? selections.map((item) => item === 'Other' && detail ? `Other — ${detail}` : item)
+    : selections;
+  return salesBriefLines(label, values);
+}
+
+function salesBriefLines(label, value) {
+  if (Array.isArray(value)) return value.length ? `${label}: ${value.join(', ')}` : '';
+  if (value === null || value === undefined || value === '') return '';
+  return `${label}: ${value}`;
+}
+
+function buildHotelDiscoverySalesBrief(lead) {
+  const { discovery } = lead;
+  const localeLabel = { en: 'English', fr: 'French', es: 'Spanish' }[lead.locale] || 'English';
+  const shares = Object.entries(discovery.bookingSources)
+    .filter(([, value]) => value !== null)
+    .map(([source, value]) => `${source === 'Other' && discovery.bookingOtherDetail ? `Other — ${discovery.bookingOtherDetail}` : source}: ${value}%`);
+  const groups = [
+    ['Hotel Discovery Brief', [
+      `Hotel: ${lead.hotelName}`,
+      `Contact: ${lead.contactName}${lead.role ? ` · ${lead.role}` : ''}`,
+      `Email: ${lead.email}`,
+      `Brief language: ${localeLabel}`,
+      salesBriefLines('Phone', lead.phone),
+      salesBriefLines('Website', lead.website),
+      salesBriefLines('Rooms', lead.roomCount),
+      salesBriefLines('Properties operated', discovery.propertyCount),
+      salesBriefLines('PMS / reservation system', discovery.pmsSystem === 'Other' && discovery.pmsOther ? `Other — ${discovery.pmsOther}` : discovery.pmsSystem),
+      salesBriefLines('WhatsApp Business', discovery.whatsAppBusiness),
+    ]],
+    ['Guest services & revenue', [
+      salesBriefLines('Guests using additional services', discovery.serviceUsage),
+      salesBriefListWithOther('Most requested services', discovery.requestedServices, discovery.requestedServicesOther),
+      salesBriefListWithOther('Reasons for lower service usage', discovery.lowServiceReasons, discovery.lowServiceReasonsOther),
+    ]],
+    ['Bookings & communication', [
+      salesBriefLines('Reservation mix', shares),
+      discovery.bookingSourcesNotSure ? 'Reservation mix: Not sure' : '',
+      salesBriefLines('Proactive pre-arrival contact', discovery.preArrivalContact),
+      salesBriefListWithOther('Pre-arrival channels', discovery.preArrivalMethods, discovery.preArrivalMethodsOther),
+      salesBriefListWithOther('How paid services are discovered', discovery.discoveryChannels, discovery.discoveryChannelsOther),
+      salesBriefLines('Services to promote more often', discovery.servicesToPromote),
+    ]],
+    ['Guests & language', [
+      salesBriefLines('International guest origins', discovery.internationalOrigins),
+      salesBriefLines('Language difficulty', discovery.languageDifficulty),
+      salesBriefLines('Languages creating difficulty', discovery.difficultLanguages),
+    ]],
+    ['Front desk & operations', [
+      salesBriefListWithOther('Repeated reception questions', discovery.repeatedQuestions, discovery.repeatedQuestionsOther),
+      salesBriefListWithOther('How requests are handled', discovery.requestHandling, discovery.requestHandlingOther),
+      salesBriefLines('Response time during busy periods', discovery.responseSpeed),
+      salesBriefLines('Complaint / VIP escalation', discovery.escalationProcess),
+      salesBriefLines('Post-checkout feedback contact', discovery.postCheckoutContact),
+      salesBriefListWithOther('Post-checkout channels', discovery.postCheckoutMethods, discovery.postCheckoutMethodsOther),
+    ]],
+    ['Management goals', [
+      salesBriefListWithOther('Management wants to understand', discovery.managementInsights, discovery.managementInsightsOther),
+      salesBriefListWithOther('Priorities to improve', discovery.improvementGoals, discovery.improvementGoalsOther),
+      salesBriefLines('Presentation focus requested', discovery.presentationFocus),
+    ]],
+  ];
+  return groups.map(([heading, lines]) => {
+    const content = lines.filter(Boolean).map((line) => `• ${line}`).join('\n');
+    return content ? `${heading}\n${content}` : '';
+  }).filter(Boolean).join('\n\n').slice(0, 12_000);
+}
+
 const DEMO_LANGUAGES = new Map([
   ['english', 'en'], ['en', 'en'],
   ['french', 'fr'], ['français', 'fr'], ['francais', 'fr'], ['fr', 'fr'],
@@ -1226,6 +1958,7 @@ function parseDemoChatPayload(body) {
     scenario,
     is_demo: true,
     chatHistory,
+    conversationOwner: compactText(body.conversationOwner, 'Conversation owner', { max: 24 }).toLowerCase() === 'staff' ? 'staff' : 'ai',
   };
 }
 
@@ -1375,8 +2108,7 @@ async function persistRoomEnquiry(env, enquiry) {
   });
 }
 
-function parseDiscoveryLead(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid discovery request.');
+function parseLegacyDiscoveryLead(body) {
   const contactName = compactText(body.contactName, 'Your name', { required: true, max: 100 });
   const hotelName = compactText(body.hotelName, 'Hotel name', { required: true, max: 160 });
   const email = compactText(body.email, 'Work email', { required: true, max: 160 }).toLowerCase();
@@ -1411,6 +2143,120 @@ function parseDiscoveryLead(body) {
   };
 }
 
+function parseHotelDiscoveryBrief(body) {
+  const contactName = compactText(body.contactName, 'Contact name', { required: true, max: 100 });
+  const role = compactText(body.role, 'Role / job title', { required: true, max: 100 });
+  const hotelName = compactText(body.hotelName, 'Hotel name', { required: true, max: 160 });
+  const email = compactText(body.email, 'Work email', { required: true, max: 160 }).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please provide a valid work email.');
+  const phone = compactText(body.phone, 'Phone number', { max: 60 });
+  const website = compactText(body.website, 'Hotel website', { max: 240 });
+  if (website) {
+    try {
+      const parsed = new URL(website);
+      if (!/^https?:$/.test(parsed.protocol)) throw new Error('protocol');
+    } catch {
+      throw new Error('Please provide a valid hotel website URL.');
+    }
+  }
+  const sessionId = compactText(body.sessionId, 'Session', { max: 110 });
+  if (sessionId && !/^[a-zA-Z0-9_-]{4,110}$/.test(sessionId)) throw new Error('Invalid session identifier.');
+  const locale = compactText(body.locale, 'Locale', { max: 2 }).toLowerCase() || 'en';
+  if (!['en', 'fr', 'es'].includes(locale)) throw new Error('Locale must be en, fr, or es.');
+  if (body.consent !== true) throw new Error('Consent is required to send a hotel discovery brief.');
+  const answers = body.discovery;
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw new Error('Invalid hotel discovery answers.');
+
+  const bookingSources = {
+    'Direct hotel website': discoveryPercentage(answers.bookingSources?.directWebsite, 'Direct hotel website share'),
+    'Booking.com': discoveryPercentage(answers.bookingSources?.bookingCom, 'Booking.com share'),
+    'Expedia / Hotels.com': discoveryPercentage(answers.bookingSources?.expedia, 'Expedia / Hotels.com share'),
+    'Other OTAs': discoveryPercentage(answers.bookingSources?.otherOtas, 'Other OTAs share'),
+    'Travel agencies / corporate': discoveryPercentage(answers.bookingSources?.agenciesCorporate, 'Travel agencies / corporate share'),
+    Other: discoveryPercentage(answers.bookingSources?.other, 'Other reservations share'),
+  };
+  const discovery = {
+    propertyCount: discoveryInteger(body.propertyCount, 'Number of properties operated', { max: 1000 }),
+    pmsSystem: discoveryChoice(body.pmsSystem, 'PMS / reservation system', HOTEL_DISCOVERY_OPTIONS.pms),
+    pmsOther: compactText(body.pmsOther, 'Other PMS / reservation system', { max: 100 }),
+    whatsAppBusiness: discoveryChoice(body.whatsAppBusiness, 'WhatsApp Business', HOTEL_DISCOVERY_OPTIONS.yesNoNotSure),
+    serviceUsage: discoveryChoice(answers.serviceUsage, 'Service usage', HOTEL_DISCOVERY_OPTIONS.serviceUsage),
+    requestedServices: discoveryList(answers.requestedServices, 'Requested services', HOTEL_DISCOVERY_OPTIONS.requestedServices, { maxItems: 8 }),
+    requestedServicesOther: compactText(answers.requestedServicesOther, 'Other requested services', { max: 300 }),
+    lowServiceReasons: discoveryList(answers.lowServiceReasons, 'Service usage reasons', HOTEL_DISCOVERY_OPTIONS.lowServiceReasons, { maxItems: 7 }),
+    lowServiceReasonsOther: compactText(answers.lowServiceReasonsOther, 'Other service usage reason', { max: 300 }),
+    bookingSources,
+    bookingSourcesNotSure: answers.bookingSourcesNotSure === true,
+    bookingOtherDetail: compactText(answers.bookingOtherDetail, 'Other booking source', { max: 300 }),
+    preArrivalContact: discoveryChoice(answers.preArrivalContact, 'Pre-arrival contact', HOTEL_DISCOVERY_OPTIONS.preArrivalContact),
+    preArrivalMethods: discoveryList(answers.preArrivalMethods, 'Pre-arrival contact methods', HOTEL_DISCOVERY_OPTIONS.contactMethods, { maxItems: 7 }),
+    preArrivalMethodsOther: compactText(answers.preArrivalMethodsOther, 'Other pre-arrival contact method', { max: 300 }),
+    discoveryChannels: discoveryList(answers.discoveryChannels, 'Service discovery channels', HOTEL_DISCOVERY_OPTIONS.discoveryChannels, { maxItems: 10 }),
+    discoveryChannelsOther: compactText(answers.discoveryChannelsOther, 'Other service discovery channel', { max: 300 }),
+    servicesToPromote: compactText(answers.servicesToPromote, 'Services to promote', { max: 500 }),
+    internationalOrigins: discoveryList(answers.internationalOrigins, 'International guest origins', Array.isArray(answers.internationalOrigins) ? answers.internationalOrigins : [], { maxItems: 12 }),
+    languageDifficulty: discoveryChoice(answers.languageDifficulty, 'Language difficulty', HOTEL_DISCOVERY_OPTIONS.languageDifficulty),
+    difficultLanguages: compactText(answers.difficultLanguages, 'Languages creating difficulty', { max: 300 }),
+    repeatedQuestions: discoveryList(answers.repeatedQuestions, 'Repeated reception questions', HOTEL_DISCOVERY_OPTIONS.repeatedQuestions, { maxItems: 10 }),
+    repeatedQuestionsOther: compactText(answers.repeatedQuestionsOther, 'Other repeated reception question', { max: 300 }),
+    requestHandling: discoveryList(answers.requestHandling, 'Request handling methods', HOTEL_DISCOVERY_OPTIONS.requestHandling, { maxItems: 7 }),
+    requestHandlingOther: compactText(answers.requestHandlingOther, 'Other request handling method', { max: 300 }),
+    responseSpeed: discoveryChoice(answers.responseSpeed, 'Response time', HOTEL_DISCOVERY_OPTIONS.responseSpeed),
+    escalationProcess: compactText(answers.escalationProcess, 'Complaint / VIP escalation', { max: 600 }),
+    postCheckoutContact: discoveryChoice(answers.postCheckoutContact, 'Post-checkout contact', HOTEL_DISCOVERY_OPTIONS.preArrivalContact),
+    postCheckoutMethods: discoveryList(answers.postCheckoutMethods, 'Post-checkout contact methods', HOTEL_DISCOVERY_OPTIONS.contactMethods.concat(['OTA platform', 'Review platform link']), { maxItems: 7 }),
+    postCheckoutMethodsOther: compactText(answers.postCheckoutMethodsOther, 'Other post-checkout contact method', { max: 300 }),
+    managementInsights: discoveryList(answers.managementInsights, 'Management insights', HOTEL_DISCOVERY_OPTIONS.managementInsights, { maxItems: 8 }),
+    managementInsightsOther: compactText(answers.managementInsightsOther, 'Other management insight', { max: 300 }),
+    improvementGoals: discoveryList(answers.improvementGoals, 'Improvement priorities', HOTEL_DISCOVERY_OPTIONS.improvementGoals, { maxItems: 3 }),
+    improvementGoalsOther: compactText(answers.improvementGoalsOther, 'Other improvement priority', { max: 300 }),
+    presentationFocus: compactText(answers.presentationFocus, 'Presentation focus', { max: 900 }),
+  };
+  discovery.pmsOther = discoveryOtherDetail(discovery.pmsSystem, discovery.pmsOther, 'Other PMS / reservation system');
+  discovery.requestedServicesOther = discoveryOtherDetail(discovery.requestedServices, discovery.requestedServicesOther, 'Other requested services');
+  discovery.lowServiceReasonsOther = discoveryOtherDetail(discovery.lowServiceReasons, discovery.lowServiceReasonsOther, 'Other service usage reason');
+  discovery.bookingOtherDetail = discovery.bookingSources.Other > 0
+    ? discoveryOtherDetail('Other', discovery.bookingOtherDetail, 'Other booking source')
+    : '';
+  if (!['Yes', 'Sometimes'].includes(discovery.preArrivalContact)) {
+    discovery.preArrivalMethods = [];
+    discovery.preArrivalMethodsOther = '';
+  } else {
+    discovery.preArrivalMethodsOther = discoveryOtherDetail(discovery.preArrivalMethods, discovery.preArrivalMethodsOther, 'Other pre-arrival contact method');
+  }
+  discovery.discoveryChannelsOther = discoveryOtherDetail(discovery.discoveryChannels, discovery.discoveryChannelsOther, 'Other service discovery channel');
+  discovery.repeatedQuestionsOther = discoveryOtherDetail(discovery.repeatedQuestions, discovery.repeatedQuestionsOther, 'Other repeated reception question');
+  discovery.requestHandlingOther = discoveryOtherDetail(discovery.requestHandling, discovery.requestHandlingOther, 'Other request handling method');
+  if (!['Yes', 'Sometimes'].includes(discovery.postCheckoutContact)) {
+    discovery.postCheckoutMethods = [];
+    discovery.postCheckoutMethodsOther = '';
+  } else {
+    discovery.postCheckoutMethodsOther = discoveryOtherDetail(discovery.postCheckoutMethods, discovery.postCheckoutMethodsOther, 'Other post-checkout contact method');
+  }
+  discovery.managementInsightsOther = discoveryOtherDetail(discovery.managementInsights, discovery.managementInsightsOther, 'Other management insight');
+  discovery.improvementGoalsOther = discoveryOtherDetail(discovery.improvementGoals, discovery.improvementGoalsOther, 'Other improvement priority');
+  return {
+    contactName,
+    role,
+    hotelName,
+    email,
+    phone,
+    city: '',
+    website,
+    roomCount: discoveryInteger(body.roomCount, 'Number of rooms', { max: 5000 }),
+    locale,
+    message: discovery.presentationFocus,
+    discovery,
+    userId: `web:${sessionId || `hotel_brief_${crypto.randomUUID()}`}`,
+  };
+}
+
+function parseDiscoveryLead(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Invalid discovery request.');
+  if (body.submissionType === 'hotel_discovery_brief') return parseHotelDiscoveryBrief(body);
+  return parseLegacyDiscoveryLead(body);
+}
+
 async function persistDiscoveryLead(env, lead) {
   return airtable(env, 'Hotel Leads', {
     method: 'POST',
@@ -1420,11 +2266,15 @@ async function persistDiscoveryLead(env, lead) {
       'Contact Name': lead.contactName,
       'Work Email': lead.email,
       'Hotel Name': lead.hotelName,
-      'Phone Number': lead.phone,
-      City: lead.city,
+      'Phone Number': lead.phone || undefined,
+      City: lead.city || undefined,
       'Number of Rooms': lead.roomCount ?? undefined,
       'Hotel Website': lead.website || undefined,
-      'Concierge Service Needs': lead.message || undefined,
+      // Hotel Leads already has a long-text field for service needs. For the
+      // extended brief it holds the complete, human-readable Sales Brief so an
+      // Airtable Automation can email the exact submitted context without a
+      // second lead pipeline or unverified schema fields.
+      'Concierge Service Needs': lead.discovery ? buildHotelDiscoverySalesBrief(lead) : (lead.message || undefined),
       'Lead Status': 'New',
     },
   });
@@ -1444,6 +2294,9 @@ function staffRoleFor(serviceType) {
 }
 
 function staffAlertsFromOutcome(outcome) {
+  // Compatibility routing metadata for the simulator and existing clients.
+  // It identifies the intended queue only; it is not evidence that a person
+  // was notified, received the request, or has begun work.
   return (outcome.requests || []).filter((item) => item.summary).slice(0, 3).map((item) => ({
     role: staffRoleFor(outcome.serviceType),
     summary: item.summary,
@@ -1452,8 +2305,35 @@ function staffAlertsFromOutcome(outcome) {
   }));
 }
 
+// This is a presentation-safe reflection of the request objects that are
+// already persisted by persistConversation. It deliberately carries no
+// Airtable record IDs or staff data, and keeps the public chat contract
+// additive for clients that do not use the operational surface.
+function requestSummariesFromOutcome(outcome) {
+  return (outcome?.requests || []).filter((item) => item?.summary).slice(0, 3).map((item) => ({
+    service_name: String(item.serviceName || ''),
+    service_type: mapServiceTypeForRequests(outcome.serviceType),
+    source: item.source === 'external' ? 'external' : 'partner',
+    summary: String(item.summary || ''),
+    est_value_eur: Number.isFinite(Number(item.estValueEur)) ? Number(item.estValueEur) : null,
+    is_upsell: Boolean(item.isUpsell),
+  }));
+}
+
 function chatResponseFromOutcome(outcome, classification, language, partnerOfferList = [], providerFailure = '', customMedia = null, inputMessage = '') {
-  const media = customMedia || detectMediaBrochure(inputMessage || outcome?.reply || classification?.category || '', classification?.category);
+  // Only the guest's own current message may drive brochure attachment.
+  // Falling back to outcome.reply or the raw category string here previously
+  // let the assistant's own "avoiding spa" wording re-trigger the spa
+  // brochure on a message that had just dropped the spa topic.
+  const media = customMedia || detectMediaBrochure(inputMessage || '', classification?.category);
+  const nextStep = outcome?.nextStep && outcome.nextStep.type === 'guest_follow_up' && typeof outcome.nextStep.text === 'string'
+    ? {
+      type: 'guest_follow_up',
+      key: String(outcome.nextStep.key || '').slice(0, 80),
+      text: outcome.nextStep.text.slice(0, 220),
+      delay_ms: Math.min(3_000, Math.max(1_500, Number(outcome.nextStep.delayMs || outcome.nextStep.delay_ms || 1_800))),
+    }
+    : null;
   return {
     reply: outcome.reply,
     language,
@@ -1472,8 +2352,23 @@ function chatResponseFromOutcome(outcome, classification, language, partnerOffer
     provider_failure: providerFailure,
     requires_human: Boolean(outcome.requiresHuman || outcome.escapeHatchTriggered),
     escape_hatch_triggered: Boolean(outcome.escapeHatchTriggered),
-    media: media || detectMediaBrochure(outcome.reply || '', classification.category),
+    // No second attempt against outcome.reply: scanning the assistant's own
+    // generated text for category keywords is what let "avoiding spa" in a
+    // reply re-attach the spa brochure it was meant to be leaving out.
+    media,
     staff_alerts: staffAlertsFromOutcome(outcome),
+    requests: requestSummariesFromOutcome(outcome),
+    ...(nextStep ? { next_step: nextStep } : {}),
+  };
+}
+
+function reviewLinkMedia() {
+  return {
+    type: 'link',
+    title: 'Hôtel Lumière Paris — Google Reviews',
+    url: 'https://g.page/r/hotel-lumiere-paris/review',
+    description: 'Share your experience publicly, if you wish. · Google Maps',
+    thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
   };
 }
 
@@ -1499,7 +2394,9 @@ function postCheckoutResponse(input) {
       externalOptionNames: [],
       recommendations: [],
     };
-    return chatResponseFromOutcome(outcome, { category: 'general_manager', hasEscalation: true }, input.language, [], '', null, input.message);
+    const res = chatResponseFromOutcome(outcome, { category: 'general_manager', hasEscalation: true }, input.language, [], '', reviewLinkMedia(), input.message);
+    res.quickReplies = ['Leave Google Review', 'Share on TripAdvisor'];
+    return res;
   }
 
   if (isPos) {
@@ -1514,14 +2411,7 @@ function postCheckoutResponse(input) {
       externalOptionNames: [],
       recommendations: [],
     };
-    const linkMedia = {
-      type: 'link',
-      title: 'Hôtel Lumière Paris — Google Reviews',
-      url: 'https://g.page/r/hotel-lumiere-paris/review',
-      description: '★★★★★ 4.9 (1,240+ reviews) · Google Maps',
-      thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
-    };
-    const res = chatResponseFromOutcome(outcome, { category: 'review', isPositive: true }, input.language, [], '', linkMedia, input.message);
+    const res = chatResponseFromOutcome(outcome, { category: 'review', isPositive: true }, input.language, [], '', reviewLinkMedia(), input.message);
     res.quickReplies = ['Leave Google Review', 'Share on TripAdvisor'];
     return res;
   }
@@ -1539,7 +2429,7 @@ function escalationResponse(input) {
     requiresHuman: true,
     escapeHatchTriggered: true,
     requests: [{
-      serviceName: 'Duty Manager Escalation',
+      serviceName: 'Guest Service Recovery Request',
       source: 'partner',
       summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
       isUpsell: false,
@@ -1551,23 +2441,36 @@ function escalationResponse(input) {
 }
 
 function operationalResponse(input) {
-  if (!isOperationalRequest(input.message)) return null;
+  if (!isOperationalRequest(input.message) || hasMultipleIndependentNeeds(input.message)) return null;
+  const serviceType = operationalServiceType(input.message);
   const reply = OPERATIONAL_REPLIES[input.language] ?? OPERATIONAL_REPLIES.en;
   const outcome = {
     reply,
     intent: 'service_request',
-    serviceType: 'housekeeping',
+    serviceType,
     requiresHuman: true,
     requests: [{
-      serviceName: 'Room Delivery / Operational Request',
+      serviceName: serviceType === 'Maintenance' ? 'Maintenance Request' : 'Housekeeping Request',
       source: 'partner',
-      summary: `Room Request: "${input.message}"`,
+      summary: `${serviceType} request: "${input.message}"`,
       isUpsell: false,
     }],
     externalOptionNames: [],
     recommendations: [],
   };
-  return chatResponseFromOutcome(outcome, { category: 'housekeeping', isOperational: true, hasIntent: true }, input.language, [], '', null, input.message);
+  return chatResponseFromOutcome(outcome, { category: serviceType.toLowerCase(), isOperational: true, hasIntent: true }, input.language, [], '', null, input.message);
+}
+
+function hasMultipleIndependentNeeds(message) {
+  const clauses = String(message ?? '')
+    .split(/(?:\s*[;.]\s*|\s+\b(?:and|also|plus|as well as)\b\s+)/i)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+  if (clauses.length < 2) return false;
+  const intents = clauses.map((clause) => classifyRequest(clause));
+  const operational = intents.some((intent) => intent.isOperational);
+  const distinctCategories = new Set(intents.map((intent) => intent.category).filter(Boolean));
+  return operational && (distinctCategories.size > 1 || intents.some((intent) => intent.hasIntent && !intent.isOperational));
 }
 
 async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
@@ -1577,6 +2480,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
   } catch (err) {
     throw err;
   }
+  const turnStartedAt = Date.now();
 
   try {
     const instantPostCheckout = postCheckoutResponse(input);
@@ -1603,7 +2507,7 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
           reply: instantEscalation.reply,
           serviceType: 'General Manager',
           requests: [{
-            serviceName: 'Duty Manager Escalation',
+            serviceName: 'Guest Service Recovery Request',
             source: 'partner',
             summary: `URGENT: Guest requested manager / severe complaint: "${input.message}"`,
             isUpsell: false,
@@ -1615,13 +2519,14 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     const instantOperational = operationalResponse(input);
     if (instantOperational) {
       if (!input.testMode || input.testMode === 'write_verified') {
+        const serviceType = operationalServiceType(input.message);
         ctx.waitUntil(persistConversation(env, input, {
           reply: instantOperational.reply,
-          serviceType: 'housekeeping',
+          serviceType,
           requests: [{
-            serviceName: 'Room Delivery / Operational Request',
+            serviceName: serviceType === 'Maintenance' ? 'Maintenance Request' : 'Housekeeping Request',
             source: 'partner',
-            summary: `Room Request: "${input.message}"`,
+            summary: `${serviceType} request: "${input.message}"`,
             isUpsell: false,
           }],
         }).catch(() => undefined));
@@ -1644,11 +2549,28 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       }
       return languagePreference;
     }
+    // Broad, explicit stay-planning is a safe no-tool fast path. Ambiguous
+    // follow-ups still proceed to the semantic controller below.
+    const instantStayPlanning = stayPlanningResponse(input, classification);
+    if (instantStayPlanning) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: instantStayPlanning.reply, requests: [] }).catch(() => undefined));
+      }
+      return instantStayPlanning;
+    }
     requireSecrets(env);
-    const serviceRecords = await fetchServices(env, { bypassCache: Boolean(input.testMode) }).catch((err) => {
-      console.error('Failed to fetch services from Airtable:', err);
-      return [];
-    });
+    // Load any usable context before a category/card shortcut. The controller
+    // decides whether that context is relevant; code only observes that it
+    // exists so it cannot pre-interpret a guest's natural follow-up.
+    const [history, facts, serviceRecords] = await Promise.all([
+      input.chatHistory ? Promise.resolve(input.chatHistory) : fetchHistory(env, input.userId).catch(() => []),
+      fetchFacts(env).catch(() => ({ hotelName: env.HOTEL_NAME || 'Hôtel Lumière Paris', hotelCity: env.HOTEL_CITY || 'Paris', text: '' })),
+      fetchServices(env, { bypassCache: Boolean(input.testMode) }).catch((err) => {
+        console.error('Failed to fetch services from Airtable:', err);
+        return [];
+      }),
+    ]);
+    const hasConversationHistory = hasMeaningfulConversation(history);
     const initialServiceSet = matchingServices(serviceRecords, classification);
     const instantCancellation = await cancellationOutcome(env, input, classification, initialServiceSet.all);
     if (instantCancellation) {
@@ -1664,41 +2586,68 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       }
       return chatResponseFromOutcome(instantDirectBooking, classification, input.language);
     }
-    const instantHotelFirst = hotelFirstResponse(input, classification, initialServiceSet.all);
+    // Cards are presentation for a new request only. A history-bearing turn
+    // reaches the semantic controller before any hotel-first/card shortcut.
+    const instantHotelFirst = hasConversationHistory ? null : hotelFirstResponse(input, classification, initialServiceSet.all);
     if (instantHotelFirst) {
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, { reply: instantHotelFirst.reply, requests: [] }).catch(() => undefined));
       }
       return instantHotelFirst;
     }
-    const instantDining = curatedDiningResponse(input, classification, initialServiceSet.matching);
+    const instantDining = hasConversationHistory ? null : curatedDiningResponse(input, classification, initialServiceSet.matching);
     if (instantDining) {
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, { reply: instantDining.reply, requests: [] }).catch(() => undefined));
       }
       return instantDining;
     }
-    const [history, facts] = await Promise.all([
-      input.chatHistory ? Promise.resolve(input.chatHistory) : fetchHistory(env, input.userId).catch(() => []),
-      fetchFacts(env).catch(() => ({ hotelName: env.HOTEL_NAME || 'H\u00f4tel Lumi\u00e8re Paris', hotelCity: env.HOTEL_CITY || 'Paris', text: '' })),
-    ]);
-    classification = inheritConversationContext(classification, history, input.message);
+    classification = inheritConversationContext(classification, history);
     reportStatus('Considering the most suitable next step\u2026');
-    classification = await enrichSemanticRoute(env, input, history, classification).catch(() => classification);
-    const serviceSet = matchingServices(serviceRecords, classification);
-    // Semantic routing can recognize catalogue wording that the fast phrase
-    // matcher did not. Keep this path deterministic as well, so it returns the
-    // complete collection rather than a model-selected subset.
-    if (classification.route === 'partner_catalog') {
-      const catalogue = hotelCatalogueResponse(input, classification, serviceSet.all);
-      if (catalogue) {
+    const semantic = await semanticConversationController(env, input, history, { facts, hint: classification }).catch(() => ({ plan: null, providerFailure: 'semantic_unavailable' }));
+    if (semantic.plan?.valid) {
+      // The controller may resolve a contextual language switch, but only to
+      // a value accepted by its strict schema.
+      input.language = semantic.plan.language || input.language;
+      classification = applySemanticPlan(classification, semantic.plan);
+    } else {
+      // Provider failure remains conservative. The legacy response exists
+      // solely to preserve a coherent, harmless reply during an outage; it is
+      // not the normal interpretation path.
+      const relationshipFollowUp = relationshipFollowUpResponse(input);
+      if (relationshipFollowUp) {
         if (!input.testMode || input.testMode === 'write_verified') {
-          ctx.waitUntil(persistConversation(env, input, { reply: catalogue.reply, requests: [] }).catch(() => undefined));
+          ctx.waitUntil(persistConversation(env, input, { reply: relationshipFollowUp.reply, requests: [] }).catch(() => undefined));
         }
-        return catalogue;
+        return relationshipFollowUp;
       }
+      classification = await enrichSemanticRoute(env, input, history, classification).catch(() => classification);
     }
-    const directBooking = partnerBookingOutcome(input, classification, serviceSet.all);
+    const semanticStayPlanning = stayPlanningResponse(input, classification);
+    if (semanticStayPlanning) {
+      if (!input.testMode || input.testMode === 'write_verified') {
+        ctx.waitUntil(persistConversation(env, input, { reply: semanticStayPlanning.reply, requests: [] }).catch(() => undefined));
+      }
+      return semanticStayPlanning;
+    }
+    const serviceSet = matchingServices(serviceRecords, classification);
+    // After semantic planning, verified cards/media accompany the natural
+    // reply below. They must never replace a contextual answer with a generic
+    // category or catalogue sentence.
+    // A history-bearing affirmative can mean continued exploration rather
+    // than consent to book. Once the semantic controller has run, only its
+    // validated action capability may unlock the legacy direct booking helper.
+    // First-turn explicit booking remains on the existing fast path above.
+    // A valid semantic plan is always routed through the tool-based
+    // guest_request pipeline below (buildToolRequests -> guest_request),
+    // which grounds its confirmation text in the model's own guestGoal
+    // rather than a keyword guess. The legacy partnerBookingOutcome helper
+    // now exists solely as a degraded-mode fallback for when the semantic
+    // controller itself failed (plan invalid), not as an alternate path for
+    // an otherwise-successful, action-flagged plan.
+    const directBooking = semantic.plan?.valid
+      ? null
+      : partnerBookingOutcome(input, classification, serviceSet.all);
     if (directBooking) {
       if (!input.testMode || input.testMode === 'write_verified') {
         ctx.waitUntil(persistConversation(env, input, directBooking).catch(() => undefined));
@@ -1706,61 +2655,183 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       return chatResponseFromOutcome(directBooking, classification, input.language);
     }
     const partnerMatches = serviceSet.matching.filter((service) => service.isPartner);
-    const promptServices = classification.route === 'partner_catalog'
-      ? serviceSet.all.filter((service) => service.isPartner)
-      : partnerMatches;
-    let externalOptions = [];
-    if (shouldSearchExternal(classification, partnerMatches)) {
+    // The tool executor is deliberately bounded to one request per capability
+    // for this turn. It receives only strict semantic-plan inputs and returns
+    // normalized results; it cannot recursively call model-selected providers.
+    const toolRequests = buildToolRequests({ plan: semantic.plan, classification, input });
+    if (shouldSearchExternal(classification, partnerMatches) && !toolRequests.some((request) => request.tool === 'external_search')) {
+      toolRequests.push({
+        tool: 'external_search',
+        input: {
+          query: input.message,
+          category: classification.category || 'experience',
+          location: classification.location || '',
+          constraints: classification.cuisine ? ['cuisine'] : [],
+          language: input.language,
+        },
+      });
+    }
+    const toolExecutor = createToolExecutor({
+      env,
+      mode: input.testMode,
+      records: serviceRecords,
+      source: facts,
+      context: { city: env.HOTEL_CITY || 'Paris', classification },
+      conversationOwner: input.conversationOwner || 'ai',
+    });
+    if (toolRequests.some((request) => request.tool === 'external_search')) {
       reportStatus('Searching current Paris addresses\u2026');
-      externalOptions = await externalSearch(env, input, classification).catch(() => []);
-      if (preferenceForOneRecommendation(input.message)) externalOptions = externalOptions.slice(0, 1);
-      reportStatus('Curating only independently verified matches\u2026');
     } else {
       reportStatus('Reviewing the hotel\u2019s preferred collection\u2026');
     }
-    if (classification.externalDiscovery && externalOptions.length) {
-      const outcome = enforceContract(
-        { reply: '', intent: 'service_request', serviceType: classification.category, requiresHuman: true, requests: [] },
-        { language: input.language, classification, matching: promptServices, excluded: serviceSet.excluded, externalOptions, inputMessage: input.message },
-      );
-      if (!input.testMode || input.testMode === 'write_verified') {
-        ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
-      }
-      return chatResponseFromOutcome(outcome, classification, input.language);
-    }
+    const executedTools = await toolExecutor.execute(toolRequests);
+    const toolResults = {
+      hotel_facts: { tool: 'hotel_facts', status: 'not_needed', data: null, error_code: null, meta: {} },
+      hotel_services: { tool: 'hotel_services', status: 'not_needed', data: null, error_code: null, meta: {} },
+      external_search: { tool: 'external_search', status: 'not_needed', data: null, error_code: null, meta: {} },
+      guest_request: { tool: 'guest_request', status: 'not_needed', data: null, error_code: null, meta: {} },
+      human_takeover: { tool: 'human_takeover', status: 'not_needed', data: null, error_code: null, meta: {} },
+      ...toolResultMap(executedTools),
+    };
+    const responseToolResults = visibleToolResults(toolResults, semantic.plan);
+    const serviceToolMatches = (responseToolResults.hotel_services?.data?.services || []).map(serviceFromTool).filter((service) => service.isPartner);
+    // An explicit external request must never be silently replaced with a
+    // hotel partner merely because the search tool is unavailable.
+    const promptServices = withoutRejectedServices(classification.externalDiscovery
+      ? []
+      : classification.route === 'partner_catalog' || classification.contextualHotelCatalogue
+        ? serviceSet.all.filter((service) => service.isPartner)
+        : uniqueServices([...partnerMatches, ...serviceToolMatches]), semantic.plan);
+    let externalOptions = responseToolResults.external_search?.data?.results || [];
+    if (preferenceForOneRecommendation(input.message)) externalOptions = externalOptions.slice(0, 1);
+    if (toolRequests.some((request) => request.tool === 'external_search')) reportStatus('Curating only independently verified matches\u2026');
     reportStatus('Preparing a considered recommendation\u2026');
-    const prompt = buildPrompt({ input, classification, history, services: promptServices, externalOptions, facts });
-    const provider = await callGroq(env, prompt).catch((err) => ({ content: '', providerFailure: err.message || 'groq_error' }));
-    const model = parseModelJson(provider.content);
+    const responseContract = buildResponseContract({
+      semanticPlan: semantic.plan,
+      history,
+      facts,
+      toolResults: responseToolResults,
+    });
+    const prompt = buildPrompt({
+      input, classification, history, services: promptServices, externalOptions, facts,
+      semanticPlan: semantic.plan, toolResults: responseToolResults, responseContract,
+    });
+    const parseResponseModel = (content) => {
+      const model = parseModelJson(content);
+      return model.reply ? model : null;
+    };
+    const firstProvider = await completeStructured(env, {
+      purpose: 'response_generator',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 350,
+      conversation_id: input.userId,
+    }, {
+      // A reply is the minimum response-generator contract. ConciergeFlow's
+      // existing final guardrail remains responsible for factual/action truth.
+      parse: parseResponseModel,
+    }).catch(() => ({ status: 'provider_error', content: '', structured: null, provider: '', model: '', latency_ms: 0, attempts: 1, fallback_used: false }));
+    let provider = firstProvider;
+    let model = provider.structured || parseModelJson('');
+    let adherence = validateResponseAdherence(model, responseContract);
+    let responseRepairUsed = false;
+    let contextualFallbackUsed = false;
+    const responsePipeline = isReadOnlyTask13Diagnostic(input) ? {
+      semantic_plan: semanticPlanSnapshot(semantic.plan),
+      response_contract: responseContractSnapshot(responseContract),
+      attempts: [responseAttemptSnapshot({ attempt: 1, provider, model, adherence, contract: responseContract })],
+      repair_input: null,
+      final_response_source: adherence.passed ? 'INITIAL_MODEL' : null,
+      initial_rejected: !adherence.passed,
+      repair_rejected: null,
+    } : null;
+
+    // The controller interprets intent once. A visibly non-adherent response
+    // receives exactly one fresh wording attempt; it never starts another
+    // semantic pass or an unbounded retry loop.
+    if (!adherence.passed && semantic.plan?.valid) {
+      responseRepairUsed = true;
+      if (responsePipeline) {
+        responsePipeline.repair_input = {
+          rejected_normalized_attempt: normalizedResponseSnapshot(model),
+          failure_codes_supplied: [...adherence.failures],
+          exact_failed_invariant_supplied: adherence.failures.length > 0,
+          semantic_plan: semanticPlanSnapshot(semantic.plan),
+          response_contract: responseContractSnapshot(responseContract),
+          resolved_reference_summary: diagnosticText(responseContract.reference_summary, 420),
+        };
+      }
+      const repairProvider = await completeStructured(env, {
+        purpose: 'response_generator',
+        messages: [{ role: 'user', content: `${prompt}\n\n${buildResponseRepairPrompt({ contract: responseContract, failures: adherence.failures })}` }],
+        max_tokens: 350,
+        conversation_id: input.userId,
+      }, { parse: parseResponseModel }).catch(() => ({ status: 'provider_error', content: '', structured: null, provider: '', model: '', latency_ms: 0, attempts: 1, fallback_used: false }));
+      provider = repairProvider;
+      model = provider.structured || parseModelJson('');
+      adherence = validateResponseAdherence(model, responseContract);
+      if (responsePipeline) {
+        responsePipeline.attempts.push(responseAttemptSnapshot({ attempt: 2, provider, model, adherence, contract: responseContract }));
+        responsePipeline.repair_rejected = !adherence.passed;
+        responsePipeline.final_response_source = adherence.passed ? 'REPAIR_MODEL' : null;
+      }
+      if (!adherence.passed) {
+        contextualFallbackUsed = true;
+        model = {
+          ...model,
+          reply: contextualSafeFallback(responseContract, input.language),
+          requests: [],
+        };
+        adherence = validateResponseAdherence(model, responseContract);
+        if (responsePipeline) responsePipeline.final_response_source = 'CONTEXTUAL_SAFE_FALLBACK';
+      }
+    }
+    const providerFailure = provider.status === 'success' ? '' : provider.status;
     const outcome = enforceContract(model, {
       language: input.language,
       classification,
       matching: promptServices,
       excluded: serviceSet.excluded,
       externalOptions,
+      knownServices: serviceSet.all,
       inputMessage: input.message,
-      providerFailure: provider.providerFailure,
+      providerFailure,
+      toolResults: responseToolResults,
     });
 
     if (!input.testMode || input.testMode === 'write_verified') {
       ctx.waitUntil(persistConversation(env, input, outcome).catch(() => undefined));
     }
-    return chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), provider.providerFailure, null, input.message);
+    return attachReadOnlyObservability(chatResponseFromOutcome(outcome, classification, input.language, partnerOffers(promptServices), providerFailure, null, input.message), input, {
+      semantic_route: semantic.plan?.interactionType || classification.route || 'conversation',
+      tools_requested: toolRequests.map((request) => request.tool),
+      tools_executed: executedTools.map((result) => result.tool),
+      tool_statuses: Object.fromEntries(Object.entries(toolResults).map(([tool, result]) => [tool, result.status])),
+      controller_model_calls: semantic.plan?.valid || semantic.providerFailure ? 1 : 0,
+      response_model_calls: 1 + (responseRepairUsed ? 1 : 0),
+      response_repair_used: responseRepairUsed,
+      contextual_response_fallback_used: contextualFallbackUsed,
+      response_adherence_failures: adherence.failures,
+      response_pipeline: responsePipeline,
+      llm_provider: provider.provider || semantic.llm?.provider || null,
+      llm_model: provider.model || semantic.llm?.model || null,
+      llm_purpose: 'response_generator',
+      llm_status: provider.status,
+      llm_latency_ms: provider.latency_ms,
+      llm_attempt_count: provider.attempts,
+      provider_used: toolResults.external_search?.meta?.provider_used || null,
+      fallback_used: Boolean(provider.fallback_used || toolResults.external_search?.meta?.fallback_used),
+      latency_ms: Date.now() - turnStartedAt,
+    });
   } catch (error) {
     console.error('Graceful fallback in resolveChat:', error);
-    const fallbackReply = 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.';
+    const fallbackReply = 'I apologize, but I am experiencing a brief system delay and could not prepare your request. Please try again shortly or contact the front desk directly for immediate assistance.';
     const fallbackOutcome = {
       reply: fallbackReply,
-      intent: 'service_request',
-      serviceType: 'Front Desk',
-      requiresHuman: true,
-      escapeHatchTriggered: true,
-      requests: [{
-        serviceName: 'Front Desk Assistance',
-        source: 'partner',
-        summary: `System delay fallback for guest message: "${input.message}"`,
-        isUpsell: false,
-      }],
+      intent: 'service_unavailable',
+      serviceType: 'Concierge',
+      requiresHuman: false,
+      escapeHatchTriggered: false,
+      requests: [],
       externalOptionNames: [],
       recommendations: [],
     };
@@ -1770,14 +2841,15 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     return {
       reply: fallbackReply,
       language: input?.language || 'en',
-      intent: 'service_request',
-      service_type: 'Front Desk',
-      requires_human: true,
-      escape_hatch_triggered: true,
+      intent: 'service_unavailable',
+      service_type: 'Concierge',
+      requires_human: false,
+      escape_hatch_triggered: false,
       external_option_names: [],
       recommendations: [],
       partner_offers: [],
-      staff_alerts: [{ role: 'Front Desk', summary: `System delay fallback: ${error instanceof Error ? error.message : 'Backend error'}` }],
+      staff_alerts: [],
+      requests: [],
     };
   }
 }
@@ -1809,13 +2881,14 @@ async function handleDemoChat(request, env, ctx) {
   } catch (error) {
     console.error('Error in handleDemoChat execution:', error);
     return demoResponse({
-      reply: 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.',
+      reply: 'I apologize, but I am experiencing a brief system delay and could not prepare your request. Please try again shortly or contact the front desk directly for immediate assistance.',
       language: input?.language || 'en',
-      intent: 'service_request',
-      serviceType: 'Front Desk',
-      requires_human: true,
-      escape_hatch_triggered: true,
-      staff_alerts: [{ role: 'Front Desk', summary: `System delay fallback: ${error instanceof Error ? error.message : 'Backend error'}` }],
+      intent: 'service_unavailable',
+      serviceType: 'Concierge',
+      requires_human: false,
+      escape_hatch_triggered: false,
+      staff_alerts: [],
+      requests: [],
       demo: true,
       is_demo: true,
     }, 200, request, env);
@@ -1845,7 +2918,22 @@ async function handleRoomEnquiry(request, env) {
 async function handleDiscoveryLead(request, env) {
   requireLeadsAirtable(env);
   const lead = parseDiscoveryLead(await request.json());
-  await persistDiscoveryLead(env, lead);
+  const record = await persistDiscoveryLead(env, lead);
+  if (lead.discovery) {
+    try {
+      if (!record?.id) throw new Error('Airtable did not return the new lead record ID.');
+      const pdf = await buildDiscoveryBriefPdf(lead);
+      await uploadAirtableAttachment(env, {
+        recordId: record.id,
+        fieldId: env.DISCOVERY_BRIEF_PDF_FIELD_ID,
+        filename: pdf.filename,
+        bytes: pdf.bytes,
+      });
+    } catch (error) {
+      console.error('Hotel Discovery Brief PDF attachment failed after lead persistence.', error);
+      throw new Error('Your discovery brief was recorded, but the PDF could not be attached. Please contact FlowArchitect Agency.');
+    }
+  }
   return response({
     ok: true,
     message: 'Your discovery request has been recorded.',
@@ -1992,7 +3080,7 @@ export default {
         return await handleJsonChat(request, env, ctx);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|message/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|message/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/demo-chat') {
@@ -2001,7 +3089,7 @@ export default {
         return await handleDemoChat(request, env, ctx);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return demoResponse({ error: message }, /required|Invalid|chatHistory|demo|Guest|Language|Scenario/i.test(message) ? 400 : 502, request, env);
+        return demoResponse({ error: message }, !error?.isUpstream && /required|Invalid|chatHistory|demo|Guest|Language|Scenario/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/booking-enquiry') {
@@ -2010,7 +3098,7 @@ export default {
         return await handleBookingEnquiry(request, env);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|valid|long|Consent/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|valid|long|Consent/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/room-enquiry') {
@@ -2019,7 +3107,7 @@ export default {
         return await handleRoomEnquiry(request, env);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|valid|after|between|long|Consent/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|valid|after|between|long|Consent/i.test(message) ? 400 : 502, request, env);
       }
     }
     if (request.method === 'POST' && url.pathname === '/api/discovery-lead') {
@@ -2028,7 +3116,7 @@ export default {
         return await handleDiscoveryLead(request, env);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected service error.';
-        return response({ error: message }, /required|Invalid|valid|long|Consent|between/i.test(message) ? 400 : 502, request, env);
+        return response({ error: message }, !error?.isUpstream && /required|Invalid|valid|long|Consent|between|Locale/i.test(message) ? 400 : 502, request, env);
       }
     }
     return response({ error: 'Not found.' }, 404, request, env);

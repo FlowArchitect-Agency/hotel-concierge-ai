@@ -11,5 +11,7 @@ concierge_harness/converge*.log
 __pycache__/
 node_modules/
 n8n-data/
-cloudflare-worker/.dev.vars*
+cloudflare-worker/.dev.vars
+cloudflare-worker/.dev.vars.*
+!cloudflare-worker/.dev.vars.example
 cloudflare-worker/.wrangler/

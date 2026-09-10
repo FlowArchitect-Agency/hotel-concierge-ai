@@ -1,0 +1,25 @@
+/* motion.css — the resting state for scroll-driven content.
+ *
+ * There are deliberately no transitions here. motion.js writes transform and
+ * opacity directly on every frame as a function of scroll position; a
+ * transition would put a spring between the reader's hand and the element,
+ * which is exactly the lag that makes motion feel like the page's idea rather
+ * than the reader's.
+ *
+ * The resting state is the finished page. motion.js adds .motion-on to <html>
+ * only when it is actually going to drive things, so with no JavaScript, no
+ * IntersectionObserver or reduced motion, none of this applies.
+ */
+
+/* Held until motion.js gives the element its first state, which it does before
+   any scrolling -- this only covers the gap between stylesheet and script. */
+html.motion-on [data-motion] { opacity: 0; }
+
+/* If the preference flips mid-session the script is already running, so this
+   has to beat the inline styles it has written. */
+@media (prefers-reduced-motion: reduce) {
+  html.motion-on [data-motion] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

@@ -1,22 +1,22 @@
 const CATEGORY_RULES = [
   { category: 'accommodation', words: ['hotel room', 'hotel rooms', 'room booking', 'book a room', 'reserve a room', 'reserve in your hotel', 'book your hotel', 'hotel stay', 'stay at your hotel', 'overnight stay', 'accommodation', 'suite', 'suites', 'guest room', 'guest rooms', 'rooms', 'room', 'nights', 'night', 'chambre', 'chambres', 'habitacion', 'habitaciones', 'habitation', 'camera', 'zimmer', 'check-in', 'check in', 'check-out', 'check out'] },
   { category: 'spa', words: ['spa', 'massage', 'masaje', 'sauna', 'hammam', 'wellness', 'treatment', 'soin', 'facial', '\u6309\u6469', '\u30de\u30c3\u30b5\u30fc\u30b8'] },
-  { category: 'restaurant', words: ['restaurant', 'dinner', 'lunch', 'breakfast', 'table', 'reservation', 'resto', 'd\u00eener', 'd\u00e9jeuner', 'manger', 'food', 'eat', 'cuisine', 'michelin', '\u0645\u0637\u0639\u0645', '\u30ec\u30b9\u30c8\u30e9\u30f3', '\u9910\u5385'] },
+  { category: 'restaurant', words: ['restaurant', 'dining', 'dinner', 'lunch', 'breakfast', 'table', 'reservation', 'resto', 'd\u00eener', 'd\u00e9jeuner', 'manger', 'food', 'eat', 'cuisine', 'michelin', '\u0645\u0637\u0639\u0645', '\u30ec\u30b9\u30c8\u30e9\u30f3', '\u9910\u5385'] },
   { category: 'transport', words: ['taxi', 'uber', 'chauffeur', 'car', 'driver', 'transfer', 'airport', 'cdg', 'orly', 'pick up', 'pickup', 'navette', 'shuttle'] },
   { category: 'tour', words: ['tour', 'eiffel', 'louvre', 'museum', 'mus\u00e9e', 'cruise', 'croisi\u00e8re', 'seine', 'versailles', 'excursion', 'sightsee', 'guide'] },
-  { category: 'experience', words: ['private chef', 'chef', 'sommelier', 'wine tasting', 'd\u00e9gustation', 'after-hours', 'shopping', 'personal shopper', 'photographer', 'proposal', 'anniversary', 'honeymoon'] },
+  { category: 'experience', words: ['private experience', 'private experiences', 'experience', 'experiences', 'private chef', 'chef', 'sommelier', 'wine tasting', 'd\u00e9gustation', 'after-hours', 'shopping', 'personal shopper', 'photographer', 'proposal', 'anniversary', 'honeymoon'] },
 ];
 
 // These requests are not an attempt to book one catalogue item. They need a
 // real Paris recommendation assembled from current web results.
 const ITINERARY_WORDS = [
   'last day', 'final day', 'one day in paris', 'day in paris', 'itinerary',
-  'things to do', 'what should i do', 'what do you suggest', 'suggestion',
-  'recommendation', 'ideas for today', 'today in paris', 'tonight in paris',
+  'things to do in paris', 'what should i do in paris', 'what should i do tomorrow',
+  'ideas for today', 'today in paris', 'tonight in paris',
   'dernier jour', 'derniere journee', 'une journee a paris', 'itineraire',
-  'que me conseillez-vous', 'que suggerez-vous', 'que faire', 'ultimo dia',
-  'ultimo dia en paris', 'itinerario', 'que me recomiendas', 'letzter tag',
-  'ein tag in paris', 'reiseroute', 'was empfehlen sie',
+  'que faire a paris', 'que faire demain', 'ultimo dia', 'ultimo dia en paris',
+  'itinerario', 'que hacer en paris', 'que hacer manana', 'letzter tag',
+  'ein tag in paris', 'reiseroute', 'was kann ich in paris tun',
 ];
 
 const CUISINES = [
@@ -34,7 +34,7 @@ const CUISINES = [
 
 const REQUEST_WORDS = ['book', 'reserve', 'need', 'want', 'arrange', 'organize', 'find', 'looking for', 'can you', 'je voudrais', 'r\u00e9server', 'je cherche'];
 const GREETINGS = new Set(['hi', 'hello', 'hey', 'salut', 'bonjour', 'bonsoir', 'hola', 'ok', 'okay', 'yes', 'no', 'oui', 'non', 'merci', 'thanks', 'thank you', '\u3053\u3093\u306b\u3061\u306f', '\u306f\u3044', '\u3044\u3044\u3048']);
-const CUISINE_FILLER_WORDS = new Set(['i', 'im', 'am', 'looking', 'for', 'a', 'an', 'the', 'some', 'any', 'find', 'need', 'want', 'would', 'like', 'to', 'book', 'reserve', 'reservation', 'fancy', 'best', 'top', 'good', 'great', 'nice', 'authentic', 'excellent', 'your', 'our', 'hotel', 'table', 'restaurant', 'restaurants', 'restaurante', 'restaurantes', 'ristorante', 'ristoranti', 'cuisine', 'food', 'dining', 'place', 'places', 'near', 'close', 'around', 'by', 'in', 'at', 'please', 'show', 'me', 'one', 'only', 'just', 'of', 'is', 'that', 'this', 'with', 'and', 'or']);
+const CUISINE_FILLER_WORDS = new Set(['i', 'im', 'am', 'looking', 'for', 'a', 'an', 'the', 'some', 'any', 'find', 'need', 'want', 'would', 'like', 'to', 'book', 'reserve', 'reservation', 'fancy', 'best', 'top', 'good', 'great', 'nice', 'authentic', 'excellent', 'what', 'which', 'where', 'when', 'do', 'does', 'are', 'your', 'our', 'hotel', 'table', 'restaurant', 'restaurants', 'restaurante', 'restaurantes', 'ristorante', 'ristoranti', 'cuisine', 'food', 'dining', 'experience', 'experiences', 'available', 'place', 'places', 'near', 'close', 'around', 'by', 'in', 'at', 'please', 'show', 'me', 'one', 'only', 'just', 'of', 'is', 'that', 'this', 'with', 'and', 'or']);
 
 export function normalized(value) {
   return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -73,6 +73,20 @@ function hasTerm(text, value) {
   const term = normalized(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   if (!term) return false;
   return new RegExp(`(?:^|[^\\p{L}\\p{N}])${term}(?=$|[^\\p{L}\\p{N}])`, 'u').test(text);
+}
+
+// A category keyword inside an abandonment/negation clause ("forget the spa
+// idea", "no more massages", "cancel the tour") must not still score that
+// category — that previously kept spa media/cards attached to a message that
+// was explicitly dropping the spa topic. This only looks a short window before
+// the matched term; it does not attempt full negation parsing.
+function isNegatedCategoryTerm(text, value) {
+  const term = normalized(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!term) return false;
+  const match = new RegExp(`(?:^|[^\\p{L}\\p{N}])(${term})(?=$|[^\\p{L}\\p{N}])`, 'u').exec(text);
+  if (!match) return false;
+  const before = text.slice(Math.max(0, match.index - 40), match.index);
+  return /\b(forget|forgetting|cancel|cancelled|canceled|no more|not interested in|don'?t want|dont want|do not want|stop wanting|skip the|avoid the|without (?:the|a|any)|drop the|never ?mind|no longer want|leave (?:it|that|the) aside)\b/i.test(before);
 }
 
 function scalar(value) {
@@ -132,6 +146,84 @@ export function requestedResponseLanguage(message) {
   return '';
 }
 
+// Lightweight language scoring keeps the current turn in control.  It is
+// intentionally small and deterministic: this is not translation, just a
+// reliable way to select the appropriate reply language before the model is
+// called.  Phrases receive a little more weight than isolated function words
+// and a one-character typo is tolerated for useful longer words.
+const LATIN_LANGUAGE_SIGNALS = {
+  en: {
+    phrases: ['what time', 'do you close', 'are you open', 'can you help', 'i would like', 'help me plan', 'hello'],
+    words: ['what', 'time', 'close', 'open', 'please', 'would', 'could', 'thanks', 'hello', 'breakfast', 'stay'],
+  },
+  fr: {
+    phrases: ['a quelle heure', 'vous etes ouverts', 'toute la nuit', 'je voudrais', 'pouvez vous', 'aidez moi', 'montrez moi', 'que suggerez vous', 'que recommandez vous', 'non pourquoi', 'bonjour', 'bonsoir'],
+    words: ['quelle', 'heure', 'ferme', 'fermez', 'ouverts', 'ouverte', 'vous', 'montrez', 'options', 'suggerez', 'recommandez', 'pourquoi', 'bonjour', 'bonsoir', 'demain', 'sejour', 'petit', 'dejeuner', 'merci'],
+  },
+  es: {
+    phrases: ['a que hora', 'pueden ayudarme', 'me gustaria', 'muestrame las opciones', 'que sugieres', 'que recomiendas', 'no por que', 'por que', 'por favor', 'hola'],
+    words: ['que', 'hora', 'cierra', 'abierto', 'abierta', 'muestrame', 'opciones', 'servicios', 'restaurante', 'cual', 'sugieres', 'recomiendas', 'hola', 'necesito', 'quiero', 'masaje', 'manana', 'estancia', 'desayuno', 'gracias'],
+  },
+  it: {
+    phrases: ['a che ora', 'mi piacerebbe', 'potete aiutarmi', 'ciao'],
+    words: ['che', 'ora', 'chiude', 'aperto', 'aperta', 'ciao', 'vorrei', 'posso', 'domani', 'soggiorno', 'colazione', 'grazie'],
+  },
+  de: {
+    phrases: ['wie spat', 'haben sie', 'konnen sie helfen', 'hallo', 'guten tag'],
+    words: ['wie', 'spat', 'geschlossen', 'geoffnet', 'hallo', 'bitte', 'danke', 'ihnen', 'morgen', 'aufenthalt', 'fruhstuck'],
+  },
+};
+
+function languageTokens(text) {
+  return normalized(text).match(/[\p{L}]{2,}/gu) || [];
+}
+
+function editDistanceAtMostOne(left, right) {
+  if (left === right) return true;
+  if (Math.abs(left.length - right.length) > 1) return false;
+  let leftIndex = 0;
+  let rightIndex = 0;
+  let edits = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    if (left[leftIndex] === right[rightIndex]) {
+      leftIndex += 1;
+      rightIndex += 1;
+      continue;
+    }
+    edits += 1;
+    if (edits > 1) return false;
+    if (left.length > right.length) leftIndex += 1;
+    else if (right.length > left.length) rightIndex += 1;
+    else {
+      leftIndex += 1;
+      rightIndex += 1;
+    }
+  }
+  return true;
+}
+
+function scoreLatinLanguage(message, language) {
+  const text = normalized(message);
+  const phraseText = text.replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const tokens = languageTokens(message);
+  const signals = LATIN_LANGUAGE_SIGNALS[language];
+  let score = 0;
+  for (const phrase of signals.phrases) {
+    if (phraseText.includes(phrase)) score += 3;
+  }
+  for (const word of signals.words) {
+    if (tokens.includes(word)) {
+      score += 1;
+      continue;
+    }
+    // Do not fuzzy-match very short terms: they create false positives across
+    // languages.  Longer conversational words carry enough signal to help a
+    // mobile typo such as "qulle" for "quelle".
+    if (word.length >= 5 && tokens.some((token) => token.length >= 4 && editDistanceAtMostOne(token, word))) score += 0.8;
+  }
+  return score;
+}
+
 export function inferLanguage(message) {
   const requested = requestedResponseLanguage(message);
   if (requested) return requested;
@@ -139,10 +231,16 @@ export function inferLanguage(message) {
   if (/[\u0600-\u06ff]/.test(text)) return 'ar';
   if (/[\u3040-\u30ff]/.test(text)) return 'ja';
   if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
-  if (/\b(hallo|wie geht|ihnen|bitte|danke|guten tag)\b/.test(text)) return 'de';
-  if (/\b(ciao|avete|disponibilita|cena|stasera|vorrei|prenotare)\b/.test(text)) return 'it';
-  if (/\b(hola|necesito|aeropuerto|manana|quiero|reserva|gracias|por favor)\b/.test(text)) return 'es';
-  if (/\b(quel|prix|demain|bonjour|voudrais|reserver)\b/.test(text)) return 'fr';
+  // Inverted punctuation is an unambiguous Spanish signal even in a short
+  // contextual reply such as a question about a previously shown option.
+  if (/[¿¡]/.test(String(message || ''))) return 'es';
+  const scores = Object.fromEntries(Object.keys(LATIN_LANGUAGE_SIGNALS).map((language) => [language, scoreLatinLanguage(message, language)]));
+  const ranked = Object.entries(scores).sort((left, right) => right[1] - left[1]);
+  const [language, score] = ranked[0];
+  const runnerUp = ranked[1]?.[1] ?? 0;
+  // English is the safe default.  A non-English answer needs either several
+  // converging words or a distinctive phrase, never one shared word alone.
+  if (language !== 'en' && score >= 2 && score > runnerUp) return language;
   return 'en';
 }
 
@@ -153,6 +251,15 @@ export function inferLanguage(message) {
 function hasExplicitEnglishSignal(message) {
   const text = normalized(message);
   return /\b(?:hello|hi|hey|what|which|where|when|why|how|can|could|would|should|do|does|did|is|are|am|i|we|you|my|your|please|thanks|thank)\b/.test(text);
+}
+
+function recentHistoryLanguage(history) {
+  if (!Array.isArray(history)) return '';
+  for (const item of [...history].reverse().slice(0, 8)) {
+    const language = inferLanguage(item?.message ?? item?.content ?? '');
+    if (language !== 'en') return language;
+  }
+  return '';
 }
 
 export function parseGuestInput(body) {
@@ -166,9 +273,10 @@ export function parseGuestInput(body) {
   const requestedLanguage = requestedResponseLanguage(message);
   const detectedLanguage = inferLanguage(message);
   const preferredLanguage = String(raw.preferredLanguage ?? '').trim().toLowerCase();
+  const historyLanguage = recentHistoryLanguage(raw.chatHistory);
   const language = requestedLanguage || (detectedLanguage !== 'en' || hasExplicitEnglishSignal(message)
     ? detectedLanguage
-    : (SUPPORTED_REPLY_LANGUAGES.has(preferredLanguage) ? preferredLanguage : detectedLanguage));
+    : (SUPPORTED_REPLY_LANGUAGES.has(preferredLanguage) ? preferredLanguage : (historyLanguage || detectedLanguage)));
   const guestName = String(raw.guestName ?? raw.guest_name ?? raw.name ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 100);
   const isDemo = raw.is_demo === true || raw.isDemo === true || raw.demo === true;
   return {
@@ -188,6 +296,7 @@ export function parseGuestInput(body) {
     is_demo: isDemo,
     chatHistory: Array.isArray(raw.chatHistory) ? raw.chatHistory : null,
     scenario: String(raw.scenario ?? '').trim().slice(0, 48),
+    conversationOwner: String(raw.conversationOwner ?? raw.conversation_owner ?? 'ai').trim().toLowerCase() === 'staff' ? 'staff' : 'ai',
     receivedAt: new Date().toISOString(),
   };
 }
@@ -196,7 +305,7 @@ const ESCALATION_TERMS = [
   'manager', 'director', 'general manager', 'gm', 'front desk', 'reception', 'receptionist', 'duty manager',
   'human', 'person', 'real person', 'agent', 'representative', 'talk to someone', 'speak to someone', 'speak with someone', 'talk with someone',
   'angry', 'furious', 'upset', 'terrible', 'horrible', 'awful', 'unacceptable', 'disaster', 'disgusted',
-  'complaint', 'complain', 'complaining', 'refund', 'dirty', 'broken', 'scam', 'ridiculous', 'worst',
+  'complaint', 'complain', 'complaining', 'refund', 'dirty', 'scam', 'ridiculous', 'worst',
   'incompetent', 'unhappy', 'frustrated', 'frustrating', 'lawyer', 'sue', 'police', 'emergency',
   'noise', 'noisy', 'loud', 'drilling', 'disturbance', 'cannot sleep', 'cant sleep', 'cant work', 'cannot work',
   'directeur', 'directrice', 'responsable', 'direction', 'receptionniste',
@@ -213,71 +322,64 @@ export function isEscalation(message) {
 }
 
 export const ESCALATION_REPLIES = {
-  en: 'I sincerely apologize for the frustration and inconvenience caused. I have flagged your situation with highest urgency for our Front Desk Duty Manager, who is stepping in immediately to assist you directly.',
-  fr: 'Je vous présente toutes mes excuses pour ce désagrément. J’ai immédiatement alerté notre responsable de réception de garde, qui prend personnellement en charge votre situation pour intervenir sans délai.',
-  es: 'Le pido sinceras disculpas por los inconvenientes. He informado de inmediato a nuestro Responsable de Recepción de guardia, quien atenderá su situación personalmente de forma prioritaria.',
-  de: 'Ich entschuldige mich aufrichtig für die Unannehmlichkeiten. Ich habe unser Management-Team umgehend verständigt, damit sich sofort persönlich um Ihr Anliegen gekümmert wird.',
-  it: 'Le porgo le mie più sincere scuse per il disagio. Ho immediatamente allertato il nostro Duty Manager della reception, che interverrà di persona per assisterla senza indugio.',
-  ja: 'ご不便とご不快な思いをおかけし、心より深くお詫び申し上げます。ただちにフロント統括責任者へ緊急連絡いたしました。担当マネージャーが直接引き継ぎ、最優先で対応いたします。',
-  zh: '对于给您带来的不便与困扰，我致以最真诚的歉意。我已为您将此情况直接转达给值班大堂经理，经理将立即亲自跟进并为您妥善处理。',
-  ar: 'أعتذر بشدة عن الإزعاج والاستياء الذي واجهتموه. لقد قمت على الفور بإبلاغ مدير الاستقبال المناوب الذي سيتدخل شخصياً لمساعدتكم ومعالجة الأمر دون تأخير.',
+  en: 'I sincerely apologize for the frustration and inconvenience caused. I have prepared a priority service-recovery request for the hotel’s request queue. If you need immediate assistance, please contact the front desk directly.',
+  fr: 'Je vous présente toutes mes excuses pour ce désagrément. J’ai préparé une demande prioritaire de rétablissement du service pour la file de demandes de l’hôtel. Si vous avez besoin d’une aide immédiate, veuillez contacter directement la réception.',
+  es: 'Le pido sinceras disculpas por los inconvenientes. He preparado una solicitud prioritaria de recuperación del servicio para la cola de solicitudes del hotel. Si necesita ayuda inmediata, contacte directamente con recepción.',
+  de: 'Ich entschuldige mich aufrichtig für die Unannehmlichkeiten. Ich habe eine priorisierte Anfrage zur Servicewiederherstellung für die Anfragewarteschlange des Hotels vorbereitet. Wenn Sie sofort Hilfe benötigen, wenden Sie sich bitte direkt an die Rezeption.',
+  it: 'Le porgo le mie più sincere scuse per il disagio. Ho preparato una richiesta prioritaria di ripristino del servizio per la coda delle richieste dell’hotel. Per assistenza immediata, contatti direttamente la reception.',
+  ja: 'ご不便とご不快な思いをおかけし、心より深くお詫び申し上げます。ホテルのリクエストキューに、優先度の高いサービス回復依頼を作成しました。お急ぎの場合は、直接フロントデスクへご連絡ください。',
+  zh: '对于给您带来的不便与困扰，我致以最真诚的歉意。我已为酒店请求队列准备了一项优先服务恢复请求。如需即时协助，请直接联系前台。',
+  ar: 'أعتذر بشدة عن الإزعاج والاستياء الذي واجهتموه. لقد أعددت طلباً ذا أولوية لاستعادة الخدمة ضمن قائمة طلبات الفندق. إذا كنتم تحتاجون إلى مساعدة فورية، يرجى التواصل مباشرةً مع مكتب الاستقبال.',
 };
 
 export function detectMediaBrochure(message, category = null) {
   const text = normalized(message);
-  if (isEscalation(message) || /\b(noisy|terrible|bad service|horrible|complaint|dirty|broken|manager)\b/i.test(text)) {
+  if (isEscalation(message) || /\b(noisy|terrible|bad service|horrible|complaint|dirty|manager)\b/i.test(text)) {
     return null;
   }
   const asksForBrochure = /\b(menu|carte|brochure|pdf|catalog|catalogue|directory|guide|treatments?|pricing|tarifs?|tarifs|services list|list of services|view services|our services|carte des soins|soins|massages?)\b/i.test(text)
     || /\b(?:show|see|view|send|have|list|what|all)\s+(?:me\s+)?(?:the\s+)?(?:services?|collection)\b/i.test(text);
-  const isSpa = category === 'spa' || /\b(spa|massage|sauna|hammam|wellness|facial|soin)\b/i.test(text);
+  // Category alone is not trusted here: classification.category can carry
+  // the previous topic across a guest-initiated reset ("forget the spa
+  // idea, let's do something else") because the semantic plan still names
+  // the topic being left behind. Requiring the actual current message to
+  // name spa/massage/etc. prevents the spa brochure from re-attaching to a
+  // message that is explicitly moving away from it. A negation-window check
+  // is also needed here specifically: the word "spa" inside "forget the spa
+  // idea completely" still matches this regex on its own, which is exactly
+  // how the brochure kept re-attaching even after the classifyRequest-level
+  // negation fix and the category/reply-text fixes above -- this is a third,
+  // independent keyword scan that needed the same guard.
+  const isSpa = ['spa', 'massage', 'sauna', 'hammam', 'wellness', 'facial', 'soin']
+    .some((word) => hasTerm(text, word) && !isNegatedCategoryTerm(text, word));
   const isDining = category === 'restaurant' || /\b(dinner|lunch|breakfast|food|carte|dining|restaurant|wine|cocktail|room service)\b/i.test(text);
   const isRooms = category === 'accommodation' || /\b(room|suite|chambre|habitacion|stay)\b/i.test(text);
 
+  const asksForFullDirectory = /\b(catalog|catalogue|directory|all services|view services|full collection)\b/i.test(text);
+
   if (asksForBrochure || isSpa) {
-    if (isSpa && !/\b(catalog|catalogue|directory|all services|view services|full collection)\b/i.test(text)) {
+    if (isSpa && !asksForFullDirectory) {
       return {
         type: 'document',
         format: 'PDF',
         title: 'Hôtel Lumière — Spa & Wellness Brochure',
         filename: 'Lumiere_Spa_Wellness_Menu.pdf',
-        size: '2.4 MB',
-        pages: '12 pages',
+        size: '1.1 KB',
+        pages: '1 page',
         url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Spa_Wellness_Menu.pdf',
         thumbnail: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=700&q=84',
       };
     }
-    if (isDining && !/\b(catalog|catalogue|directory|all services|view services|full collection)\b/i.test(text)) {
-      return {
-        type: 'document',
-        format: 'PDF',
-        title: 'Le Jardin Lumière — Carte des Saisons & Dining',
-        filename: 'Le_Jardin_Lumiere_Menu.pdf',
-        size: '1.8 MB',
-        pages: '8 pages',
-        url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/assets/brochures/dining-menu.pdf',
-        thumbnail: 'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?auto=format&fit=crop&w=700&q=84',
-      };
-    }
-    if (isRooms && !/\b(catalog|catalogue|directory|all services|view services|full collection)\b/i.test(text)) {
-      return {
-        type: 'document',
-        format: 'PDF',
-        title: 'Hôtel Lumière — Suites & Rooms Collection',
-        filename: 'Lumiere_Suites_Collection.pdf',
-        size: '3.1 MB',
-        pages: '16 pages',
-        url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/assets/brochures/suites-collection.pdf',
-        thumbnail: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=700&q=84',
-      };
-    }
+    // These optional brochures are not shipped with the site. Returning null
+    // lets the existing text/card renderer respond without a broken document.
+    if ((isDining || isRooms) && !asksForFullDirectory) return null;
     return {
       type: 'document',
       format: 'PDF',
       title: 'Hôtel Lumière — Digital Directory & Experiences Brochure 2026',
       filename: 'Lumiere_Guest_Directory_2026.pdf',
-      size: '4.2 MB',
-      pages: '24 pages',
+      size: '27.3 MB',
+      pages: '10 pages',
       url: 'https://flowarchitect-agency.github.io/hotel-concierge-ai/Lumiere_Guest_Directory_2026.pdf',
       thumbnail: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=700&q=84',
     };
@@ -285,7 +387,7 @@ export function detectMediaBrochure(message, category = null) {
   return null;
 }
 
-const OPERATIONAL_TERMS = [
+const HOUSEKEEPING_TERMS = [
   'towel', 'towels', 'towl', 'towls', 'serviette', 'serviettes', 'toalla', 'toallas', 'handtuch', 'asciugamano', 'タオル',
   'pillow', 'pillows', 'pilow', 'pilows', 'oreiller', 'oreillers', 'almohada', 'almohadas', 'kissen', 'cuscino', '枕',
   'blanket', 'blankets', 'duvet', 'couverture', 'couvertures', 'manta', 'mantas', 'decke', 'coperta', '毛布',
@@ -299,11 +401,19 @@ const OPERATIONAL_TERMS = [
   'hair dryer', 'hairdryer', 'seche-cheveux', 'secador', 'ドライヤー',
   'trash', 'bin', 'poubelle', 'basura', 'ゴミ',
   'clean my room', 'clean the room', 'housekeeping', 'make up the room', 'nettoyer la chambre', 'menage', 'limpiar la habitacion', '清掃',
+];
+
+const MAINTENANCE_TERMS = [
   'air conditioning', 'ac', 'aircon', 'a/c', 'heating', 'heater', 'climatisation', 'clim', 'chauffage', 'aire acondicionado', 'calefaccion', 'エアコン',
-  'leak', 'leaking', 'clogged', 'light bulb', 'bulb', 'tv remote', 'key card', 'door lock', 'safe', 'plumbing', 'maintenance',
+  'leak', 'leaking', 'clogged', 'light bulb', 'bulb', 'tv remote', 'key card', 'door lock', 'safe', 'plumbing', 'maintenance', 'electrical', 'electricity', 'power outage', 'outlet', 'socket', 'wiring', 'broken equipment', 'broken', 'not working',
   'en panne', 'ne marche pas', 'fuite', 'bouche', 'ampoule', 'telecommande', 'carte cle', 'serrure',
   'no funciona', 'fuga', 'atascado', 'bombilla', 'mando', 'tarjeta', 'cerradura',
-  'luggage', 'bags', 'baggage', 'valise', 'valises', 'bagages', 'maleta', 'maletas', '荷物'
+];
+
+const OPERATIONAL_TERMS = [
+  ...HOUSEKEEPING_TERMS,
+  ...MAINTENANCE_TERMS,
+  'luggage', 'bags', 'baggage', 'valise', 'valises', 'bagages', 'maleta', 'maletas', '荷物',
 ];
 
 export function isOperationalRequest(message) {
@@ -313,15 +423,22 @@ export function isOperationalRequest(message) {
   return OPERATIONAL_TERMS.some((term) => hasTerm(text, term));
 }
 
+// Operational routing is intentionally deterministic. The model can help
+// phrase a response, but it never chooses the department written to Airtable.
+export function operationalServiceType(message) {
+  const text = normalized(message);
+  return MAINTENANCE_TERMS.some((term) => hasTerm(text, term)) ? 'Maintenance' : 'Housekeeping';
+}
+
 export const OPERATIONAL_REPLIES = {
-  en: 'I have logged your request and notified our team to deliver this to your room promptly.',
-  fr: 'J’ai bien pris note de votre demande et alerté notre équipe d’étage pour vous apporter cela en chambre dans les plus brefs délais.',
-  es: 'He registrado su solicitud y avisado a nuestro equipo para que se lo lleve a su habitación a la mayor brevedad.',
-  de: 'Ich habe Ihre Anfrage erfasst und unser Team verständigt, dies umgehend auf Ihr Zimmer zu bringen.',
-  it: 'Ho registrato la sua richiesta e informato il nostro personale affinché venga recapitata rapidamente in camera.',
-  ja: 'ご依頼を承りました。担当スタッフへ手配し、速やかにお部屋へお届けいたします。',
-  zh: '已收到您的客房需求，我已通知客房服务团队为您尽快送至房间。',
-  ar: 'تم تسجيل طلبكم وإبلاغ فريق الخدمة لتوصيله إلى غرفتكم في أقرب وقت ممكن.',
+  en: 'I have prepared your request for the hotel’s request queue. If it is time-sensitive, please contact the front desk directly.',
+  fr: 'J’ai préparé votre demande pour la file de demandes de l’hôtel. Si votre besoin est urgent, veuillez contacter directement la réception.',
+  es: 'He preparado su solicitud para la cola de solicitudes del hotel. Si es urgente, contacte directamente con recepción.',
+  de: 'Ich habe Ihre Anfrage für die Anfragewarteschlange des Hotels vorbereitet. Wenn sie zeitkritisch ist, wenden Sie sich bitte direkt an die Rezeption.',
+  it: 'Ho preparato la sua richiesta per la coda delle richieste dell’hotel. Se è urgente, contatti direttamente la reception.',
+  ja: 'ホテルのリクエストキューにご依頼を作成しました。お急ぎの場合は、直接フロントデスクへご連絡ください。',
+  zh: '我已为您的需求准备了酒店请求队列。如属紧急情况，请直接联系前台。',
+  ar: 'لقد أعددت طلبكم ضمن قائمة طلبات الفندق. إذا كان الأمر عاجلاً، يرجى التواصل مباشرةً مع مكتب الاستقبال.',
 };
 
 export const POST_CHECKOUT_POSITIVE_TERMS = [
@@ -374,22 +491,53 @@ export function postCheckoutPositiveReply(guestName, language) {
 export function postCheckoutNegativeReply(guestName, language) {
   const name = guestName || 'Guest';
   const replies = {
-    en: `Dear ${name}, we sincerely apologize that your experience fell short of our high standards. Your feedback has been immediately escalated to our General Manager, who is reviewing this matter privately to make things right.`,
-    fr: `Cher/Chère ${name}, nous vous présentons nos excuses les plus sincères pour cette expérience qui ne reflète pas nos standards d'excellence. Votre retour a été directement transmis à notre Directeur Général pour un suivi privé immédiat.`,
-    es: `Estimado/a ${name}, le pedimos sinceras disculpas porque su experiencia no estuvo a la altura de nuestros estándares. Sus comentarios han sido remitidos directamente a nuestro Director General para una atención privada prioritaria.`,
-    ja: `${name}様、ご期待に沿うご滞在を提供できず、深くお詫び申し上げます。いただいたご指摘は直ちに総支配人へ共有し、改善と個別対応に向けて確認を進めております。`,
-    de: `Sehr geehrte(r) ${name}, wir entschuldigen uns aufrichtig für diese Erfahrung. Ihr Feedback wurde direkt an unseren General Manager weitergeleitet, um den Sachverhalt persönlich zu klären.`,
-    it: `Gentile ${name}, le porgiamo le nostre più sincere scuse. La sua segnalazione è stata trasmessa direttamente al nostro Direttore Generale per una gestione privata prioritaria.`,
-    zh: `尊敬的 ${name}，对于未能给您带来满意的入住体验，我们致以最深切的歉意。您的反馈已直接呈报给酒店总经理，总经理将亲自跟进处理。`,
-    ar: `عزيزنا ${name}، نعتذر بشدة لأن تجربتكم لم تكن بالمستوى المطلوب. لقد تم رفع ملاحظاتكم مباشرة إلى المدير العام لمراجعتها والتعامل معها باهتمام بالغ.`,
+    en: `Dear ${name}, we sincerely apologize that your experience fell short of our high standards. I have prepared a private service-recovery request for the hotel’s request queue. If you need immediate assistance, please contact the hotel directly.`,
+    fr: `Cher/Chère ${name}, nous vous présentons nos excuses les plus sincères pour cette expérience qui ne reflète pas nos standards d'excellence. J’ai préparé une demande privée de rétablissement du service pour la file de demandes de l’hôtel. Si vous avez besoin d’une aide immédiate, veuillez contacter directement l’hôtel.`,
+    es: `Estimado/a ${name}, le pedimos sinceras disculpas porque su experiencia no estuvo a la altura de nuestros estándares. He preparado una solicitud privada de recuperación del servicio para la cola de solicitudes del hotel. Si necesita ayuda inmediata, contacte directamente con el hotel.`,
+    ja: `${name}様、ご期待に沿うご滞在を提供できず、深くお詫び申し上げます。ホテルのリクエストキューに、非公開のサービス回復依頼を作成しました。お急ぎの場合は、直接ホテルへご連絡ください。`,
+    de: `Sehr geehrte(r) ${name}, wir entschuldigen uns aufrichtig für diese Erfahrung. Ich habe eine private Anfrage zur Servicewiederherstellung für die Anfragewarteschlange des Hotels vorbereitet. Wenn Sie sofort Hilfe benötigen, wenden Sie sich bitte direkt an das Hotel.`,
+    it: `Gentile ${name}, le porgiamo le nostre più sincere scuse. Ho preparato una richiesta privata di ripristino del servizio per la coda delle richieste dell’hotel. Per assistenza immediata, contatti direttamente l’hotel.`,
+    zh: `尊敬的 ${name}，对于未能给您带来满意的入住体验，我们致以最深切的歉意。我已为酒店请求队列准备了一项私密服务恢复请求。如需即时协助，请直接联系酒店。`,
+    ar: `عزيزنا ${name}، نعتذر بشدة لأن تجربتكم لم تكن بالمستوى المطلوب. لقد أعددت طلباً خاصاً لاستعادة الخدمة ضمن قائمة طلبات الفندق. إذا كنتم تحتاجون إلى مساعدة فورية، يرجى التواصل مباشرةً مع الفندق.`,
   };
   return replies[language] ?? replies.en;
 }
 
 export function guestInsistsOnExternal(message) {
   const text = String(message || '').trim().toLowerCase();
-  return /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text)
-    || /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text);
+  const startsCorrection = /^(?:no|non|nope|rather|instead|actually|but)\b/i.test(text);
+  const namesSpecificCuisine = CUISINES.some((cuisine) => cuisine.words.some((word) => hasTerm(text, word)));
+  // A conversational correction often starts with "no", "actually", or
+  // "instead". It is only an external preference when the guest names an
+  // outside-the-hotel option or preserves a specific cuisine constraint;
+  // otherwise history can retain the hotel context.
+  return /\b(not your|not the hotel|outside the hotel|outside|external option|somewhere else|don't want to eat at the hotel|dont want to eat at the hotel|do not want to eat at the hotel|not at the hotel|local cafe|local bakery|local bakery or cafe|nearby cafe|nearby bakery|bakery or cafe|bakery|boulangerie|cafe|pastry shop|explore on my own|on my own)\b/i.test(text)
+    || startsCorrection && (namesSpecificCuisine || /\b(?:keep|find|search|recommend)\b[^.!?]{0,80}\b(?:restaurant|cuisine|venue|address|place|bar|club)\b/i.test(text));
+}
+
+// Which catalogue item, if any, did the guest name themselves? Scores each
+// candidate by how many of the substantial words from its own name appear in
+// the guest's message, so "Signature Hammam Ritual" beats "Couples Massage"
+// for a guest asking about the hammam, and "CDG/ORY Transfer" beats
+// "Half-Day Disposal" for a guest asking about a CDG transfer. Returns null
+// for a generic ask ("book a massage"), where the caller's category default
+// is the right answer.
+function serviceNamedInMessage(services, rawMessage) {
+  const text = normalized(rawMessage);
+  if (!text) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const service of services) {
+    const words = normalized(service.name)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length >= 5);
+    const score = words.filter((word) => text.includes(word)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = service;
+    }
+  }
+  return bestScore > 0 ? best : null;
 }
 
 export function hasNegation(message) {
@@ -412,38 +560,30 @@ export function classifyRequest(message) {
   const scores = new Map();
   for (const rule of CATEGORY_RULES) {
     for (const word of rule.words) {
-      if (hasTerm(text, word)) scores.set(rule.category, (scores.get(rule.category) ?? 0) + 1);
+      if (hasTerm(text, word) && !isNegatedCategoryTerm(text, word)) scores.set(rule.category, (scores.get(rule.category) ?? 0) + 1);
     }
   }
   if (ITINERARY_WORDS.some((word) => hasTerm(text, word))) scores.set('itinerary', 1);
+  const isStayPlanning = /\b(help\s+(?:me|us)\s+(?:plan|organize)|plan\s+(?:my|our|a)\s+(?:stay|weekend|trip)|organize\s+(?:my|our|a)\s+(?:stay|trip)|before\s+(?:we|i)\s+arrive|during\s+(?:my|our)\s+stay|not\s+sure\s+what\s+to\s+do)\b/i.test(text)
+    || /\b(aidez[- ]moi|organiser\s+(?:mon|notre)\s+sejour|planifier\s+(?:mon|notre)\s+sejour)\b/i.test(text);
   let category = [...scores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const cuisine = CUISINES.find((item) => item.words.some((word) => hasTerm(text, word))) ?? inferOpenCuisine(message);
   if (cuisine) category = 'restaurant';
   if (isOperational) category = 'housekeeping';
   const trimmed = text.replace(/[!.?\u00a1\u00bf]+$/g, '');
   const isGreeting = GREETINGS.has(trimmed) || trimmed.length <= 2;
-  const hasIntent = !isGreeting && Boolean(category || cuisine || hasEscalation || isOperational || wantsExternal || REQUEST_WORDS.some((word) => hasTerm(text, word)));
-  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational, wantsExternal, rawMessage: message };
+  const hasIntent = !isGreeting && Boolean(category || cuisine || isStayPlanning || hasEscalation || isOperational || wantsExternal || REQUEST_WORDS.some((word) => hasTerm(text, word)));
+  return { category, cuisine, location: inferLocation(message), hasIntent, hasEscalation, isOperational, wantsExternal, isStayPlanning, route: isStayPlanning ? 'stay_planning' : '', rawMessage: message };
 }
 
-export function inheritConversationContext(classification, history, latestMessage) {
-  if (classification.cuisine && classification.category) return classification;
-  const latest = normalized(latestMessage);
-  const isContinuation = classification.hasIntent || /\b(pictures?|photos?|images?|show|attach|one|best|which|that|details?|more)\b/i.test(latest);
-  if (!isContinuation || GREETINGS.has(latest.replace(/[!.?\u00a1\u00bf]+$/g, ''))) return classification;
-  const previousGuestMessage = [...(history || [])].reverse().find((item) => item?.role === 'user' && item?.message);
-  if (!previousGuestMessage) return classification;
-  const prior = classifyRequest(previousGuestMessage.message);
-  // Short confirmations such as "yes, book it" must retain any recently
-  // established service category, including transport and wellness.
-  if (!prior.category && !prior.cuisine) return classification;
-  return {
-    ...classification,
-    category: classification.category || prior.category,
-    cuisine: classification.cuisine || prior.cuisine,
-    location: classification.location || prior.location,
-    hasIntent: true,
-  };
+export function inheritConversationContext(classification, history) {
+  // Conversation history is factual input to the semantic controller, not a
+  // source of keyword-driven intent inheritance. Earlier versions inferred a
+  // category, cuisine, location, and even a hotel-first route here. That made
+  // ambiguous follow-ups deterministic before the model could resolve what a
+  // guest meant. Preserve only the neutral fact that usable context exists.
+  const hasConversationHistory = (history || []).some((item) => String(item?.message || item?.content || '').trim());
+  return { ...classification, hasConversationHistory };
 }
 
 export function toService(record) {
@@ -485,7 +625,17 @@ export function formatServices(services) {
 }
 
 export function shouldSearchExternal(classification, services) {
-  if (!classification.hasIntent || ['greeting', 'hotel_faq', 'partner_catalog'].includes(classification.route)) return false;
+  // A validated semantic plan is the authority for an ambiguous natural turn.
+  // It asks for the provider-independent capability, while deterministic code
+  // still verifies and executes the actual search.
+  if (classification?.semanticPlan?.valid) {
+    return Boolean(classification.semanticPlan.toolNeeds?.externalSearch && classification.externalDiscovery);
+  }
+  if (!classification.hasIntent || ['greeting', 'hotel_faq', 'partner_catalog', 'stay_planning'].includes(classification.route)) return false;
+  // A vague continuation of a known hotel discussion stays hotel-first. A
+  // later semantic step can still use the full verified collection to answer
+  // naturally, but it must not invent an unrelated external-search intent.
+  if (classification.contextualFollowUp && !classification.wantsExternal) return false;
   // A semantic route can deliberately prefer current external information
   // even when a broad hotel category happens to contain a partner service.
   return Boolean(classification.externalDiscovery) || Boolean(classification.wantsExternal) || !services.length;
@@ -633,6 +783,11 @@ export function parseModelJson(raw) {
       intent: String(parsed.intent ?? 'other'),
       serviceType: parsed.service_type ?? null,
       requiresHuman: Boolean(parsed.requires_human),
+      // Legacy optional labels may appear in historical/provider output, but
+      // the response contract never treats them as semantic authority.
+      responseMode: typeof parsed.response_mode === 'string' ? parsed.response_mode.trim().slice(0, 80) : '',
+      addressedGoal: typeof parsed.addressed_goal === 'string' ? parsed.addressed_goal.trim().slice(0, 160) : '',
+      addressedReference: typeof parsed.addressed_reference === 'string' ? parsed.addressed_reference.trim().slice(0, 220) : '',
       requests: Array.isArray(parsed.requests) ? parsed.requests.slice(0, 3).map((item) => ({
         serviceName: item?.service_name ?? null,
         source: item?.source === 'external' ? 'external' : 'partner',
@@ -712,8 +867,9 @@ function conciseReply(value) {
   return sentences.slice(0, 2).join(' ').slice(0, 360).trim();
 }
 
-export function enforceContract(model, { language, classification, matching, excluded, externalOptions, inputMessage = '', providerFailure = '' }) {
+export function enforceContract(model, { language, classification, matching, excluded, externalOptions, knownServices = [], inputMessage = '', providerFailure = '', toolResults = {} }) {
   const isAngry = Boolean(classification?.hasEscalation);
+  const operationalType = classification?.isOperational ? operationalServiceType(inputMessage || classification?.rawMessage || '') : '';
   if (isAngry) {
     return {
       reply: ESCALATION_REPLIES[language] ?? ESCALATION_REPLIES.en,
@@ -722,7 +878,7 @@ export function enforceContract(model, { language, classification, matching, exc
       requiresHuman: true,
       escapeHatchTriggered: true,
       requests: [{
-        serviceName: 'Duty Manager Escalation',
+        serviceName: 'Guest Service Recovery Request',
         source: 'partner',
         summary: 'URGENT: Guest requested manager / expressed severe dissatisfaction',
         isUpsell: false,
@@ -737,21 +893,38 @@ export function enforceContract(model, { language, classification, matching, exc
   const replyText = String(model.reply ?? '').trim();
   const reply = normalized(replyText);
   const mentionsExcluded = Boolean(classification.cuisine && excludedNames.some((name) => reply.includes(normalized(name))));
+  const mentionsUnverifiedHotelService = externalOptions.length > 0
+    && knownServices.some((service) => {
+      const name = normalized(service?.name || service);
+      const variants = [name, ...String(service?.name || service || '').split(/[—–|-]/).map(normalized)]
+        .filter((value) => value.length >= 4);
+      return variants.some((variant) => reply.includes(variant) && !optionNames.some((option) => normalized(option) === variant));
+    });
   const mentionsExternal = optionNames.some((name) => reply.includes(normalized(name)));
-  const needsRefinement = Boolean((classification.cuisine || classification.externalDiscovery) && !matching.length && !externalOptions.length);
+  const externalToolUnavailable = classification.externalDiscovery
+    && ['unavailable', 'error', 'no_results'].includes(toolResults?.external_search?.status);
+  const needsRefinement = Boolean((classification.cuisine || classification.externalDiscovery) && !matching.length && !externalOptions.length && !externalToolUnavailable);
   let finalReply = conciseReply(replyText);
   let requests = model.requests ?? [];
 
-  if (mentionsExcluded || needsRefinement) {
-    finalReply = REFINEMENT[language] ?? REFINEMENT.en;
-    requests = [];
-  } else if (externalOptions.length) {
-    // Recommendation names, descriptions and links are supplied in the
-    // structured array below. Never let the model invent an unverified venue
-    // in the short conversational introduction.
+  if (mentionsUnverifiedHotelService && externalOptions.length) {
     finalReply = classification.category === 'itinerary'
       ? itineraryReply(language, externalOptions)
       : externalIntro(language, externalOptions.length);
+    requests = [];
+  } else if (mentionsExcluded || needsRefinement) {
+    finalReply = REFINEMENT[language] ?? REFINEMENT.en;
+    requests = [];
+  } else if (externalOptions.length) {
+    // Recommendation names, descriptions and links remain in verified cards.
+    // Keep the model's concise contextual sentence when it supplied one;
+    // replacing it with a stock card introduction loses the guest's active
+    // reference, rejection, or refinement.
+    if (!finalReply) {
+      finalReply = classification.category === 'itinerary'
+        ? itineraryReply(language, externalOptions)
+        : externalIntro(language, externalOptions.length);
+    }
     requests = requests.filter((item) => optionNames.some((name) => normalized(item.serviceName).includes(normalized(name))));
   }
 
@@ -761,10 +934,16 @@ export function enforceContract(model, { language, classification, matching, exc
   const isRefusal = hasNegation(rawMsg);
   const isExplicitlyExternal = classification?.wantsExternal || guestInsistsOnExternal(rawMsg);
 
-  const suppressPartnerSuffix = isAngry || isSmalltalk || isInformational || isRefusal || isExplicitlyExternal || classification?.isOperational || classification?.route === 'partner_catalog' || !classification?.hasIntent;
+  const suppressPartnerSuffix = isAngry || isSmalltalk || isInformational || isRefusal || isExplicitlyExternal || classification?.externalDiscovery || classification?.isOperational || classification?.route === 'partner_catalog' || !classification?.hasIntent;
 
   if (!suppressPartnerSuffix && matching.length && !matching.some((service) => normalized(finalReply).includes(normalized(service.name)))) {
-    const service = matching[0];
+    // matching[0] is an arbitrary item from the guest's category, which is the
+    // wrong one whenever the guest named a specific service: "I want the
+    // Signature Hammam Ritual" (EUR 280) surfaced "Couples Massage (EUR 420)",
+    // quoting a price for something the guest did not ask about. Prefer the
+    // catalogue item whose own name the guest actually used, and fall back to
+    // the category default only for a generic ask ("book a massage").
+    const service = serviceNamedInMessage(matching, rawMsg) || matching[0];
     const details = [service.price === null || service.price === '' ? '' : `EUR ${Number(service.price).toFixed(0)}`, service.duration ? `${service.duration} min` : ''].filter(Boolean).join(', ');
     const partnerSuffix = {
       en: `Partner option: ${service.name}${details ? ` (${details})` : ''}. Our team will verify availability before confirming any request.`,
@@ -782,51 +961,60 @@ export function enforceContract(model, { language, classification, matching, exc
 
   const isDelayFallback = Boolean(providerFailure && !finalReply);
   if (isDelayFallback) {
-    finalReply = 'I apologize, but I am experiencing a brief system delay. I have notified the front desk to assist you immediately.';
+    // This is the single most guest-visible failure in the product -- the guest
+    // is told the system is unavailable. It was previously silent in Workers
+    // Logs, so a run of them could not be distinguished from healthy traffic or
+    // attributed to a provider. Always record why.
+    console.error(`GUEST-VISIBLE DELAY FALLBACK: provider failure = ${typeof providerFailure === 'string' ? providerFailure : JSON.stringify(providerFailure)}`);
+    finalReply = 'I apologize, but I am experiencing a brief system delay and could not prepare your request. Please try again shortly or contact the front desk directly for immediate assistance.';
   }
 
   return {
     reply: finalReply || (DEFERRED[language] ?? DEFERRED.en),
     intent: isAngry ? 'complaint' : (classification.isOperational ? 'service_request' : (isDelayFallback ? 'service_request' : model.intent)),
-    serviceType: isAngry ? 'escalation' : (classification.isOperational ? 'housekeeping' : (isDelayFallback ? 'Front Desk' : model.serviceType)),
-    requiresHuman: isAngry || isDelayFallback || Boolean(model.requiresHuman) || Boolean(classification.cuisine) || Boolean(classification.isOperational),
-    escapeHatchTriggered: isAngry || isDelayFallback || Boolean(model.escapeHatchTriggered),
-    requests: isDelayFallback ? [{
-      serviceName: 'Front Desk Assistance',
-      source: 'partner',
-      summary: `System delay fallback for guest message: "${inputMessage || classification?.rawMessage || 'Inquiry'}"`,
-      isUpsell: false,
-    }] : requests.filter((item) => !excludedNames.some((name) => normalized(item.serviceName).includes(normalized(name)))),
+    serviceType: isAngry ? 'escalation' : (operationalType || (isDelayFallback ? 'Concierge' : model.serviceType)),
+    requiresHuman: isDelayFallback ? false : (isAngry || Boolean(model.requiresHuman) || Boolean(classification.cuisine) || Boolean(classification.isOperational)),
+    escapeHatchTriggered: isDelayFallback ? false : (isAngry || Boolean(model.escapeHatchTriggered)),
+    requests: isDelayFallback ? [] : requests.filter((item) => !excludedNames.some((name) => normalized(item.serviceName).includes(normalized(name)))),
     externalOptionNames: optionNames,
     recommendations: externalOptions,
   };
 }
 
-export function buildPrompt({ input, classification, history, services, externalOptions, facts }) {
+export function buildPrompt({ input, classification, history, services, externalOptions, facts, semanticPlan = null, toolResults = {}, responseContract = null }) {
   const historyText = history.length
-    ? history.map((item) => `${item.role}: ${item.message}`).join('\n')
+    ? history.map((item) => `${item.role}: ${item.message ?? item.content ?? ''}`).join('\n')
     : '(no prior conversation)';
   return `You are the concierge for ${facts.hotelName}. Return JSON only, never Markdown.
 
 Hard rules:
-- Reply entirely in the guest's latest-message language (${input.language}).
+- Respond in the language of the guest's CURRENT message (${input.language}) unless the guest explicitly requests another language. A saved preference may help only with an ambiguous short turn.
+- Answer the exact question first. Specific hotel categories beat a generic catalogue: Dining means Dining, Rooms means Rooms, and broad planning should be a warm conversation rather than an external-search failure.
+- If the guest's message raises more than one distinct question or request in the same turn, address every one of them, even briefly for the secondary item. Never silently answer only the first half of a multi-part message.
 - POST-CHECKOUT REVIEWS:
-  * POSITIVE FEEDBACK (e.g. loved it, great stay, 5 stars, wonderful): Thank the guest warmly and provide the simulated Google Review link (https://g.page/r/hotel-lumiere-paris/review). Do NOT create a complaint ticket.
-  * NEGATIVE FEEDBACK / COMPLAINTS (e.g. noisy room, poor service, disappointment): Apologize profusely and assure the guest that the General Manager is reviewing their feedback privately. You MUST NOT provide any public review link. Create an operational staff request routed to the General Manager for private service recovery. Set requires_human: true.
-- OPERATIONAL & ROOM ITEM REQUESTS: If a guest asks for a physical item to be delivered to their room (e.g., towels, water, pillows, blankets, toiletries, amenities) or reports a maintenance/housekeeping issue, you MUST acknowledge the delivery to their room and trigger an operational request for staff. Do NOT offer hotel partner services, catalog items, or attempt to upsell for operational requests.
+  * POSITIVE FEEDBACK (e.g. loved it, great stay, 5 stars, wonderful): Thank the guest warmly and offer the simulated Google Review link (https://g.page/r/hotel-lumiere-paris/review). Do NOT create a complaint ticket.
+  * NEGATIVE FEEDBACK / COMPLAINTS (e.g. noisy room, poor service, disappointment): Apologize, prepare a private service-recovery request routed to the General Manager, and offer the same neutral public review link without pressure. Do not state that a manager has received or is reviewing the request. Set requires_human: true.
+- OPERATIONAL & ROOM ITEM REQUESTS: If a guest asks for a physical item to be delivered to their room (e.g., towels, water, pillows, blankets, toiletries, amenities) or reports a maintenance/housekeeping issue, prepare an operational request. Route towels, linen, cleaning and amenities to Housekeeping; route air conditioning, heating, plumbing, electrical, locks and broken equipment to Maintenance. Do not claim staff have been notified, dispatched, or have received the request. Do NOT offer hotel partner services, catalog items, or attempt to upsell for operational requests.
 - CANCELLATIONS: When the guest cancels a previously requested service, acknowledge the cancellation clearly. Do not continue to offer or create the cancelled service; if another request is present in the same message, handle that new request separately.
 - REFUSALS & DECLINED OFFERS: When the guest declines an offer, says no thanks, states they do not want to book a service/tour/chauffeur, or prefers to explore on their own, respect their choice immediately. NEVER create booking requests or push the declined service. Provide warm, helpful hospitality for independent exploration.
 - SENTIMENT OVERRIDE: If the guest expresses frustration, anger, complaint, or requests a manager/human/reception, apologize sincerely and empathetically. NEVER offer upsells, services, or room upgrades. Set requires_human: true.
-- Use only the facts, partner services, and external search results below.
+- Use only the VERIFIED FACTS, VERIFIED HOTEL SERVICES, and VERIFIED TOOL RESULTS below. Do not infer a missing venue, price, policy, opening hour, availability, booking, notification, or URL.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
 - Partner services are preferred for leisure & hospitality inquiries. State a catalog price only when it is supplied below.
-- Full-catalogue, services, and spa-menu requests are rendered by the Worker as a text-only catalogue. Never create option, card, button, or booking-choice data for those requests.
+- Keep normal replies short and human. Do not dump the hotel database into a chat bubble; structured cards carry service detail where the client supports them.
 - External results are non-partner suggestions. Never invent a price, rating, address, link, or availability. Keep reply_text to one or two elegant sentences; cards are rendered separately by the website.
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
-- Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request.
+- Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request. Ask at most one useful clarifying question at a time. Relationship questions must feel hospitable, never like a sales funnel; human staff retains control.
+- If a requested tool is unavailable, acknowledge that limitation naturally and helpfully using the guest's context. Do not substitute a hotel service for an explicitly external request and do not claim a venue was found.
+- Answer the CURRENT guest intent using the interpreted reference and active state below. Do not restart the conversation, turn a specific clarification into a generic welcome, repeat a rejected option, or treat a superseded goal as current. The active state is an interpretation aid, not a source of hotel facts.
+- The RESPONSE CONTRACT below is the semantic controller's authoritative handoff. Do not reinterpret the guest's intent. Express a grounded answer to that contract, especially its resolved reference and active constraints. When it has a known reference, do not ask a generic opening question.
 
-Return exactly this JSON shape:
-{"reply_text":"string","language_detected":"${input.language}","intent":"faq|service_request|smalltalk|other","service_type":"Housekeeping|Maintenance|Spa & Wellness|Transport|Dining|Concierge|General Manager","requests":[{"service_name":"string|null","source":"partner|external","summary":"staff action","est_value_eur":null,"is_upsell":false}],"requires_human":true}
+Return one JSON object only. Use actual values, never placeholder text.
+- reply_text: the concise guest-facing reply.
+- intent: choose faq, service_request, smalltalk, or other.
+- service_type: choose one approved hotel category, or null when none applies.
+- requests: an array of operational request objects only when genuinely needed; each has service_name, source, summary, est_value_eur, and is_upsell.
+- requires_human: true only when human judgement or escalation is genuinely needed.
 
 GUEST MESSAGE:
 ${input.message}
@@ -837,12 +1025,34 @@ ${classification.cuisine?.label ?? 'none'}
 CONVERSATION HISTORY:
 ${historyText}
 
-PARTNER SERVICES:
+ACTIVE CONVERSATIONAL STATE (semantic interpretation, not factual data):
+${JSON.stringify({
+    active_goal: semanticPlan?.activeGoal || semanticPlan?.interactionType || 'conversation',
+    reference_target: semanticPlan?.referenceTarget || 'none',
+    guest_goal: semanticPlan?.guestGoal || '',
+    active_constraints: semanticPlan?.activeConstraints || [],
+    preference_constraints: semanticPlan?.preferenceConstraints || [],
+    referenced_entities: semanticPlan?.referencedEntities || [],
+    rejected_entities: semanticPlan?.rejectedEntities || [],
+    superseded_goals: semanticPlan?.supersededGoals || [],
+    location_constraint: semanticPlan?.locationConstraint || '',
+    time_constraint: semanticPlan?.timeConstraint || '',
+    topic_reset: Boolean(semanticPlan?.topicReset || semanticPlan?.topicChanged),
+    context_summary: semanticPlan?.contextSummary || '',
+  })}
+
+RESPONSE CONTRACT (authoritative semantic handoff, not a reasoning trace):
+${JSON.stringify(responseContract || {})}
+
+VERIFIED TOOL RESULTS:
+${JSON.stringify(toolResults || {})}
+
+VERIFIED HOTEL SERVICES:
 ${formatServices(services)}
 
 EXTERNAL SEARCH RESULTS:
 ${formatExternalOptions(externalOptions, classification)}
 
-HOTEL FACTS:
+VERIFIED FACTS:
 ${facts.text || '(no additional hotel facts configured)'}`;
 }

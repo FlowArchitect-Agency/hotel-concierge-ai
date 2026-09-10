@@ -1,16 +1,29 @@
 import assert from 'node:assert/strict';
+import { existsSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
   classifyRequest,
+  detectMediaBrochure,
+  ESCALATION_REPLIES,
   enforceContract,
   inheritConversationContext,
+  isOperationalRequest,
   matchingServices,
   normalizeServiceType,
+  operationalServiceType,
+  OPERATIONAL_REPLIES,
   parseExternalResults,
   parseGuestInput,
   inferLanguage,
+  postCheckoutNegativeReply,
   shouldSearchExternal,
 } from '../src/concierge.js';
+import {
+  buildDiscoveryBriefDocumentModel,
+  buildDiscoveryBriefPdf,
+  sanitizeDiscoveryBriefFilename,
+} from '../src/discovery-brief-pdf.js';
 import worker from '../src/index.js';
 
 const records = [
@@ -39,7 +52,7 @@ test('Indian cuisine remains a hard constraint across the reported follow-ups', 
   }
 });
 
-test('Any named cuisine becomes a hard external-search constraint and carries through a photo follow-up', () => {
+test('Any named cuisine remains a hard external-search constraint without deterministic conversation inheritance', () => {
   const spanish = classifyRequest('I am looking for fancy Spanish restaurants near the Eiffel Tower');
   const malagasy = classifyRequest('Please find a Madagascar restaurant in Paris');
   assert.equal(spanish.cuisine.label, 'Spanish');
@@ -53,8 +66,9 @@ test('Any named cuisine becomes a hard external-search constraint and carries th
     [{ role: 'user', message: 'I am looking for fancy Spanish restaurants near the Eiffel Tower' }],
     'Can you attach pictures so I can see it?',
   );
-  assert.equal(photoFollowUp.cuisine.label, 'Spanish');
-  assert.equal(photoFollowUp.location, 'Eiffel Tower');
+  assert.equal(photoFollowUp.cuisine, null);
+  assert.equal(photoFollowUp.location, null);
+  assert.equal(photoFollowUp.hasConversationHistory, true);
 });
 
 test('Natural plural room and hotel-reservation language is routed to the hotel inventory', () => {
@@ -62,13 +76,14 @@ test('Natural plural room and hotel-reservation language is routed to the hotel 
   assert.equal(classifyRequest('I want to reserve in your hotel.').category, 'accommodation');
 });
 
-test('A short booking confirmation retains a transport category from the same session', () => {
+test('A short booking confirmation leaves contextual category resolution to the semantic controller', () => {
   const continued = inheritConversationContext(
     classifyRequest('Yes, book it for 2 people.'),
     [{ role: 'user', message: 'Can we get an airport transfer from CDG?' }],
     'Yes, book it for 2 people.',
   );
-  assert.equal(continued.category, 'transport');
+  assert.equal(continued.category, null);
+  assert.equal(continued.hasConversationHistory, true);
 });
 
 test('Language switching recognises Spanish requests, including the common espangol spelling', () => {
@@ -79,6 +94,23 @@ test('Language switching recognises Spanish requests, including the common espan
   assert.equal(parseGuestInput({ message: 'hello', sessionId: 'qa_english_greeting', preferredLanguage: 'fr' }).language, 'en');
   assert.equal(parseGuestInput({ message: 'spa tomorrow', sessionId: 'qa_ambiguous_preference', preferredLanguage: 'es' }).language, 'es');
   assert.equal(inferLanguage('I need a Spanish restaurant in Paris'), 'en');
+});
+
+test('Score-based language detection follows the current guest message, including a minor French typo', () => {
+  assert.equal(inferLanguage('a quelle heure vous fermez ?'), 'fr');
+  assert.equal(inferLanguage('a qulle heure vous ferme ?'), 'fr');
+  assert.equal(inferLanguage('vous êtes ouverts toute la nuit ?'), 'fr');
+  assert.equal(inferLanguage('what time do you close?'), 'en');
+  assert.equal(inferLanguage('¿A qué hora cierra?'), 'es');
+  assert.equal(inferLanguage('هل أنتم مفتوحون طوال الليل؟'), 'ar');
+  assert.equal(inferLanguage('スパは何時に開きますか？'), 'ja');
+});
+
+test('A clear current-message language switch overrides stored memory while an ambiguous turn may use it', () => {
+  assert.equal(parseGuestInput({ message: 'Bonjour, à quelle heure est le petit déjeuner ?', sessionId: 'qa_language_fr', preferredLanguage: 'en' }).language, 'fr');
+  assert.equal(parseGuestInput({ message: 'Actually, what time does the spa open?', sessionId: 'qa_language_en', preferredLanguage: 'fr' }).language, 'en');
+  assert.equal(parseGuestInput({ message: '¿A qué hora cierra?', sessionId: 'qa_language_es', preferredLanguage: 'en' }).language, 'es');
+  assert.equal(parseGuestInput({ message: 'spa tomorrow', sessionId: 'qa_language_memory', preferredLanguage: 'fr' }).language, 'fr');
 });
 
 test('A Spanish switch request receives a Spanish answer without requiring a model call', async () => {
@@ -99,7 +131,7 @@ test('A Spanish switch request receives a Spanish answer without requiring a mod
   }
 });
 
-test('A final-day request is a web-search itinerary intent, including a terse follow-up', () => {
+test('A final-day request is a web-search itinerary intent without deterministic terse-follow-up inheritance', () => {
   const finalDay = classifyRequest('What do you suggest for me? It is my last day in Paris.');
   assert.equal(finalDay.category, 'itinerary');
   assert.equal(finalDay.hasIntent, true);
@@ -110,8 +142,9 @@ test('A final-day request is a web-search itinerary intent, including a terse fo
     [{ role: 'user', message: 'What do you suggest for me? It is my last day in Paris.' }],
     'No, I need a suggestion from you.',
   );
-  assert.equal(followUp.category, 'itinerary');
+  assert.equal(followUp.category, null);
   assert.equal(followUp.hasIntent, true);
+  assert.equal(followUp.hasConversationHistory, true);
 });
 
 test('Itinerary cards accept direct attraction pages without restaurant-only rules', () => {
@@ -551,6 +584,357 @@ test('Discovery call form records the hotel and contact details in Airtable', as
   }
 });
 
+function hotelDiscoveryBriefPayload(overrides = {}) {
+  const base = {
+    submissionType: 'hotel_discovery_brief',
+    contactName: 'Claire Martin',
+    role: 'General Manager',
+    email: 'claire@maison-etoile.example',
+    phone: '+33 1 44 55 66 77',
+    hotelName: 'Maison Étoile',
+    website: 'https://maison-etoile.example',
+    roomCount: 63,
+    propertyCount: 2,
+    pmsSystem: 'Mews',
+    whatsAppBusiness: 'Not sure',
+    sessionId: 'web_hotel-brief-test',
+    consent: true,
+    discovery: {
+      serviceUsage: '10–25%',
+      requestedServices: ['Airport transfers', 'Spa & wellness'],
+      requestedServicesOther: '',
+      lowServiceReasons: ['Guests may not know the services exist'],
+      lowServiceReasonsOther: '',
+      bookingSources: { directWebsite: 35, bookingCom: 40, expedia: '', otherOtas: 10, agenciesCorporate: 10, other: 5 },
+      bookingSourcesNotSure: false,
+      bookingOtherDetail: 'Other travel partners',
+      preArrivalContact: 'Sometimes',
+      preArrivalMethods: ['Email', 'WhatsApp'],
+      preArrivalMethodsOther: '',
+      discoveryChannels: ['Reception staff', 'Hotel website'],
+      discoveryChannelsOther: '',
+      servicesToPromote: 'Spa rituals and airport transfers.',
+      internationalOrigins: ['United Kingdom', 'United States'],
+      languageDifficulty: 'Regularly',
+      difficultLanguages: 'English and Mandarin',
+      repeatedQuestions: ['Breakfast hours', 'Transport / airport'],
+      repeatedQuestionsOther: '',
+      requestHandling: ['Reception calls the appropriate department', 'WhatsApp staff group'],
+      requestHandlingOther: '',
+      responseSpeed: '5–15 minutes',
+      escalationProcess: 'The duty manager is called for VIP requests.',
+      postCheckoutContact: 'Sometimes',
+      postCheckoutMethods: ['Email', 'Review platform link'],
+      postCheckoutMethodsOther: '',
+      managementInsights: ['Most requested services', 'Staff workload'],
+      managementInsightsOther: '',
+      improvementGoals: ['Increase ancillary-service revenue', 'Improve multilingual communication'],
+      improvementGoalsOther: '',
+      presentationFocus: 'Please show how ConciergeFlow handles pre-arrival service discovery.',
+    },
+  };
+  return { ...base, ...overrides, discovery: { ...base.discovery, ...(overrides.discovery || {}) } };
+}
+
+test('Hotel Discovery Brief serializes the full Sales Brief into the existing Airtable lead field', async () => {
+  const originalFetch = globalThis.fetch;
+  let writtenFields;
+  let upload;
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writtenFields = JSON.parse(options.body).fields;
+      return Response.json({ id: 'rec_hotel_discovery_brief', fields: writtenFields });
+    }
+    if (String(url).includes('/rec_hotel_discovery_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') {
+      upload = JSON.parse(options.body);
+      return Response.json({ id: 'rec_hotel_discovery_brief', fields: { 'Discovery Brief PDF': [{ filename: upload.filename }] } });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload()),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'project', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 201);
+    assert.equal(writtenFields['Hotel Lead Name'], 'Maison Étoile - Claire Martin');
+    assert.equal(writtenFields['Number of Rooms'], 63);
+    assert.match(writtenFields['Concierge Service Needs'], /^Hotel Discovery Brief/m);
+    assert.match(writtenFields['Concierge Service Needs'], /Brief language: English/);
+    assert.match(writtenFields['Concierge Service Needs'], /Contact: Claire Martin · General Manager/);
+    assert.match(writtenFields['Concierge Service Needs'], /Airport transfers, Spa & wellness/);
+    assert.match(writtenFields['Concierge Service Needs'], /Please show how ConciergeFlow handles pre-arrival service discovery/);
+    assert.equal(upload.filename, 'ConciergeFlow_Discovery_Brief_Maison_Etoile.pdf');
+    assert.equal(upload.contentType, 'application/pdf');
+    assert.match(upload.file, /^[A-Za-z0-9+/]+=*$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief validates required work email before Airtable is called', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; throw new Error('Airtable must not be called.'); };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ email: 'not-an-email' })),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads' }, { waitUntil() {} });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /valid work email/i);
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief rejects every selected Other value without its specification before Airtable is called', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; throw new Error('Airtable must not be called.'); };
+  const incompleteAnswers = [
+    { pmsSystem: 'Other', pmsOther: '' },
+    { discovery: { requestedServices: ['Other'], requestedServicesOther: '' } },
+    { discovery: { lowServiceReasons: ['Other'], lowServiceReasonsOther: '' } },
+    { discovery: { bookingSources: { other: 15 }, bookingOtherDetail: '' } },
+    { discovery: { preArrivalContact: 'Yes', preArrivalMethods: ['Other'], preArrivalMethodsOther: '' } },
+    { discovery: { discoveryChannels: ['Other'], discoveryChannelsOther: '' } },
+    { discovery: { repeatedQuestions: ['Other'], repeatedQuestionsOther: '' } },
+    { discovery: { requestHandling: ['Other'], requestHandlingOther: '' } },
+    { discovery: { postCheckoutContact: 'Yes', postCheckoutMethods: ['Other'], postCheckoutMethodsOther: '' } },
+    { discovery: { managementInsights: ['Other'], managementInsightsOther: '' } },
+    { discovery: { improvementGoals: ['Other'], improvementGoalsOther: '' } },
+  ];
+  try {
+    for (const overrides of incompleteAnswers) {
+      const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload(overrides)),
+      }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads' }, { waitUntil() {} });
+      assert.equal(response.status, 400);
+      assert.match((await response.json()).error, /required when Other is selected/i);
+    }
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief serializes multiple Other specifications without changing canonical choices', async () => {
+  const originalFetch = globalThis.fetch;
+  let writtenFields;
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writtenFields = JSON.parse(options.body).fields;
+      return Response.json({ id: 'rec_other_brief' });
+    }
+    if (target.includes('/rec_other_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') return Response.json({ id: 'rec_other_brief', fields: {} });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  const payload = hotelDiscoveryBriefPayload({
+    locale: 'fr',
+    pmsSystem: 'Other',
+    pmsOther: 'Custom PMS',
+    discovery: {
+      requestedServices: ['Airport transfers', 'Other'], requestedServicesOther: 'Private chauffeur service',
+      lowServiceReasons: ['Other'], lowServiceReasonsOther: 'Seasonal guest mix',
+      bookingSources: { other: 15 }, bookingOtherDetail: 'Luxury travel advisors',
+      preArrivalContact: 'Yes', preArrivalMethods: ['Other'], preArrivalMethodsOther: 'Guest portal',
+      discoveryChannels: ['Other'], discoveryChannelsOther: 'Concierge QR card',
+      repeatedQuestions: ['Other'], repeatedQuestionsOther: 'Luggage storage',
+      requestHandling: ['Other'], requestHandlingOther: 'Internal radio system',
+      postCheckoutContact: 'Yes', postCheckoutMethods: ['Other'], postCheckoutMethodsOther: 'CRM journey',
+      managementInsights: ['Other'], managementInsightsOther: 'Return guest conversion',
+      improvementGoals: ['Other'], improvementGoalsOther: 'Strengthen VIP recognition',
+    },
+  });
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(payload),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 201);
+    assert.match(writtenFields['Concierge Service Needs'], /Other — Private chauffeur service/);
+    assert.match(writtenFields['Concierge Service Needs'], /Other — Internal radio system/);
+    assert.match(writtenFields['Concierge Service Needs'], /Other — Strengthen VIP recognition/);
+    const lead = { ...payload, roomCount: Number(payload.roomCount), discovery: { ...payload.discovery, bookingSources: { Other: 15 } } };
+    const model = buildDiscoveryBriefDocumentModel(lead);
+    const operations = model.sections.find((section) => section.title === '5. OPERATIONS');
+    assert.ok(operations.questions.some((item) => Array.isArray(item.answer) && item.answer.includes('Other - Internal radio system')));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief accepts supported locales and rejects invalid locale values before Airtable is called', async () => {
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writes.push(JSON.parse(options.body).fields);
+      return Response.json({ id: 'rec_locale_brief' });
+    }
+    if (String(url).includes('/rec_locale_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') return Response.json({ id: 'rec_locale_brief', fields: {} });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const env = { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' };
+  try {
+    const french = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ locale: 'fr' })),
+    }), env, { waitUntil() {} });
+    assert.equal(french.status, 201);
+    assert.match(writes[0]['Concierge Service Needs'], /Brief language: French/);
+
+    globalThis.fetch = async () => { throw new Error('Airtable must not be called for an invalid locale.'); };
+    const invalid = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ locale: 'de' })),
+    }), env, { waitUntil() {} });
+    assert.equal(invalid.status, 400);
+    assert.match((await invalid.json()).error, /Locale must be en, fr, or es/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief rejects oversized free text and accepts empty conditional answers', async () => {
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      writes.push(JSON.parse(options.body).fields);
+      return Response.json({ id: 'rec_optional_brief' });
+    }
+    if (String(url).includes('/rec_optional_brief/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') {
+      return Response.json({ id: 'rec_optional_brief', fields: {} });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const env = { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' };
+  try {
+    const oversized = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload({ discovery: { presentationFocus: 'x'.repeat(901) } })),
+    }), env, { waitUntil() {} });
+    assert.equal(oversized.status, 400);
+    assert.match((await oversized.json()).error, /Presentation focus is too long/i);
+
+    const optional = hotelDiscoveryBriefPayload({ phone: '', website: '', roomCount: '', propertyCount: '', pmsSystem: '', whatsAppBusiness: '', discovery: {
+      serviceUsage: '', requestedServices: [], lowServiceReasons: [], bookingSources: {}, preArrivalContact: 'No', preArrivalMethods: ['Email'], discoveryChannels: [], internationalOrigins: [], languageDifficulty: '', repeatedQuestions: [], requestHandling: [], responseSpeed: '', postCheckoutContact: 'No', postCheckoutMethods: ['Email'], managementInsights: [], improvementGoals: [], presentationFocus: '',
+    } });
+    const accepted = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(optional),
+    }), env, { waitUntil() {} });
+    assert.equal(accepted.status, 201);
+    assert.equal(writes.length, 1);
+    assert.doesNotMatch(writes[0]['Concierge Service Needs'], /Pre-arrival channels/);
+    assert.doesNotMatch(writes[0]['Concierge Service Needs'], /Post-checkout channels/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Hotel Discovery Brief PDF creates a sanitized, multi-page internal sales document from the extended brief', async () => {
+  const payload = hotelDiscoveryBriefPayload({
+    hotelName: 'Hôtel Lumière / Paris',
+    discovery: {
+      presentationFocus: `Demonstrate the full ConciergeFlow journey. ${'Detailed operational context '.repeat(900)}`,
+    },
+  });
+  const lead = {
+    ...payload,
+    roomCount: Number(payload.roomCount),
+    discovery: {
+      ...payload.discovery,
+      bookingSources: {
+        'Direct hotel website': 35,
+        'Booking.com': 40,
+        'Expedia / Hotels.com': null,
+        'Other OTAs': 10,
+        'Travel agencies / corporate': 10,
+        Other: 5,
+      },
+    },
+  };
+  const pdf = await buildDiscoveryBriefPdf(lead, { submittedAt: new Date('2026-08-28T19:06:00Z') });
+  assert.equal(pdf.filename, 'ConciergeFlow_Discovery_Brief_Hotel_Lumiere_Paris.pdf');
+  assert.ok(pdf.bytes.length > 2_000);
+  assert.equal(new TextDecoder().decode(pdf.bytes.slice(0, 4)), '%PDF');
+  assert.ok(pdf.pageCount > 1);
+  assert.ok(pdf.model.sections.some((section) => section.title === '5. OPERATIONS'));
+  assert.ok(pdf.model.sections[0].questions.some((item) => item.question === 'Brief language' && item.answer === 'English'));
+  const frenchModel = buildDiscoveryBriefDocumentModel({ ...lead, locale: 'fr' }, new Date('2026-08-28T19:06:00Z'));
+  assert.ok(frenchModel.sections[0].questions.some((item) => item.question === 'Brief language' && item.answer === 'French'));
+  assert.match(pdf.model.notes.join('\n'), /multilingual guest communication/i);
+  assert.match(pdf.model.notes.join('\n'), /post-stay feedback/i);
+});
+
+test('Hotel Discovery Brief PDF omits inapplicable conditional questions and preserves multi-select answers', () => {
+  const payload = hotelDiscoveryBriefPayload({ discovery: {
+    preArrivalContact: 'No',
+    preArrivalMethods: ['Email'],
+    postCheckoutContact: 'No',
+    postCheckoutMethods: ['Email'],
+    requestedServices: ['Airport transfers', 'Spa & wellness'],
+  } });
+  const model = buildDiscoveryBriefDocumentModel({ ...payload, discovery: { ...payload.discovery, bookingSources: {} } }, new Date('2026-08-28T19:06:00Z'));
+  const booking = model.sections.find((section) => section.title === '3. BOOKINGS & COMMUNICATION');
+  const operations = model.sections.find((section) => section.title === '5. OPERATIONS');
+  const revenue = model.sections.find((section) => section.title === '2. GUEST SERVICES & REVENUE');
+  assert.ok(!booking.questions.some((item) => item.question === 'Pre-arrival communication channels'));
+  assert.ok(!operations.questions.some((item) => item.question === 'Post-checkout contact methods'));
+  assert.deepEqual(revenue.questions.find((item) => item.question === 'Most requested services').answer, ['Airport transfers', 'Spa & wellness']);
+  assert.equal(sanitizeDiscoveryBriefFilename('Maison Étoile TEST'), 'ConciergeFlow_Discovery_Brief_Maison_Etoile_TEST.pdf');
+});
+
+test('Hotel Discovery Brief preserves the lead if direct attachment upload fails', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalConsoleError = console.error;
+  let leadWrites = 0;
+  let uploadAttempts = 0;
+  console.error = () => {};
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('/leads/Hotel%20Leads') && options.method === 'POST') {
+      leadWrites += 1;
+      return Response.json({ id: 'rec_attachment_failure' });
+    }
+    if (target.includes('/rec_attachment_failure/fld_discovery_pdf/uploadAttachment') && options.method === 'POST') {
+      uploadAttempts += 1;
+      return new Response('Attachment storage rejected the upload.', { status: 500 });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body: JSON.stringify(hotelDiscoveryBriefPayload()),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 502);
+    assert.match((await response.json()).error, /recorded, but the PDF could not be attached/i);
+    assert.equal(leadWrites, 1);
+    assert.equal(uploadAttempts, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
+  }
+});
+
+test('Legacy discovery submissions remain compatible and do not create PDFs', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push(String(url));
+    if (String(url).includes('/leads/Hotel%20Leads') && options.method === 'POST') return Response.json({ id: 'rec_legacy_discovery' });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/discovery-lead', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ contactName: 'Legacy Contact', hotelName: 'Legacy Hotel', email: 'legacy@example.test', phone: '+33 1 00 00 00 00', city: 'Paris', roomCount: 40, message: 'Please contact us.', consent: true, sessionId: 'legacy_discovery_test' }),
+    }), { AIRTABLE_API_KEY: 'test', LEADS_AIRTABLE_BASE_ID: 'leads', DISCOVERY_BRIEF_PDF_FIELD_ID: 'fld_discovery_pdf' }, { waitUntil() {} });
+    assert.equal(response.status, 201);
+    assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Event-stream mode sends transient statuses before one structured final response', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
@@ -710,7 +1094,7 @@ test('An unmatched cuisine is offered a hotel alternative before any external se
   }
 });
 
-test('A services question returns every hotel partner as text-only Markdown without model latency', async () => {
+test('A services question returns a concise catalogue introduction with structured collection data', async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url) => {
@@ -730,18 +1114,19 @@ test('A services question returns every hotel partner as text-only Markdown with
     assert.equal(response.status, 200);
     assert.equal(body.intent, 'partner_catalog');
     assert.equal(body.catalogue_count, 2);
-    assert.equal(body.hotel_collection.length, 0);
+    assert.equal(body.hotel_collection.length, 2);
     assert.equal(body.partner_offers.length, 0);
     assert.equal(body.recommendations.length, 0);
-    assert.match(body.reply, /complete digital directory and experiences brochure/i);
-    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
+    assert.match(body.reply, /rooms, dining, spa/i);
+    assert.equal(body.media, null);
+    assert.deepEqual(body.quickReplies, ['Rooms & Suites', 'Dining', 'Spa & Wellness']);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('The complete 12-service catalogue is rendered as a luxury digital directory PDF brochure card', async () => {
+test('The complete 12-service catalogue stays structured instead of becoming a text dump', async () => {
   const catalogueRecords = Array.from({ length: 12 }, (_, index) => {
     const categories = ['accommodation', 'spa', 'restaurant', 'transport', 'tour', 'experience'];
     const category = categories[index % categories.length];
@@ -775,11 +1160,11 @@ test('The complete 12-service catalogue is rendered as a luxury digital director
     assert.equal(body.intent, 'partner_catalog');
     assert.equal(body.catalogue_count, 12);
     assert.equal(body.catalogue_categories, 6);
-    assert.equal(body.hotel_collection.length, 0);
+    assert.equal(body.hotel_collection.length, 12);
     assert.equal(body.partner_offers.length, 0);
     assert.equal(body.recommendations.length, 0);
-    assert.match(body.reply, /complete digital directory and experiences brochure/i);
-    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
+    assert.match(body.reply, /what would you like to explore first/i);
+    assert.equal(body.media, null);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -807,9 +1192,9 @@ test('An English catalogue question with a mobile spelling mistake overrides an 
     assert.equal(body.language, 'en');
     assert.equal(body.intent, 'partner_catalog');
     assert.equal(body.partner_offers.length, 0);
-    assert.equal(body.hotel_collection.length, 0);
-    assert.match(body.reply, /complete digital directory and experiences brochure/i);
-    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
+    assert.equal(body.hotel_collection.length, 2);
+    assert.match(body.reply, /what would you like to explore first/i);
+    assert.equal(body.media, null);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -840,8 +1225,110 @@ test('A room booking request opens Airtable-backed room offers without model or 
     assert.equal(response.status, 200);
     assert.equal(body.intent, 'partner_request');
     assert.deepEqual(body.partner_offers.map((offer) => offer.name), ['Lumière Classic King', 'Lumière Eiffel View Deluxe']);
-    assert.match(body.reply, /preferred collection/i);
+    assert.match(body.reply, /hôtel lumière collection/i);
     assert.equal(calls.some((url) => url.includes('api.groq.com') || url.includes('app.scrapingbee.com')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Specific hotel categories take precedence over the broad collection and never attach the general directory', async () => {
+  const categoryRecords = [
+    { fields: { Name: 'Courtyard Junior Suite', Category: 'accommodation', Description: 'A calm courtyard suite.', Active: true, IsPartner: true } },
+    { fields: { Name: 'Le Jardin', Category: 'restaurant', Description: 'Seasonal dining.', Active: true, IsPartner: true } },
+    { fields: { Name: 'Lumière Spa Ritual', Category: 'spa', Description: 'Wellness treatment.', Active: true, IsPartner: true } },
+    { fields: { Name: 'CDG Arrival Transfer', Category: 'transport', Description: 'Private arrival transfer.', Active: true, IsPartner: true } },
+    { fields: { Name: 'Private Louvre Visit', Category: 'experience', Description: 'A private Paris experience.', Active: true, IsPartner: true } },
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/Services')) return Response.json({ records: categoryRecords });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    for (const [message, category] of [
+      ['Show me your rooms and suites.', 'accommodation'],
+      ['What dining experiences are available at Hôtel Lumière?', 'restaurant'],
+      ['Do you offer airport transfers?', 'transport'],
+      ['What private experiences do you offer?', 'experience'],
+    ]) {
+      const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+        body: JSON.stringify({ message, sessionId: `qa_category_${category}`, testMode: 'read_only' }),
+      }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+      const body = await response.json();
+      assert.equal(body.intent, 'partner_request');
+      assert.ok(body.partner_offers.length > 0);
+      assert.ok(body.partner_offers.every((offer) => offer.category === category));
+      assert.equal(body.media, null);
+      assert.equal(body.reply.includes('complete digital directory'), false);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Explicit brochure wording retains the verified general directory media', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'Send me the hotel brochure.', sessionId: 'qa_directory', testMode: 'read_only' }),
+    }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(body.intent, 'partner_catalog');
+    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Stay planning is conversational and never becomes an external exact-match failure', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('Stay planning should not fetch services, Groq, or external search.'); };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'Help me plan a stay at Hôtel Lumière in Paris.', sessionId: 'qa_stay_planning', testMode: 'read_only' }),
+    }), {}, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(body.intent, 'stay_planning');
+    assert.match(body.reply, /happy to help plan your stay/i);
+    assert.doesNotMatch(body.reply, /could not verify/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Pre-arrival catalogue engagement exposes one safe follow-up and suppresses it for staff ownership or a decline', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const requestBody = (overrides = {}) => JSON.stringify({
+    message: 'View Services',
+    sessionId: 'qa_prearrival_followup',
+    scenario: 'pre-arrival',
+    testMode: 'read_only',
+    ...overrides,
+  });
+  try {
+    const makeRequest = (body) => worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' }, body,
+    }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    const eligible = await (await makeRequest(requestBody())).json();
+    assert.deepEqual(eligible.next_step, { type: 'guest_follow_up', key: 'first_time_paris', text: 'By the way, is this your first time in Paris?', delay_ms: 1800 });
+    const staffOwned = await (await makeRequest(requestBody({ conversationOwner: 'staff' }))).json();
+    assert.equal(Boolean(staffOwned.next_step), false);
+    const declined = await (await makeRequest(requestBody({ message: 'View Services, but no thanks, I am busy.' }))).json();
+    assert.equal(Boolean(declined.next_step), false);
+    const alreadyAsked = await (await makeRequest(requestBody({ chatHistory: [{ role: 'assistant', content: 'By the way, is this your first time in Paris?' }] }))).json();
+    assert.equal(Boolean(alreadyAsked.next_step), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -979,8 +1466,8 @@ test('A last-day Paris request searches attractions and returns a concrete sugge
     const body = await response.json();
     assert.equal(new URL(searchUrl).searchParams.get('search'), 'Paris Louvre museum Seine cruise official website');
     assert.equal(body.recommendations.length, 2);
-    assert.match(body.reply, /Musee d'Orsay/i);
-    assert.doesNotMatch(body.reply, /no specific partner services|bespoke itinerary/i);
+    assert.match(body.reply, /bespoke itinerary/i);
+    assert.equal(body.recommendations.some((item) => /Musee d'Orsay/i.test(item.name)), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1064,11 +1551,11 @@ test('A catalog request never searches externally or exposes structured booking 
     }, { waitUntil() {} });
     const body = await response.json();
     assert.equal(scraped, false);
-    assert.equal(body.hotel_collection.length, 0);
+    assert.equal(body.hotel_collection.length, 2);
     assert.equal(body.partner_offers.length, 0);
     assert.equal(body.recommendations.length, 0);
-    assert.match(body.reply, /complete digital directory and experiences brochure/i);
-    assert.equal(body.media?.filename, 'Lumiere_Guest_Directory_2026.pdf');
+    assert.match(body.reply, /what would you like to explore first/i);
+    assert.equal(body.media, null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1138,7 +1625,7 @@ test('Sentiment Override: Frustrated guest or manager request immediately trigge
   }
 });
 
-test('Spa menu requests return a text-only catalogue instead of a brochure or booking controls', async () => {
+test('Spa menu requests return only spa offers and the spa brochure', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     const target = String(url);
@@ -1180,18 +1667,18 @@ test('Spa menu requests return a text-only catalogue instead of a brochure or bo
     });
     const data = await response.json();
     assert.equal(data.status, undefined);
-    assert.equal(data.intent, 'partner_catalog');
-    assert.match(data.reply, /complete Spa & Wellness menu/i);
+    assert.equal(data.intent, 'service_request');
+    assert.match(data.reply, /spa brochure|spa & wellness/i);
     assert.equal(data.media?.filename, 'Lumiere_Spa_Wellness_Menu.pdf');
-    assert.equal(data.hotel_collection.length, 0);
-    assert.equal(data.partner_offers.length, 0);
+    assert.equal(data.hotel_collection, undefined);
+    assert.equal(data.partner_offers.length, 1);
     assert.equal(data.recommendations.length, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('Operational requests: Physical items (towels/water) alert Housekeeping with zero upselling', async () => {
+test('Operational requests: Physical items (towels/water) prepare a Housekeeping request with zero upselling', async () => {
   const originalFetch = globalThis.fetch;
   const writtenTables = [];
   globalThis.fetch = async (url, options = {}) => {
@@ -1227,7 +1714,8 @@ test('Operational requests: Physical items (towels/water) alert Housekeeping wit
     const data = await response.json();
     await Promise.all(scheduled);
     assert.equal(response.status, 200);
-    assert.match(data.reply, /logged your request|delivered to your room|team/i);
+    assert.match(data.reply, /prepared your request|request queue/i);
+    assert.doesNotMatch(data.reply, /notified|dispatched|received by/i);
     assert.doesNotMatch(data.reply, /Partner option/i);
     assert.doesNotMatch(data.reply, /upgrade/i);
     assert.ok(data.staff_alerts.length > 0);
@@ -1241,6 +1729,94 @@ test('Operational requests: Physical items (towels/water) alert Housekeeping wit
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('Operational routing deterministically separates Housekeeping from Maintenance', () => {
+  for (const message of [
+    'Please bring extra towels and clean the room.',
+    'Could I have fresh linen and toiletries?',
+  ]) {
+    assert.equal(isOperationalRequest(message), true);
+    assert.equal(operationalServiceType(message), 'Housekeeping');
+  }
+  for (const message of [
+    'The air conditioning is not working.',
+    'There is a plumbing leak by the sink.',
+    'Our door lock is broken and the electrical outlet has stopped working.',
+  ]) {
+    assert.equal(isOperationalRequest(message), true);
+    assert.equal(operationalServiceType(message), 'Maintenance');
+  }
+});
+
+test('Operational requests: maintenance issues prepare a Maintenance request', async () => {
+  const originalFetch = globalThis.fetch;
+  const writtenTables = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const target = String(url);
+    if (target.includes('api.airtable.com')) {
+      if (options.body) writtenTables.push({ url: target, fields: JSON.parse(options.body).fields });
+      return Response.json({ records: [], id: 'rec_maintenance_test' });
+    }
+    throw new Error(`Unexpected call: ${url}`);
+  };
+  const scheduled = [];
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/demo-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'Maintenance Guest',
+        language: 'English',
+        scenario: 'in-stay',
+        is_demo: true,
+        sessionId: 'demo_in_stay_ac',
+        chatHistory: [{ role: 'user', content: 'The air conditioning is broken in room 402.' }],
+      }),
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', DEMO_ALLOWED_ORIGIN: 'https://flowarchitect-agency.github.io' }, {
+      waitUntil(promise) { scheduled.push(promise); },
+    });
+    const data = await response.json();
+    await Promise.all(scheduled);
+    assert.equal(response.status, 200);
+    assert.equal(data.requests?.[0]?.service_type, 'Maintenance');
+    assert.doesNotMatch(data.reply, /notified|dispatched|received by/i);
+    const requestWrite = writtenTables.find((entry) => entry.url.includes('/Requests'));
+    assert.equal(requestWrite?.fields.ServiceType, 'Maintenance');
+    assert.equal(requestWrite?.fields.IsUpsell, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Operational, escalation, and recovery copy does not claim a human was notified or dispatched', () => {
+  const replies = [
+    ...Object.values(OPERATIONAL_REPLIES),
+    ...Object.values(ESCALATION_REPLIES),
+    postCheckoutNegativeReply('Truth Test', 'en'),
+  ];
+  for (const reply of replies) {
+    assert.doesNotMatch(reply, /staff (?:were|was)?\s*notified|team (?:were|was)?\s*notified|has been notified|have notified|alerted|received your request|stepping in|dispatched/i);
+  }
+});
+
+test('Media contract returns only shipped brochures with verified metadata', () => {
+  const workerRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const directoryPath = `${repoRoot}Lumiere_Guest_Directory_2026.pdf`;
+  const spaPath = `${repoRoot}Lumiere_Spa_Wellness_Menu.pdf`;
+  assert.equal(existsSync(directoryPath), true);
+  assert.equal(existsSync(spaPath), true);
+  assert.equal(statSync(directoryPath).size, 27339632);
+  assert.equal(statSync(spaPath).size, 1063);
+  assert.ok(workerRoot, 'The Worker test path should resolve deterministically.');
+
+  const directory = detectMediaBrochure('Please send the hotel directory PDF.');
+  const spa = detectMediaBrochure('Please send the spa menu.', 'spa');
+  assert.deepEqual([directory?.filename, directory?.size, directory?.pages], ['Lumiere_Guest_Directory_2026.pdf', '27.3 MB', '10 pages']);
+  assert.deepEqual([spa?.filename, spa?.size, spa?.pages], ['Lumiere_Spa_Wellness_Menu.pdf', '1.1 KB', '1 page']);
+  assert.equal(detectMediaBrochure('Please send the dining menu brochure.', 'restaurant'), null);
+  assert.equal(detectMediaBrochure('Please send the suites collection brochure.', 'accommodation'), null);
 });
 
 test('Every booking ticket receives a valid ServiceType instead of Other', async () => {
@@ -1300,6 +1876,7 @@ test('Manager metrics use operational tickets times fifteen saved minutes', asyn
         { fields: { ServiceType: 'Maintenance' } },
         { fields: { ServiceType: 'Dining' } },
         { fields: { ServiceType: 'Concierge' } },
+        { fields: { ServiceType: 'Housekeeping', Is_Demo: true } },
       ] });
     }
     throw new Error(`Unexpected request: ${target}`);
@@ -1316,6 +1893,28 @@ test('Manager metrics use operational tickets times fifteen saved minutes', asyn
       minutes_per_ticket: 15,
       formula: 'operational tickets × 15 minutes ÷ 60',
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Airtable rate limiting uses bounded Retry-After retries', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    if (!String(url).includes('/Requests')) throw new Error(`Unexpected request: ${url}`);
+    calls += 1;
+    return new Response(JSON.stringify({ error: { type: 'RATE_LIMITED' } }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': '0' },
+    });
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/manager/metrics', {
+      headers: { Origin: 'https://flowarchitect-agency.github.io' },
+    }), { AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    assert.equal(response.status, 502);
+    assert.equal(calls, 3, 'Airtable retries must stop at the configured attempt bound.');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1369,7 +1968,7 @@ test('Post-Checkout Positive: 5-star review returns thank you and Google Review 
   }
 });
 
-test('Post-Checkout Negative: Complaining guest triggers General Manager escalation without public review link', async () => {
+test('Post-Checkout Negative: recovery is prepared without suppressing neutral public review access', async () => {
   const originalFetch = globalThis.fetch;
   const writtenTables = [];
   globalThis.fetch = async (url, options = {}) => {
@@ -1406,11 +2005,12 @@ test('Post-Checkout Negative: Complaining guest triggers General Manager escalat
     await Promise.all(scheduled);
     assert.equal(response.status, 200);
     assert.match(data.reply, /sincerely apologize/i);
-    assert.match(data.reply, /General Manager/i);
-    assert.doesNotMatch(data.reply, /g\.page|tripadvisor|google review/i);
+    assert.match(data.reply, /prepared a private service-recovery request/i);
+    assert.doesNotMatch(data.reply, /escalated|manager.*reviewing|notified/i);
     assert.equal(data.requires_human, true);
     assert.equal(data.escape_hatch_triggered, true);
-    assert.equal(data.media, null);
+    assert.ok(data.media?.url.includes('g.page'));
+    assert.deepEqual(data.quickReplies, ['Leave Google Review', 'Share on TripAdvisor']);
     assert.ok(data.staff_alerts.length > 0);
     assert.equal(data.staff_alerts[0].role, 'General Manager');
     const requestWrite = writtenTables.find((w) => w.url.includes('/Requests'));
@@ -1486,7 +2086,7 @@ test('Booking Intent Negation: Guest refusal with service keyword aborts booking
   }
 });
 
-test('Graceful Failure Handling: Downstream Groq or Airtable failure returns polite delay notice and triggers escape hatch', async () => {
+test('Graceful Failure Handling: downstream failures do not fabricate a staff handoff', async () => {
   const originalFetch = globalThis.fetch;
   const scheduled = [];
   try {
@@ -1515,9 +2115,349 @@ test('Graceful Failure Handling: Downstream Groq or Airtable failure returns pol
     await Promise.all(scheduled);
     assert.equal(response.status, 200);
     assert.match(data.reply, /experiencing a brief system delay/i);
-    assert.equal(data.requires_human, true);
-    assert.equal(data.escape_hatch_triggered, true);
-    assert.ok(data.staff_alerts.length > 0);
+    assert.match(data.reply, /could not prepare your request/i);
+    assert.doesNotMatch(data.reply, /notified the front desk|dispatched|received/i);
+    assert.equal(data.requires_human, false);
+    assert.equal(data.escape_hatch_triggered, false);
+    assert.deepEqual(data.staff_alerts, []);
+    assert.deepEqual(data.requests, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// Regression test for a live-production bug found 2026-09-05: a guest naming
+// a specific catalogue item by name ("book the VIP Louvre After-Hours
+// Private Tour") was confirmed against a completely different item
+// ("Versailles Private Day Trip"). Root cause: the deterministic category
+// classifier scored the message's own words ("Louvre", "Tour") as category
+// `tour`, but the Louvre item is actually filed under `experience` in
+// Airtable while Versailles is filed under `tour` -- so the legacy booking
+// shortcut searched the wrong category bucket, found Versailles alone
+// there, and treated a single candidate in the *wrong* bucket as
+// unambiguous. This fixture reproduces that exact category split so a
+// regression of either the category-guess trust or the name-matching
+// safeguard would be caught here rather than only by manual live testing.
+test('A guest naming a specific catalogue item is never confirmed against a different item in the same category family', async () => {
+  const records = [
+    { fields: { Name: 'VIP Louvre After-Hours Private Tour', Category: 'experience', Description: 'Exclusive after-hours Louvre access.', Active: true, IsPartner: true, PriceEUR: 2800, DurationMins: 120 } },
+    { fields: { Name: 'Versailles Private Day Trip', Category: 'tour', Description: 'Full day private trip to Versailles.', Active: true, IsPartner: true, PriceEUR: 1200, DurationMins: 480 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        message: 'Can you go ahead and book the VIP Louvre After-Hours Private Tour for Saturday for the two of us?',
+        sessionId: 'qa_named_entity_disambiguation',
+        testMode: 'read_only',
+      }),
+    }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris' }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.match(body.reply, /Louvre/i);
+    assert.doesNotMatch(body.reply, /Versailles/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// Regression test for a live readiness test found 2026-09-07: a guest naming
+// a service that does not exist at all in the catalogue ("book me the
+// \"Eiffel Tower Sunset Helicopter Tour\"") was silently confirmed against a
+// real, unrelated, expensive catalogue item ("VIP Louvre After-Hours Private
+// Tour", EUR 2800) -- the same underlying failure mode as the Louvre/
+// Versailles bug above, but worse: the guest's own message shares no real
+// identifying word with the item that got booked. Root cause: the message's
+// only catalogue-vocabulary word was "tour", a generic type word that (at
+// the time) was not in GENERIC_SERVICE_NAME_WORDS, so it was treated as
+// this being the sole matching candidate in its category. The fast
+// deterministic booking shortcut must never confirm an item the guest's own
+// message gives no real evidence for -- it should return null instead so the
+// semantic-controller/LLM path can honestly say the item isn't offered.
+test('A guest naming a service that does not exist in the catalogue is never silently confirmed against a real one', async () => {
+  const records = [
+    { fields: { Name: 'VIP Louvre After-Hours Private Tour', Category: 'experience', Description: 'Exclusive after-hours Louvre access.', Active: true, IsPartner: true, PriceEUR: 2800, DurationMins: 120 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/Services')) return Response.json({ records });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        message: 'Please book me the "Eiffel Tower Sunset Helicopter Tour" for Saturday.',
+        sessionId: 'qa_nonexistent_item_fabrication',
+        testMode: 'read_only',
+      }),
+    }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test', HOTEL_NAME: 'Hotel', HOTEL_CITY: 'Paris' }, { waitUntil() {} });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    // Must never confirm the unrelated real item as if it were what the
+    // guest asked for.
+    assert.doesNotMatch(body.reply, /I have recorded your request for VIP Louvre/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Airtable failures surface the provider error body, not just a bare status', async () => {
+  // A plan record cap, a bad field name and a revoked token all return 4xx.
+  // Without the provider's own error type/message, Workers Logs cannot tell
+  // them apart -- which is how an exhausted Airtable base silently drops
+  // guest bookings. The detail must reach both the log and the thrown error.
+  const originalFetch = globalThis.fetch;
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...args) => { logged.push(args.join(' ')); };
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith('https://api.airtable.com/')) {
+      return new Response(
+        JSON.stringify({ error: { type: 'INVALID_REQUEST_UNKNOWN', message: 'Record limit reached for this base.' } }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  try {
+    const env = { AIRTABLE_API_KEY: 'qa-airtable-token', AIRTABLE_BASE_ID: 'app_qa' };
+    const request = new Request('https://worker.example/api/booking-enquiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({
+        guestName: 'QA Guest',
+        email: 'qa@example.com',
+        serviceName: 'Lumiere Spa - Couples Massage',
+        consent: true,
+      }),
+    });
+    const result = await worker.fetch(request, env, { waitUntil() {} });
+    const body = await result.json();
+
+    assert.equal(result.status, 502);
+    assert.match(body.error, /422/, 'status code is still reported');
+    assert.match(body.error, /INVALID_REQUEST_UNKNOWN/, "Airtable's error type must be surfaced");
+    assert.match(body.error, /Record limit reached/, "Airtable's message must be surfaced");
+    assert.ok(
+      logged.some((line) => /INVALID_REQUEST_UNKNOWN/.test(line) && /Record limit reached/.test(line)),
+      'the failure must also be logged with the provider detail',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});
+
+test('A price question reaches the model instead of being answered with a category card', async () => {
+  // "How much is the Signature Hammam Ritual?" was previously short-circuited
+  // by the category-card fast path into "We have 2 spa & wellness options in
+  // the Hotel Lumiere collection", which never answers the question even
+  // though the price is in the catalogue. Specific-attribute questions must
+  // reach the model. Broad browsing questions must still take the fast path.
+  const originalFetch = globalThis.fetch;
+  const env = { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' };
+
+  async function ask(message, sessionId) {
+    const calls = [];
+    globalThis.fetch = async (url) => {
+      const target = String(url);
+      calls.push(target);
+      if (target.includes('/Services')) return Response.json({ records });
+      if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+      if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+        return Response.json({ choices: [{ message: { content: JSON.stringify({
+          reply_text: 'The Couples Massage is 420 EUR for 75 minutes.',
+          intent: 'faq', service_type: 'spa', requests: [], requires_human: false,
+        }) } }] });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    };
+    const response = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message, sessionId, testMode: 'read_only' }),
+    }), env, { waitUntil() {} });
+    return { body: await response.json(), reachedModel: calls.some((u) => u.includes('api.groq.com')) };
+  }
+
+  try {
+    for (const question of [
+      'How much is the Lumière Spa Couples Massage?',
+      'What does the couples massage cost?',
+      'How long does the couples massage last?',
+      'Combien coûte le massage en duo ?',
+    ]) {
+      const { body, reachedModel } = await ask(question, 'qa_price_q');
+      assert.equal(reachedModel, true, `"${question}" must reach the model`);
+      assert.doesNotMatch(body.reply, /hôtel lumière collection/i, `"${question}" must not get the category card`);
+    }
+
+    // Broad browsing must still be served by the fast path, with no model call.
+    const browsing = await ask('What spa treatments do you offer?', 'qa_browse_q');
+    assert.equal(browsing.reachedModel, false, 'broad browsing should stay on the card fast path');
+    assert.equal(browsing.body.intent, 'partner_request');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('The last-resort fallback gives a usable answer, not a promise to answer', async () => {
+  const { contextualSafeFallback } = await import('../src/response-contract.js');
+  for (const language of ['en', 'fr', 'es']) {
+    const reply = contextualSafeFallback({}, language);
+    assert.doesNotMatch(reply, /I will answer the current request/i);
+    assert.doesNotMatch(reply, /Je répondrai à votre demande actuelle/i);
+    assert.doesNotMatch(reply, /Responderé a su solicitud actual/i);
+    assert.ok(reply.length > 30, 'fallback must still say something useful');
+  }
+  // It should defer to a human rather than assert a fact it does not hold.
+  assert.match(contextualSafeFallback({}, 'en'), /front desk|do not have/i);
+});
+
+test('A named catalogue item and a non-English time question skip the category card', async () => {
+  // Live testing found three category-card non-answers: "I want the Signature
+  // Hammam Ritual" and "Can you arrange the Versailles private day trip?" were
+  // answered with "We have N options" although the guest had already chosen,
+  // and the French form of "what time is breakfast" was handed restaurant
+  // cards because only the English wording bailed out of the shortcut.
+  const catalogue = [
+    { fields: { Name: 'Lumière Spa — Signature Hammam Ritual', Category: 'spa', Description: 'Hammam.', Active: true, IsPartner: true, PriceEUR: 280 } },
+    { fields: { Name: 'Lumière Spa — Couples Massage', Category: 'spa', Description: 'Massage.', Active: true, IsPartner: true, PriceEUR: 420 } },
+    { fields: { Name: 'Versailles Private Day Trip', Category: 'tour', Description: 'Day trip.', Active: true, IsPartner: true, PriceEUR: 950 } },
+    { fields: { Name: 'Le Jardin — Chef’s Table', Category: 'restaurant', Description: 'Dining.', Active: true, IsPartner: true, PriceEUR: 580 } },
+    { fields: { Name: 'Terrasse Lumière — Rooftop Dinner', Category: 'restaurant', Description: 'Rooftop.', Active: true, IsPartner: true, PriceEUR: 180 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  const env = { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' };
+
+  async function ask(message, language = 'en') {
+    globalThis.fetch = async (url) => {
+      const target = String(url);
+      if (target.includes('/Services')) return Response.json({ records: catalogue });
+      if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+      if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+        return Response.json({ choices: [{ message: { content: JSON.stringify({
+          reply_text: 'Model answered the specific question.', intent: 'faq', service_type: 'spa', requests: [], requires_human: false,
+        }) } }] });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    };
+    const res = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message, sessionId: 'qa_card_guard', testMode: 'read_only', language }),
+    }), env, { waitUntil() {} });
+    return (await res.json()).reply;
+  }
+
+  try {
+    for (const [message, language] of [
+      ['I want the Signature Hammam Ritual.', 'en'],
+      ['Can you arrange the Versailles private day trip?', 'en'],
+      ['Bonjour, à quelle heure est le petit-déjeuner ?', 'fr'],
+    ]) {
+      const reply = await ask(message, language);
+      assert.doesNotMatch(reply, /collection\. (?:Here|Voici)/i, `"${message}" must not get a category card`);
+      assert.doesNotMatch(reply, /options de restauration/i, `"${message}" must not get a category card`);
+    }
+
+    // Broad browsing must still be served by the fast path.
+    const browsing = await ask('What dining experiences do you offer?');
+    assert.match(browsing, /collection/i, 'broad browsing should still get the category card');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('The partner line names the service the guest asked for, not an arbitrary one', async () => {
+  // Live testing: "I want the Signature Hammam Ritual" (EUR 280) produced
+  // "Partner option: Lumière Spa — Couples Massage (EUR 420, 75 min)" because
+  // the suffix took the first item in the category. Quoting the wrong service
+  // and the wrong price to a guest is the same class of fault as a fabricated
+  // confirmation, so it must resolve to the item the guest named.
+  const catalogue = [
+    { fields: { Name: 'Lumière Spa — Couples Massage', Category: 'spa', Description: 'Massage.', Active: true, IsPartner: true, PriceEUR: 420, DurationMins: 75 } },
+    { fields: { Name: 'Lumière Spa — Signature Hammam Ritual', Category: 'spa', Description: 'Hammam.', Active: true, IsPartner: true, PriceEUR: 280, DurationMins: 105 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('/Services')) return Response.json({ records: catalogue });
+    if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+    if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+      // Model produces no usable reply, so the deterministic partner line is
+      // what the guest actually sees -- exactly the live failure case.
+      return Response.json({ choices: [{ message: { content: '' } }] });
+    }
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  try {
+    const res = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message: 'I want the Signature Hammam Ritual.', sessionId: 'qa_named_partner', testMode: 'read_only' }),
+    }), { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' }, { waitUntil() {} });
+    const { reply } = await res.json();
+    if (/partner option|option partenaire/i.test(reply)) {
+      assert.doesNotMatch(reply, /Couples Massage/i, 'must not name a service the guest did not ask for');
+      assert.doesNotMatch(reply, /420/, 'must not quote the wrong price');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('An acronym-named service is identifiable and skips the category card', async () => {
+  // "Private Chauffeur — CDG/ORY Transfer" is entirely category vocabulary
+  // except for the airport codes, and those are 3 letters, so the >=4 length
+  // filter left the item with no distinctive words at all. A guest asking to
+  // "arrange a chauffeur transfer from CDG" therefore got "We have 2 transport
+  // options" instead of that transfer.
+  const catalogue = [
+    { fields: { Name: 'Private Chauffeur — Half-Day Disposal', Category: 'transport', Description: 'Disposal.', Active: true, IsPartner: true, PriceEUR: 450 } },
+    { fields: { Name: 'Private Chauffeur — CDG/ORY Transfer', Category: 'transport', Description: 'Airport transfer.', Active: true, IsPartner: true, PriceEUR: 180 } },
+  ];
+  const originalFetch = globalThis.fetch;
+  const env = { GROQ_API_KEY: 'test', AIRTABLE_API_KEY: 'test', AIRTABLE_BASE_ID: 'test' };
+
+  async function ask(message) {
+    const calls = [];
+    globalThis.fetch = async (url) => {
+      const target = String(url);
+      calls.push(target);
+      if (target.includes('/Services')) return Response.json({ records: catalogue });
+      if (target.includes('/Conversations') || target.includes('/Settings')) return Response.json({ records: [] });
+      if (target === 'https://api.groq.com/openai/v1/chat/completions') {
+        return Response.json({ choices: [{ message: { content: JSON.stringify({
+          reply_text: 'The CDG/ORY Transfer is 180 EUR.', intent: 'service_request', service_type: 'transport', requests: [], requires_human: false,
+        }) } }] });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    };
+    const res = await worker.fetch(new Request('https://worker.example/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://flowarchitect-agency.github.io' },
+      body: JSON.stringify({ message, sessionId: 'qa_acronym', testMode: 'read_only' }),
+    }), env, { waitUntil() {} });
+    return { reply: (await res.json()).reply, reachedModel: calls.some((u) => u.includes('api.groq.com')) };
+  }
+
+  try {
+    const named = await ask('Please arrange a chauffeur transfer from CDG.');
+    assert.doesNotMatch(named.reply, /collection\. Here/i, 'a named airport transfer must not get the category card');
+    assert.equal(named.reachedModel, true, 'it must reach the model to answer about that transfer');
+
+    // A generic transport ask has no acronym and must still take the fast path.
+    const generic = await ask('Do you offer airport transfers?');
+    assert.equal(generic.reachedModel, false, 'broad browsing should stay on the card fast path');
   } finally {
     globalThis.fetch = originalFetch;
   }
