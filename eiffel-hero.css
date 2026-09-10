@@ -1,0 +1,148 @@
+/* eiffel-hero.css — the WebGL Champ de Mars as a hero background layer.
+ *
+ * The scene is a backdrop: it sits behind .hero-content and never receives
+ * pointer events. The hero keeps its existing markup, copy and CTAs; only
+ * the ground it stands on changes, from paper to dusk.
+ *
+ * Tokens below borrow the site's own brass so the accent stays in the
+ * family. Everything else is scene-local and prefixed .eiffel-*.
+ */
+
+/* The hero is TALLER than the screen so the build has scroll to run across;
+   .hero-scene-pin sticks to the viewport while that scroll is consumed.
+   Change --eiffel-run to make the assembly slower (more) or quicker (less). */
+.hero--scene {
+  position: relative;
+  isolation: isolate;
+  height: var(--eiffel-run, 300vh);
+  background: #12203E;              /* matches the scene's upper sky, so the
+                                       page never flashes white before WebGL */
+  color: #F3F1EA;
+}
+
+.hero-scene-pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  min-height: 560px;
+  overflow: hidden;
+}
+
+/* NOTE: overflow-x: hidden on any ANCESTOR silently disables position:sticky
+   (it makes that ancestor a scroll container). Use overflow-x: clip instead. */
+
+/* the canvas the module inserts */
+.eiffel-hero-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* a scrim under the copy, so type stays readable over a bright horizon */
+.hero-scene-pin::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(100deg,
+              rgba(8, 16, 36, .88) 0%,
+              rgba(8, 16, 36, .58) 28%,
+              rgba(8, 16, 36, 0) 56%);
+  content: "";
+  pointer-events: none;
+}
+
+/* the existing hero content rides on top, untouched apart from colour */
+.hero--scene .hero-content,
+.hero--scene .hero-v2-content { position: relative; z-index: 2; }
+
+.hero--scene .hero-eyebrow { color: var(--lum-gold, #E4C48C); }
+.hero--scene h1 { color: #FBF8F1; }
+.hero--scene .hero-sub { color: #B9C2D6; }
+
+/* keep the site's button shapes; only the values change for a dark ground */
+.hero--scene .btn-outline {
+  color: #EDE9DE;
+  border-color: rgba(237, 233, 222, .42);
+}
+.hero--scene .btn-outline:hover {
+  background: rgba(237, 233, 222, .1);
+  border-color: rgba(237, 233, 222, .7);
+}
+
+/* the build readout, if the page opts into one */
+.eiffel-readout {
+  position: absolute;
+  right: clamp(1.25rem, 5vw, 5.5rem);
+  bottom: 2.4rem;
+  z-index: 2;
+  width: min(230px, 34%);
+  color: #FFD79A;
+  font-size: .58rem;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 6px rgba(6, 12, 26, .85);
+}
+.eiffel-readout-row { display: flex; justify-content: space-between; gap: 1rem; }
+.eiffel-readout-track { height: 1px; margin-top: .55rem; background: rgba(255, 215, 154, .26); }
+.eiffel-readout-fill {
+  height: 1px; width: 100%;
+  background: #FFD79A;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.eiffel-readout small {
+  display: block; margin-top: .7rem;
+  color: #C4CEE4; font-size: .55rem; font-weight: 500;
+  letter-spacing: .09em; text-transform: none;
+}
+
+/* ── the title, written a line at a time ──────────────────────────
+   Resting state is fully visible: if the script never runs, the hero
+   still reads correctly. The script adds .is-staged to opt in.      */
+.hero--scene h1 span,
+.hero--scene .hero-eyebrow,
+.hero--scene .hero-sub,
+.hero--scene .hero-ctas { opacity: 1; }
+
+.hero--scene.is-staged .hero-eyebrow,
+.hero--scene.is-staged h1 span,
+.hero--scene.is-staged .hero-sub,
+.hero--scene.is-staged .hero-ctas {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: eiffel-line-in .9s var(--ease-out, cubic-bezier(.23,1,.32,1)) forwards;
+}
+.hero--scene.is-staged .hero-eyebrow      { animation-delay: .15s; }
+.hero--scene.is-staged h1 span:first-of-type { animation-delay: .45s; }
+.hero--scene.is-staged h1 span:nth-of-type(2){ animation-delay: .85s; }
+.hero--scene.is-staged .hero-sub          { animation-delay: 1.3s; }
+.hero--scene.is-staged .hero-ctas         { animation-delay: 1.65s; }
+
+@keyframes eiffel-line-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* the hand-drawn hero art stands in when WebGL cannot run */
+.hero--scene .hero-figure { display: none; }
+.hero--scene.eiffel-hero--fallback .hero-figure { display: block; }
+.hero--scene.eiffel-hero--fallback { height: auto; background: var(--v2-paper, #f7f5f0); color: var(--v2-ink, #181917); }
+.hero--scene.eiffel-hero--fallback .hero-scene-pin { position: relative; height: auto; }
+.hero--scene.eiffel-hero--fallback .hero-scene-pin::before { display: none; }
+.hero--scene.eiffel-hero--fallback h1 { color: var(--v2-ink, #181917); }
+.hero--scene.eiffel-hero--fallback .hero-sub { color: var(--v2-muted, #6e6e68); }
+.hero--scene.eiffel-hero--fallback .hero-eyebrow { color: var(--v2-brass, #9d7a49); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* no pinned run: the hero collapses to one screen and the tower stands built */
+  .hero--scene { height: auto; }
+  .hero-scene-pin { position: relative; height: auto; min-height: 88vh; }
+  .hero--scene.is-staged .hero-eyebrow,
+  .hero--scene.is-staged h1 span,
+  .hero--scene.is-staged .hero-sub,
+  .hero--scene.is-staged .hero-ctas { animation: none; opacity: 1; transform: none; }
+}

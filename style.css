@@ -13,8 +13,8 @@
   --line: rgba(32, 43, 53, 0.1);
   --shadow-soft: 0 18px 48px rgba(20, 35, 47, 0.1);
   --shadow-deep: 0 34px 90px rgba(13, 29, 45, 0.2);
-  --serif: 'Playfair Display', Georgia, serif;
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", 'Inter', 'Segoe UI', sans-serif;
+  --serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   
   /* Apple Canonical Motion Easing Curves (emilkowalski/skills) */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -188,7 +188,10 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
 @media (max-width: 900px) { .hero { min-height: auto; }.hero-grid { grid-template-columns: 1fr; }.hero-content { max-width: 680px; }.hero-mockup { width: min(440px, 86%); margin: 1rem auto 0; }.problem-grid, .steps-container { grid-template-columns: 1fr; }.floating-badge.top { right: -8%; }.floating-badge.bottom { left: -9%; }.footer-container { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 620px) { nav { padding-inline: 1rem; }.nav-container, .container, .footer-container { width: min(100% - 2rem, 1180px); }.logo { font-size: 1.05rem; }.logo img { height: 36px !important; }.nav-cta { display: none; } section { padding: 5rem 0; }.hero { padding-top: 7.8rem; }.hero h1 { font-size: clamp(2.55rem, 12vw, 3.6rem); }.hero-sub { font-size: .95rem; }.hero-ctas { align-items: stretch; flex-direction: column; }.btn-primary { width: 100%; }.btn-outline { justify-content: center; }.hero-trust { align-items: flex-start; }.phone-frame { transform: none; }.phone-screen { min-height: 460px; }.floating-badge { display: none; }.chat-wrapper { margin-top: 2.2rem; }.chat-header { padding: .9rem; }.chat-header-assurance { display: none; }.chat-messages { height: 520px; padding: 1rem; }.chat-msg { max-width: 93%; }.chat-msg-copy { font-size: .86rem; }.recommendation-rail { grid-auto-columns: minmax(230px, 88%); }.partner-offer-rail { grid-auto-columns: minmax(264px, 88%); }.chat-input-area { padding-inline: .9rem; }.chat-input { min-height: 48px; font-size: 16px; }.chat-send { flex-basis: 48px; width: 48px; height: 48px; }.chat-widget.fullscreen { inset: 0; height: 100dvh; border-radius: 0; }.chat-widget.fullscreen .chat-header { flex: 0 0 auto; }.chat-widget.fullscreen .chat-messages { height: auto; padding-bottom: 1rem; }.chat-widget.fullscreen .chat-input-area { padding: .8rem .9rem calc(.8rem + env(safe-area-inset-bottom)); }.chat-widget.fullscreen .chat-footer-note { padding-bottom: calc(.8rem + env(safe-area-inset-bottom)); }.room-booking-action { max-width: 100%; }.footer-links { gap: .8rem; }.booking-fields-two, .booking-fields-three, .discovery-dialog .booking-fields-three { grid-template-columns: 1fr; }.booking-dialog, .discovery-dialog { padding: 1.4rem 1.1rem; }.booking-service-summary { align-items: flex-start; flex-direction: column; gap: .35rem; } }
 /* Keep the long hotel collection inside the chat scroller rather than expanding the page. */
-.chat-messages { min-height: 0; overscroll-behavior-y: contain; }.hotel-collection-panel { min-width: 0; }.hotel-collection-list { max-height: 320px; scrollbar-gutter: stable; }
+/* `contain` here swallowed the page scroll whenever the pointer was over the
+   thread, so the reader got stuck in the demo and could not carry on down the
+   page. The thread still scrolls; it just hands the scroll back at its end. */
+.chat-messages { min-height: 0; overscroll-behavior-y: auto; }.hotel-collection-panel { min-width: 0; }.hotel-collection-list { max-height: 320px; scrollbar-gutter: stable; }
 
 /* The complete service catalogue is intentionally a focused concierge view, not a second long chat message. */
 .collection-open { overflow: hidden; }.hotel-collection-launcher { display: grid; gap: .45rem; width: 100%; margin: .15rem 0 .8rem; padding: 1rem; color: var(--ink); background: #eee5d6; border-radius: 10px; box-shadow: 0 13px 30px rgba(28,37,43,.08); }.hotel-collection-launcher h3 { margin: 0; color: var(--navy); font: 600 1.25rem/1.15 var(--serif); }.hotel-collection-launcher > p:not(.hotel-collection-eyebrow) { margin: 0; color: var(--muted); font-size: .74rem; line-height: 1.5; }.hotel-collection-open { justify-self: start; min-height: 36px; margin-top: .22rem; padding: .58rem .82rem; color: var(--white); background: var(--navy); border-radius: 999px; cursor: pointer; font: 700 .6rem var(--sans); letter-spacing: .1em; text-transform: uppercase; transition: transform 180ms ease, background 180ms ease; }.hotel-collection-open:hover { background: var(--navy-soft); transform: translateY(-1px); }
@@ -465,7 +468,84 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
 @keyframes v2-night-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Chapter 03: a neutral reception surface makes human judgement visibly first-class. */
-.human-handoff { padding: clamp(5rem, 8vw, 8rem) 0 clamp(5.5rem, 9vw, 8.5rem); color: var(--v2-ink); background: var(--v2-paper); }.handoff-intro { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(250px, .52fr); gap: clamp(2rem, 7vw, 8rem); align-items: end; max-width: 1050px; margin-bottom: clamp(2.4rem, 5vw, 4.5rem); }.handoff-heading .chapter-eyebrow { margin-bottom: 1.2rem; }.handoff-intro h2 { margin: 0; font: 500 clamp(2.8rem, 4.6vw, 5.2rem)/.96 var(--serif); letter-spacing: -.06em; }.handoff-intro > p { max-width: 370px; margin: 0 0 .25rem; color: var(--v2-muted); font-size: .95rem; line-height: 1.65; }
+/* Chapter 03 opener: a pinned stage the cathedral turns inside. The pin needs a
+   scroll range, so the stage is tall and the pin is one viewport of it. Note the
+   body rule above keeps `overflow-x: hidden` -- that propagates to the viewport
+   and leaves position:sticky working; `hidden` on `html` instead would make the
+   root a scroll container and the pin would never stick. */
+.monument-stage { position: relative; height: 640vh; background: var(--v2-paper); }
+.monument-pin { position: sticky; top: 0; height: 100vh; overflow: hidden;
+  background: linear-gradient(#a9c6dd 0%, #cfdce2 46%, #ece6d9 78%, var(--v2-paper) 100%); }
+.monument-pin canvas { display: block; width: 100%; height: 100%; }
+/* A soft veil over the side the text sits on. The camera already keeps the
+   cathedral out of the text column, but stone and type are close in value, so
+   this guarantees the words stay readable whatever angle the turn is at. */
+.monument-pin::after { content: ""; position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(96deg, rgba(245,242,234,.9) 0%, rgba(245,242,234,.66) 24%, rgba(245,242,234,0) 50%); }
+
+.monument-marker { position: absolute; z-index: 2; top: clamp(5.5rem, 13vh, 8.5rem);
+  left: max(1.35rem, calc(50vw - 620px)); width: min(30vw, 340px);
+  pointer-events: none; opacity: 0; transition: opacity 700ms ease 260ms; }
+.monument-stage.is-assembled .monument-marker { opacity: 1; }
+.monument-marker .chapter-eyebrow { margin-bottom: .7rem; color: #93713f; }
+.monument-marker-line { margin: 0; max-width: 30ch; color: #46503f;
+  font: 400 clamp(.88rem, 1vw, 1rem)/1.55 var(--sans); }
+.monument-ticks { display: flex; gap: .38rem; margin: 1.15rem 0 0; padding: 0; list-style: none; }
+.monument-ticks li { width: 20px; height: 2px; background: rgba(62,76,66,.2);
+  transition: background 420ms ease; }
+.monument-ticks li.is-done { background: #93713f; }
+.monument-caption { position: absolute; top: 50%; left: max(1.35rem, calc(50vw - 620px));
+  z-index: 2; width: min(42vw, 560px); transform: translateY(-50%);
+  pointer-events: none; opacity: 0; transition: opacity 700ms ease 120ms; }
+.monument-stage.is-assembled .monument-caption { opacity: 1; }
+.monument-caption .chapter-eyebrow { margin-bottom: 1.15rem; color: #93713f; }
+
+/* The cards share one slot, so the box is sized for the tallest of them and
+   nothing below shifts as they swap. */
+.monument-cards { position: relative; min-height: clamp(12rem, 25vh, 19rem); }
+.monument-card { position: absolute; inset: 0 0 auto 0; }
+
+/* Each line is masked by its own overflow and wipes up into place. Direction
+   follows the scroll: outgoing cards leave the way you are travelling, so
+   reading back up the page reverses cleanly instead of always sliding one way. */
+.monument-figure { overflow: hidden; margin: 0 0 1.1rem; color: #232d26;
+  font: 500 clamp(2.3rem, 4.7vw, 5.1rem)/1 var(--serif); letter-spacing: -.055em; }
+.monument-figure span { display: block; transform: translateY(108%);
+  transition: transform 760ms cubic-bezier(.22,1,.36,1); }
+.monument-note { max-width: 36ch; margin: 0; color: #4d574e;
+  font-size: clamp(.92rem, 1.05vw, 1.06rem); line-height: 1.6;
+  opacity: 0; transform: translateY(14px);
+  transition: opacity 460ms ease, transform 620ms cubic-bezier(.22,1,.36,1); }
+
+.monument-card.is-on .monument-figure span { transform: none; }
+.monument-card.is-on .monument-note { opacity: 1; transform: none;
+  transition-delay: 190ms, 190ms; }
+.monument-card.was-above .monument-figure span { transform: translateY(-108%); }
+.monument-card.was-below .monument-figure span { transform: translateY(108%); }
+.monument-card.was-above .monument-note { opacity: 0; transform: translateY(-14px); }
+.monument-card.was-below .monument-note { opacity: 0; transform: translateY(14px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .monument-figure span, .monument-note { transition-duration: 1ms; }
+  .monument-card:not(.is-on) .monument-figure span { transform: translateY(108%); }
+}
+.monument-stage.is-failed { height: 0; overflow: hidden; }
+@media (max-width: 900px) { .monument-stage { height: 480vh; }
+  /* text moves under the cathedral here, so the veil follows it */
+  .monument-pin::after { background: linear-gradient(2deg, rgba(245,242,234,.94) 0%, rgba(245,242,234,.72) 26%, rgba(245,242,234,0) 52%); }
+  .monument-marker { top: 5.5rem; left: 1.2rem; width: calc(100% - 2.4rem); }
+  .monument-marker-line { max-width: 34ch; }
+  .monument-caption { top: auto; bottom: 7vh; left: 1.2rem; width: calc(100% - 2.4rem); transform: none; }
+  .monument-cards { min-height: clamp(10rem, 30vh, 14rem); }
+  .monument-figure { margin-bottom: .85rem; font-size: clamp(2.1rem, 9.5vw, 3.4rem); }
+  .monument-note { max-width: none; font-size: .95rem; } }
+@media (prefers-reduced-motion: reduce) { .monument-stage { height: 100vh; } }
+.human-handoff { padding: clamp(5rem, 8vw, 8rem) 0 clamp(5.5rem, 9vw, 8.5rem); color: var(--v2-ink); background: var(--v2-paper); }/* The 1050px cap left a quarter of the row empty on a wide screen while the
+   composition below ran the full width, so the section looked lopsided. The
+   intro now spans the same measure as the panels under it, and the
+   description sits at the right where the reception panel begins. */
+.handoff-intro { display: grid; grid-template-columns: minmax(360px, 1.15fr) minmax(280px, .85fr); gap: clamp(2rem, 7vw, 8rem); align-items: end; max-width: none; margin-bottom: clamp(2.4rem, 5vw, 4.5rem); }.handoff-heading .chapter-eyebrow { margin-bottom: 1.2rem; }.handoff-intro h2 { margin: 0; font: 500 clamp(2.8rem, 4.6vw, 5.2rem)/.96 var(--serif); letter-spacing: -.06em; }.handoff-intro > p { max-width: 370px; margin: 0 0 .25rem; color: var(--v2-muted); font-size: .95rem; line-height: 1.65; }
 .handoff-composition { display: grid; grid-template-columns: minmax(235px, .72fr) 36px minmax(0, 1.28fr); gap: clamp(1rem, 2.5vw, 2.6rem); align-items: stretch; }.handoff-guest-view { display: flex; flex-direction: column; padding: 1.3rem; background: #fbfaf6; border: 1px solid #dedcd4; border-radius: 8px; }.handoff-panel-label { margin-bottom: 1.35rem; color: #88877f; font-size: .57rem; font-weight: 730; letter-spacing: .09em; text-transform: uppercase; }.handoff-guest-name { display: flex; gap: .6rem; align-items: center; }.handoff-guest-name strong, .handoff-guest-name small { display: block; }.handoff-guest-name strong { color: #353630; font-size: .73rem; }.handoff-guest-name small { margin-top: .13rem; color: #85847c; font-size: .58rem; }.handoff-guest-view blockquote { margin: 1.3rem 0; color: #3e403b; font: 500 clamp(1.25rem, 1.8vw, 1.7rem)/1.3 var(--serif); letter-spacing: -.025em; }.handoff-signals { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem .55rem; margin: auto 0 0; padding-top: 1rem; border-top: 1px solid #e2e0d9; }.handoff-signals dt { margin-bottom: .16rem; color: #95938b; font-size: .5rem; letter-spacing: .06em; text-transform: uppercase; }.handoff-signals dd { margin: 0; color: #54554f; font-size: .62rem; font-weight: 660; }
 .handoff-bridge { position: relative; display: grid; min-height: 100%; place-items: center; }.handoff-bridge::before { width: 1px; height: 100%; content: ''; background: #d7d4ca; }.handoff-bridge span { position: absolute; width: 120px; padding: .42rem; color: #8f7a57; background: var(--v2-paper); font-size: .5rem; font-weight: 700; letter-spacing: .07em; line-height: 1.35; text-align: center; text-transform: uppercase; transform: rotate(-90deg); }
 .reception-desk { display: flex; flex-direction: column; overflow: hidden; background: #fff; border: 1px solid #d9d8d1; border-radius: 8px; box-shadow: var(--v2-shadow); }.reception-desk > header { display: flex; align-items: center; justify-content: space-between; min-height: 70px; padding: .9rem 1.1rem; border-bottom: 1px solid #e9e8e2; }.reception-desk header p, .reception-desk header h3 { margin: 0; }.reception-desk header p { margin-bottom: .16rem; color: #898881; font-size: .53rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.reception-desk header h3 { color: #31322e; font: 650 .88rem/1.1 var(--sans); }.handoff-status { padding: .32rem .48rem; color: #765d37; background: #f4efe4; border: 1px solid #e7d8bd; border-radius: 3px; font-size: .55rem; font-weight: 680; }.reception-brief { display: grid; gap: .9rem; padding: 1.1rem; }.reception-brief-guest { display: flex; gap: .6rem; align-items: center; }.reception-brief-guest strong, .reception-brief-guest small { display: block; }.reception-brief-guest strong { color: #363732; font-size: .7rem; }.reception-brief-guest small { margin-top: .12rem; color: #87867f; font-size: .58rem; }.reception-brief > dl { display: grid; gap: .62rem; margin: 0; }.reception-brief > dl div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: .65rem; }.reception-brief dt { color: #929188; font-size: .53rem; letter-spacing: .07em; text-transform: uppercase; }.reception-brief dd { margin: 0; color: #50514b; font-size: .64rem; font-weight: 620; }.ai-summary { padding: .76rem; background: #f4f5f1; border-left: 2px solid #79998f; }.ai-summary span { color: #66857b; font-size: .51rem; font-weight: 730; letter-spacing: .07em; text-transform: uppercase; }.ai-summary p { margin: .35rem 0 0; color: #4a514d; font-size: .67rem; line-height: 1.52; }.reception-actions { display: flex; gap: .55rem; margin-top: auto; padding: .85rem 1.1rem; border-top: 1px solid #e9e8e2; }.reception-action-primary, .reception-action-secondary { display: inline-flex; min-height: 35px; align-items: center; padding: .48rem .75rem; border-radius: 3px; font-size: .64rem; font-weight: 680; }.reception-action-primary { color: #f8f7f1; background: #252724; }.reception-action-secondary { color: #55564f; background: #fff; border: 1px solid #dcdad2; }
@@ -506,3 +586,453 @@ footer { padding: 2.1rem 0; background: #20221f; border-top: 1px solid #3a3d37; 
 @media (max-width: 620px) { .demo-v2, .operating-layer, .implementation, .control-section, .final-cta { padding-block: 4.6rem; }.demo-v2-intro h2, .product-section-header h2, .control-intro h2 { font-size: clamp(1.9rem, 9vw, 2.5rem); }.demo-v2-copy > p { font-size: .97rem; }.demo-v2-shell { margin-top: 2rem; }.demo-v2 .chat-widget { border-radius: 6px; }.demo-v2 .chat-header { min-height: 66px; padding: .82rem; }.demo-v2 .chat-header-assurance { display: none; }.demo-v2 .chat-messages { height: 360px; padding: 1rem .82rem; }.demo-v2 .chat-msg { max-width: 92%; font-size: .73rem; }.demo-prompt-starters { padding: .72rem .82rem; }.demo-prompt-starters > span { width: 100%; }.demo-v2 .chat-input-area { padding: .76rem .82rem .84rem; }.demo-v2 .chat-footer-note { padding: 0 .82rem .85rem; line-height: 1.45; }.operating-surface { display: block; margin-top: 2.1rem; border-radius: 6px; }.operating-column { padding: .78rem; }.operating-channels { border-right: 0; border-bottom: 1px solid #e3e2dc; }.operating-core { padding: .78rem; }.operating-operations { display: block; }.operating-operations { border-top: 1px solid #e3e2dc; }.operating-row { min-height: 56px; }.operating-capabilities div { min-height: 76px; padding: .55rem; }.implementation-track { margin-top: 2.15rem; }.implementation-stage { display: block; min-height: 0; padding: 1.25rem 0 1.35rem; }.implementation-stage-copy { padding-left: 3.25rem; }.implementation-stage-copy h3 { font-size: .96rem; }.implementation-stage-copy p { font-size: .7rem; }.implementation-artifact { width: 100%; margin-top: 1.15rem; }.control-layout { gap: 2rem; }.control-panel > header, .control-panel dl div, .control-panel > p { padding-inline: .75rem; }.control-panel dl div { grid-template-columns: minmax(0, 1fr); gap: .42rem; align-items: start; }.control-panel dd { justify-self: start; text-align: left; }.final-cta h2 { font-size: clamp(2.25rem, 11vw, 3.15rem); }.final-cta-actions { align-items: stretch; flex-direction: column; }.final-cta-primary, .final-cta-secondary { width: 100%; }.footer-container { align-items: flex-start; flex-direction: column; }.footer-logo { font-size: 1rem; }.footer-copy { width: auto; } }
 
 .discovery-brief-link { margin: -.35rem 0 1rem; color: var(--muted); font-size: .68rem; line-height: 1.45; }.discovery-brief-link a { color: var(--navy); font-weight: 700; text-underline-offset: .2em; }.discovery-brief-link a:hover { color: var(--gold); }
+
+/* ==========================================================================
+   Hero — "an architect's notebook, for a Paris hotel"
+   Asymmetric: the type block holds the left, a hand-drawn Eiffel Tower rises
+   out of the right and bleeds past the top and side edges. Palette continues
+   the Hotel Lumiere website inside the demo (cream / forest / gold) rather
+   than inventing a second one, plus one deep ink for contrast.
+   ========================================================================== */
+:root {
+  --lum-cream: #f4f0e7;
+  --lum-cream-deep: #ece6d9;
+  --lum-forest: #3e4c42;
+  --lum-gold: #e4c48c;
+  --lum-ink: #17201c;          /* the added deep tone */
+  --lum-muted: #6b6f64;
+}
+
+.hero-v2 { padding: clamp(7.5rem, 11vw, 10.5rem) 0 clamp(3rem, 6vw, 5.5rem); color: var(--lum-ink); background: var(--lum-cream); }
+
+/* The stage is deliberately uneven: 1.15fr against .85fr, and the figure
+   column is allowed to overflow its track so the drawing breaks the grid. */
+.hero-stage { position: relative; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); align-items: center; gap: clamp(1rem, 3vw, 3rem); }
+
+.hero-v2-content { max-width: none; margin: 0; text-align: left; }
+.hero-v2 .hero-eyebrow { color: var(--lum-forest); font-size: .62rem; letter-spacing: .22em; }
+.hero-v2 h1 { color: var(--lum-ink); font-size: clamp(2.8rem, 5.5vw, 5.5rem); font-weight: 500; letter-spacing: -.05em; line-height: .9; }
+.hero-v2 h1 span:last-child { color: var(--lum-forest); }
+
+/* The one deliberate oddity: a drawn gold rule under the second line, running
+   slightly past the words. Delivered as a background image because i18n
+   replaces the text of this span and would remove any child element. The
+   sweep is hand-authored, the same wobble as the ink drawing. */
+.hero-h1-under {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 20" preserveAspectRatio="none"><path d="M5 12 C 84 4, 168 17, 248 8 S 412 3, 515 11" fill="none" stroke="%23e4c48c" stroke-width="6" stroke-linecap="round"/></svg>');
+  background-repeat: no-repeat;
+  /* Anchored to the bottom of a padded box rather than a percentage: at narrow
+     widths the tighter line-height put an 88% position through the middle of
+     the glyphs, so the rule read as a strikethrough. */
+  padding-bottom: .14em;
+  background-position: left bottom;
+  background-size: 0% .26em;
+  transition: background-size 1100ms cubic-bezier(.37,.01,.2,1) 620ms;
+}
+.hero-h1-under.is-drawn { background-size: 104% .26em; }
+
+.hero-v2 .hero-sub { max-width: 34rem; margin: 1.7rem 0 2.2rem; color: var(--lum-muted); }
+.hero-v2-ctas { justify-content: flex-start; gap: .7rem; }
+.hero-v2 .btn-primary { color: var(--lum-cream); background: var(--lum-ink); border-radius: 2px; }
+.hero-v2 .btn-primary:hover { background: var(--lum-forest); }
+.hero-v2 .btn-primary span { color: var(--lum-gold); }
+.hero-v2 .btn-outline { color: var(--lum-ink); background: transparent; border: 1px solid rgba(62, 76, 66, .28); border-radius: 2px; }
+.hero-v2 .btn-outline:hover { background: rgba(62, 76, 66, .06); }
+.hero-v2 .btn-outline span { color: var(--lum-forest); }
+
+/* --- the drawing ------------------------------------------------------- */
+.hero-figure { position: relative; align-self: stretch; min-height: clamp(420px, 47vw, 620px); color: var(--lum-forest); }
+.hero-tower {
+  position: absolute; right: clamp(-1rem, 1vw, 3rem); bottom: 2%;
+  width: auto; height: clamp(420px, 62vw, 860px);
+  /* The viewBox is cropped to the drawing, so height drives the size now.
+     It overshoots the top of the section on purpose and is cropped by the
+     section's overflow: clip rather than sitting politely inside a box. */
+  max-width: 46%;
+}
+/* The river sits behind and below the tower, the boat on the river -- three
+   depths, which is what the parallax then separates. */
+.hero-seine { position: absolute; right: 8%; bottom: -2%; width: clamp(380px, 52vw, 700px); height: auto; color: var(--lum-forest); opacity: .42; }
+.hero-boat { position: absolute; right: 52%; bottom: 4%; width: clamp(78px, 8.5vw, 118px); height: auto; color: var(--lum-forest); opacity: .75; }
+.hero-figure .ink { fill: none; stroke: currentColor; }
+
+/* --- sparkle accents ---------------------------------------------------- */
+.spark { position: absolute; display: block; width: 15px; height: 15px; opacity: .85; }
+.spark svg { display: block; width: 100%; height: 100%; }
+.spark svg path { fill: currentColor; stroke: currentColor; }
+.spark--2 svg path, .spark--3 svg path, .spark--5 svg path { fill: none; }
+.spark--1 { top: 7%;  right: 9%;  color: #d1543f; }
+.spark--2 { top: 20%; right: 34%; width: 11px; height: 11px; color: #7b62c4; }
+.spark--3 { top: 47%; right: 4%;  width: 12px; height: 12px; color: #b4813c; }
+.spark--4 { top: 62%; right: 41%; width: 10px; height: 10px; color: #3f7d63; }
+.spark--5 { top: 33%; right: 52%; width: 12px; height: 12px; color: #3f6d9e; }
+
+/* Product mockup: nudged off-centre so the hero does not resolve into a
+   tidy symmetrical stack. */
+.hero-product { margin-top: clamp(2.5rem, 5vw, 4.5rem); margin-right: clamp(0rem, 4vw, 3.5rem); }
+
+@media (max-width: 900px) {
+  .hero-stage { grid-template-columns: 1fr; }
+  .hero-v2-content { max-width: none; }
+  .hero-figure { min-height: 300px; margin-top: 2rem; }
+  .hero-tower { right: -1rem; bottom: 0; width: auto; height: min(52vh, 380px); max-width: 62%; }
+  .hero-seine { right: -14%; bottom: 2%; width: 130%; opacity: .45; }
+  .hero-boat { right: auto; left: 4%; bottom: 8%; width: 92px; }
+  .hero-product { margin-right: 0; }
+}
+
+/* Sparkles twinkle on long, deliberately offset loops so they never pulse in
+   unison -- synchronised blinking is the thing that reads as generated. */
+@media (prefers-reduced-motion: no-preference) {
+  .spark { animation: sparkTwinkle 7s ease-in-out infinite; }
+  .spark--2 { animation-duration: 9.5s;  animation-delay: -2.2s; }
+  .spark--3 { animation-duration: 11s;   animation-delay: -5.6s; }
+  .spark--4 { animation-duration: 8.2s;  animation-delay: -3.9s; }
+  .spark--5 { animation-duration: 12.4s; animation-delay: -7.1s; }
+}
+@keyframes sparkTwinkle {
+  0%, 62%, 100% { opacity: .28; transform: scale(.82) rotate(0deg); }
+  74%           { opacity: .95; transform: scale(1.12) rotate(6deg); }
+  86%           { opacity: .5;  transform: scale(.94) rotate(-3deg); }
+}
+
+
+/* --- hand-authored icons (Font Awesome removed) --------------------------- */
+.ico { display: inline-block; width: 1em; height: 1em; vertical-align: -.13em; flex: 0 0 auto; }
+button .ico, a .ico { pointer-events: none; }
+/* The fullscreen control carries both glyphs; the button's state picks one, so
+   no script has to reach inside the SVG. */
+.ico--compress { display: none; }
+.is-expanded .ico--expand { display: none; }
+.is-expanded .ico--compress { display: inline-block; }
+
+/* Fraunces is a variable serif: push the optical size to the display cut so the
+   contrast is high and the letterforms keep their quirk at large sizes. */
+.hero-v2 h1, .section-title { font-variation-settings: 'opsz' 132, 'SOFT' 0; }
+.hero-v2 h1 { font-weight: 380; }
+
+/* Hero conversation playback. The authored markup is the finished state, so
+   these rules only apply once the script has taken over (.hp-step is added by
+   JS); with no JS, or under reduced motion, the thread renders complete. */
+.hp-step { opacity: 0; transform: translateY(7px); transition: opacity 420ms var(--ease-out, ease), transform 420ms var(--ease-out, ease); }
+.hp-step.is-shown { opacity: 1; transform: none; }
+#hero .conversation-thread { transition: min-height 260ms ease; }
+#hero .product-message p { min-height: 1.4em; }
+
+/* Thinking indicator: three dots on offset delays, so it reads as considering
+   rather than as a progress bar. */
+#hero .request-processing span[aria-hidden]::after {
+  content: '';
+  display: inline-block; width: 3px; height: 3px; margin-left: 5px;
+  border-radius: 50%; background: currentColor;
+  box-shadow: 6px 0 0 currentColor, 12px 0 0 currentColor;
+  animation: hpThink 1.15s ease-in-out infinite;
+}
+@keyframes hpThink { 0%, 100% { opacity: .25; } 50% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) {
+  .hp-step { opacity: 1; transform: none; }
+  #hero .request-processing span[aria-hidden]::after { animation: none; opacity: .6; }
+}
+
+.footer-credit { display: block; margin-top: .7rem; max-width: 62ch; opacity: .62;
+  font-size: .68rem; line-height: 1.55; }
+.footer-credit a { color: inherit; text-underline-offset: 2px; }
+
+/* ── Hero carrying the WebGL Champ de Mars ───────────────────────────────
+   The dusk run is a pinned child of #hero rather than the section itself, so
+   the section drops its own top padding and the pin's container carries the
+   nav clearance instead. That clearance still applies when WebGL is missing
+   and the pin collapses to normal flow, so the fallback hero is never tucked
+   under the navigation. Do not put overflow-x:hidden on #hero or any wrapper
+   around it -- that makes the ancestor a scroll container and the pin silently
+   stops sticking. (`overflow: clip`, which .hero-v2 already uses, is safe.) */
+.hero-v2.has-scene { padding-top: 0; }
+.hero-scene-pin > .hero-v2-container {
+  display: flex; height: 100%; align-items: center;
+  padding-top: clamp(5.5rem, 11vh, 8rem); }
+.hero-scene-pin > .hero-v2-container > .hero-stage { width: 100%; }
+.hero-v2.has-scene .hero-product { margin-top: clamp(3rem, 6vw, 5.5rem); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* the pin collapses, so the container spaces itself like an ordinary hero */
+  .hero-scene-pin > .hero-v2-container { height: auto;
+    padding-block: clamp(6rem, 12vh, 9rem) clamp(2.5rem, 5vw, 4.5rem); }
+}
+
+/* The second headline line carries the paper hero's forest green and its own
+   drawn gold rule as a background image. On the dusk scene the green is all but
+   invisible, so invert the text; the gold rule underneath still reads. */
+/* mirrors the shape of the rule it overrides (.hero-v2 h1 span:last-child,
+   which is more specific than a plain .hero--scene class selector) */
+.hero-v2 .hero--scene h1 span:last-child { color: #FBF8F1; }
+
+/* ── Hero copy, written by the build ─────────────────────────────────────
+   .is-sync is added by script only, so the resting state (visible, set in
+   eiffel-hero.css) still stands with no JS. Each line then waits for the
+   tower to reach its stage. Specificity here has to clear eiffel-hero.css's
+   `.hero--scene .hero-eyebrow { opacity: 1 }` (0,2,0), which loads after this
+   file -- hence the doubled class on the scene. */
+.hero--scene.is-sync .hero-eyebrow,
+.hero--scene.is-sync h1 span,
+.hero--scene.is-sync .hero-sub,
+.hero--scene.is-sync .hero-ctas {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 620ms ease, transform 880ms cubic-bezier(.22, 1, .36, 1);
+}
+.hero--scene.is-sync .is-in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero--scene.is-sync .hero-eyebrow,
+  .hero--scene.is-sync h1 span,
+  .hero--scene.is-sync .hero-sub,
+  .hero--scene.is-sync .hero-ctas { opacity: 1; transform: none; transition: none; }
+}
+
+/* ── Sections stack, the way ellipsus.com moves ──────────────────────────
+   Each section sticks to the top of the viewport and the next one slides up
+   and covers it, instead of everything scrolling past together. The covered
+   section does not move, so the page reads as a deck of screens being dealt
+   rather than one long strip -- which is the "a page pops up on top of the
+   other one" idea.
+
+   Requirements this relies on:
+   - every stacked section is opaque, or you would see through to the one
+     underneath (checked: all nine have solid backgrounds);
+   - later siblings paint over earlier ones, which sticky gives for free since
+     it makes them positioned, so no z-index ladder is needed;
+   - #hero and #handoff-monument are NOT in the stack. Both already contain a
+     position:sticky pin of their own, and nesting sticky inside sticky does
+     not behave. They stay in normal flow and the stack resumes after them.
+
+   min-height fills the screen so each section is a full "page" before the
+   next covers it -- several are only half a viewport tall on their own -- and
+   align-content centres the contents in the space that creates. */
+.deck { position: relative; z-index: 1; }
+
+#platform, #chapter-prearrival {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  box-shadow: 0 -22px 55px rgba(18, 22, 18, .13);
+  transform-origin: 50% 0;
+  will-change: transform;
+
+  /* The hold. A section stuck at the top is covered the moment the next one
+     reaches the bottom of the screen, and with both exactly one viewport tall
+     that is immediately -- so you never got to read one before the next took
+     it. This margin is flow space after the section during which it stays
+     stuck and nothing else has arrived yet: time to actually read it. */
+  margin-bottom: 92vh;
+}
+
+/* One modest leading edge for all of them. The wide elliptical arc produced a
+   black scythe-shaped sliver wherever a dark section was the one being covered:
+   the curve exposed the section beneath through its corners, and against a pale
+   ground that read as a stray black shape floating over the page. Variety comes
+   from how the contents arrive instead, which is where it belongs. */
+#platform, #chapter-prearrival {
+  border-top-left-radius: clamp(16px, 2.2vw, 34px);
+  border-top-right-radius: clamp(16px, 2.2vw, 34px);
+}
+
+/* The closing call and the footer are one body. Left in the deck, #discovery
+   locked to the top while the footer scrolled up underneath it, which is what
+   made the end of the page feel broken. Out of the deck they travel together
+   and the page simply ends. */
+#discovery {
+  /* Was `position: static` to take it out of the deck. The deck no longer
+     claims it, and static is now actively wrong: it drops the closing call
+     into the block layer underneath the fixed backdrop, so its own paper
+     background is hidden and the Arc shows through its type. */
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  margin-bottom: 0;
+  box-shadow: none;
+  border-radius: 0;
+  transform: none;
+  filter: none;
+}
+
+/* The footer is the last thing dealt. Without a position it would sit in the
+   block layer, underneath every positioned section, and be covered by them. */
+body > footer { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* no deck, just a page */
+  #platform, #chapter-prearrival, #night-operations, #human-handoff,
+  #demo, #operating-layer, #implementation, #control, #discovery {
+    position: static;
+    min-height: 0;
+    margin-bottom: 0;
+    display: block;
+    box-shadow: none;
+    border-radius: 0;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+/* ── Language ────────────────────────────────────────────────────────────
+   Three boxed buttons in a bordered pill is the default segmented control
+   every generated page ships with, and it read as exactly that. This is the
+   same three choices set as type: small caps, hairline separators, the active
+   one in brass over a drawn rule. Nothing but the letters and a mark. */
+.locale-switcher {
+  display: inline-flex; align-items: baseline; gap: 0;
+  padding: 0; border: 0; border-radius: 0; background: none;
+}
+.locale-switcher button {
+  position: relative;
+  min-width: 0; min-height: 0;
+  padding: .1rem .52rem;
+  color: var(--v2-muted); background: none; border: 0; border-radius: 0;
+  font: 700 .58rem/1 var(--sans);
+  letter-spacing: .14em; text-transform: uppercase;
+  transition: color 200ms ease;
+}
+.locale-switcher button + button { box-shadow: inset 1px 0 0 var(--v2-line); }
+.locale-switcher button:hover { color: var(--v2-ink); background: none; }
+.locale-switcher button.is-active { color: var(--v2-brass); background: none; }
+/* the drawn rule under the live language, in the brass of the eyebrows */
+.locale-switcher button.is-active::after {
+  content: ""; position: absolute; left: .52rem; right: .52rem; bottom: -.34rem;
+  height: 1.5px; background: var(--v2-brass);
+}
+.locale-switcher button:focus-visible { outline: 2px solid var(--v2-brass); outline-offset: 3px; }
+
+/* on the dusk hero the same control has to sit on a dark ground */
+.hero--scene .locale-switcher button { color: rgba(237,233,222,.62); }
+.hero--scene .locale-switcher button + button { box-shadow: inset 1px 0 0 rgba(237,233,222,.24); }
+.hero--scene .locale-switcher button.is-active { color: var(--lum-gold, #E4C48C); }
+.hero--scene .locale-switcher button.is-active::after { background: var(--lum-gold, #E4C48C); }
+
+
+/* ═══ The monument run ══════════════════════════════════════════════════════
+   Everything after the deck scrolls normally again, over a monument standing
+   behind the page. Two mechanics, one page: cards for the opening chapters,
+   depth for the middle. Repeating the card trick eight times is what made the
+   middle of the page feel like the same slide over and over.
+
+   backdrop.js inserts the canvas. Until it does -- and for good if WebGL is
+   missing, the model 404s or reduced motion is on -- .backdrop stays empty and
+   the run keeps the opaque fallback backgrounds below, so the page is never
+   waiting on a decorative layer to become readable. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  /* Daylight. The canvas over this is transparent, so this IS the sky the
+     Arc stands in -- the same arrangement the cathedral's pin uses, and the
+     reason that one reads as part of the page rather than a dark window cut
+     into it. */
+  background: linear-gradient(#A9C6DD 0%, #C6D8E3 34%, #E4E0D4 68%, var(--v2-paper) 100%);
+  transition: opacity 900ms ease;
+}
+.backdrop.is-ready.is-live { opacity: 1; }
+.backdrop-canvas { display: block; width: 100%; height: 100%; }
+
+/* A veil in the page's own dusk, over the whole layer. It does two jobs: it
+   pulls the monument's photographed stone into the same palette as everything
+   else, so it reads as part of the page rather than a photograph pasted behind
+   it; and it buys back the contrast the glass gives away, which is what lets
+   the panes stay transparent enough to actually see through. */
+.backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* A pale veil, not a shroud. It exists only to keep the panes' contrast
+     honest where the sky behind them is brightest -- the monument is meant
+     to be plainly visible turning behind them, and the old dark scrim left
+     it a smudge nobody would notice moving. */
+  background:
+    linear-gradient(180deg, rgba(245, 242, 234, .32) 0%, rgba(245, 242, 234, 0) 34%,
+                            rgba(245, 242, 234, 0) 74%, rgba(245, 242, 234, .40) 100%);
+}
+
+/* Every section has to be positioned now, not just the ones over the monument.
+   The backdrop is a fixed layer at z-index 0, and an unpositioned element sits
+   in the block layer BENEATH that -- which is what put the closing call behind
+   the Arc with its own background hidden and its type unreadable. The ID rules
+   above still win for `position` on the two deck sections, so this only picks
+   up the ones that had no position of their own. */
+body > section {
+  position: relative;
+  z-index: 1;
+}
+
+/* With the backdrop live the section itself steps out of the way entirely --
+   the monument is seen full-bleed in the margins -- and the content sits on a
+   pane of glass instead. Scoped to html.has-backdrop so that if the layer
+   never arrives, every one of these keeps the solid background it had. */
+html.has-backdrop #night-operations,
+html.has-backdrop #demo,
+html.has-backdrop #operating-layer,
+html.has-backdrop #implementation,
+html.has-backdrop #control {
+  background: transparent;
+  border-top: 0;
+}
+
+/* The pane. Two variants, because the run carries light type in two of the
+   five sections and dark type in the other three: the glass has to be
+   darker than the type it holds or lighter than it, never in between. */
+html.has-backdrop #night-operations > .container,
+html.has-backdrop #demo > .container,
+html.has-backdrop #operating-layer > .container,
+html.has-backdrop #implementation > .container,
+html.has-backdrop #control > .container {
+  position: relative;
+  /* Narrower than the page's own measure. The point of the run is the
+     monument, and a pane that reaches the edges leaves it visible only as two
+     slivers down the sides -- which is not depth, it is a border. */
+  width: min(1040px, 100% - 7rem);
+  padding: clamp(2rem, 4vw, 3.6rem) clamp(1.35rem, 3.4vw, 3.2rem);
+  border-radius: clamp(14px, 1.6vw, 22px);
+  -webkit-backdrop-filter: blur(9px) saturate(118%);
+          backdrop-filter: blur(9px) saturate(118%);
+  box-shadow: 0 34px 80px rgba(40, 44, 52, .22), 0 1px 0 rgba(255, 255, 255, .5) inset;
+}
+
+/* dark panes: the two sections that carry light type */
+html.has-backdrop #night-operations > .container,
+html.has-backdrop #control > .container {
+  background: rgba(16, 19, 18, .82);
+  border: 1px solid rgba(255, 255, 255, .085);
+}
+
+/* light panes */
+html.has-backdrop #demo > .container,
+html.has-backdrop #operating-layer > .container,
+html.has-backdrop #implementation > .container {
+  background: rgba(250, 249, 245, .8);
+  border: 1px solid rgba(255, 255, 255, .5);
+}
+
+/* The panes want air around them, and the run wants to read as one passage
+   rather than five stacked boxes, so the padding moves off the section and
+   on to the glass and the gap between them stays even. */
+html.has-backdrop #night-operations,
+html.has-backdrop #demo,
+html.has-backdrop #operating-layer,
+html.has-backdrop #implementation,
+html.has-backdrop #control {
+  /* Air between the panes, so the monument is seen whole in the gaps -- and
+     so a section is finished before the next is on screen. At the old
+     spacing the operating layer was still being read while implementation
+     was already climbing over the bottom of the window, which is the
+     complaint about a slide "not even done". */
+  padding: clamp(5.5rem, 13vw, 15rem) 0;
+}
+
+/* .demo-v2 clips its own overflow, which would cut the glass corners off. */
+html.has-backdrop #demo { overflow: visible; }
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop { display: none; }
+}
