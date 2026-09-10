@@ -808,8 +808,9 @@ button .ico, a .ico { pointer-events: none; }
    min-height fills the screen so each section is a full "page" before the
    next covers it -- several are only half a viewport tall on their own -- and
    align-content centres the contents in the space that creates. */
-#platform, #chapter-prearrival, #night-operations, #human-handoff,
-#demo, #operating-layer, #implementation, #control, #discovery {
+.deck { position: relative; z-index: 1; }
+
+#platform, #chapter-prearrival {
   position: sticky;
   top: 0;
   min-height: 100vh;
@@ -832,8 +833,7 @@ button .ico, a .ico { pointer-events: none; }
    the curve exposed the section beneath through its corners, and against a pale
    ground that read as a stray black shape floating over the page. Variety comes
    from how the contents arrive instead, which is where it belongs. */
-#platform, #chapter-prearrival, #night-operations, #human-handoff,
-#demo, #operating-layer, #implementation, #control, #discovery {
+#platform, #chapter-prearrival {
   border-top-left-radius: clamp(16px, 2.2vw, 34px);
   border-top-right-radius: clamp(16px, 2.2vw, 34px);
 }
@@ -843,7 +843,12 @@ button .ico, a .ico { pointer-events: none; }
    made the end of the page feel broken. Out of the deck they travel together
    and the page simply ends. */
 #discovery {
-  position: static;
+  /* Was `position: static` to take it out of the deck. The deck no longer
+     claims it, and static is now actively wrong: it drops the closing call
+     into the block layer underneath the fixed backdrop, so its own paper
+     background is hidden and the Arc shows through its type. */
+  position: relative;
+  z-index: 1;
   min-height: 0;
   margin-bottom: 0;
   box-shadow: none;
@@ -904,3 +909,130 @@ body > footer { position: relative; z-index: 1; }
 .hero--scene .locale-switcher button + button { box-shadow: inset 1px 0 0 rgba(237,233,222,.24); }
 .hero--scene .locale-switcher button.is-active { color: var(--lum-gold, #E4C48C); }
 .hero--scene .locale-switcher button.is-active::after { background: var(--lum-gold, #E4C48C); }
+
+
+/* ═══ The monument run ══════════════════════════════════════════════════════
+   Everything after the deck scrolls normally again, over a monument standing
+   behind the page. Two mechanics, one page: cards for the opening chapters,
+   depth for the middle. Repeating the card trick eight times is what made the
+   middle of the page feel like the same slide over and over.
+
+   backdrop.js inserts the canvas. Until it does -- and for good if WebGL is
+   missing, the model 404s or reduced motion is on -- .backdrop stays empty and
+   the run keeps the opaque fallback backgrounds below, so the page is never
+   waiting on a decorative layer to become readable. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(120% 90% at 50% 34%, #2C3140 0%, #191C24 52%, #101218 100%);
+  transition: opacity 900ms ease;
+}
+.backdrop.is-ready.is-live { opacity: 1; }
+.backdrop-canvas { display: block; width: 100%; height: 100%; }
+
+/* A veil in the page's own dusk, over the whole layer. It does two jobs: it
+   pulls the monument's photographed stone into the same palette as everything
+   else, so it reads as part of the page rather than a photograph pasted behind
+   it; and it buys back the contrast the glass gives away, which is what lets
+   the panes stay transparent enough to actually see through. */
+.backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    /* The model is a capture, so it ends where the photographs ran out: a torn
+       edge a few metres above the pavement, with nothing under it. Rather than
+       pretend otherwise, the foot of the frame darkens and the monument stands
+       out of it. Weighted low: earlier this started at the middle of the
+       screen and blacked out every gap between the panes, which is where the
+       monument is actually meant to be seen. */
+    linear-gradient(180deg, rgba(10, 12, 16, 0) 64%, rgba(10, 12, 16, .5) 83%, rgba(10, 12, 16, .93) 100%),
+    radial-gradient(82% 62% at 50% 40%, rgba(20, 24, 34, 0) 0%, rgba(14, 16, 22, .34) 68%, rgba(10, 12, 16, .68) 100%),
+    linear-gradient(180deg, rgba(30, 36, 52, .34) 0%, rgba(18, 21, 30, .16) 48%, rgba(12, 14, 19, .34) 100%);
+}
+
+/* Every section has to be positioned now, not just the ones over the monument.
+   The backdrop is a fixed layer at z-index 0, and an unpositioned element sits
+   in the block layer BENEATH that -- which is what put the closing call behind
+   the Arc with its own background hidden and its type unreadable. The ID rules
+   above still win for `position` on the two deck sections, so this only picks
+   up the ones that had no position of their own. */
+body > section {
+  position: relative;
+  z-index: 1;
+}
+
+/* With the backdrop live the section itself steps out of the way entirely --
+   the monument is seen full-bleed in the margins -- and the content sits on a
+   pane of glass instead. Scoped to html.has-backdrop so that if the layer
+   never arrives, every one of these keeps the solid background it had. */
+html.has-backdrop #night-operations,
+html.has-backdrop #human-handoff,
+html.has-backdrop #demo,
+html.has-backdrop #operating-layer,
+html.has-backdrop #implementation,
+html.has-backdrop #control {
+  background: transparent;
+  border-top: 0;
+}
+
+/* The pane. Two variants, because the run alternates between sections that
+   carry light type and sections that carry dark: the glass has to be darker
+   than the type it holds or lighter than it, never in between. */
+html.has-backdrop #night-operations > .container,
+html.has-backdrop #human-handoff > .container,
+html.has-backdrop #demo > .container,
+html.has-backdrop #operating-layer > .container,
+html.has-backdrop #implementation > .container,
+html.has-backdrop #control > .container {
+  position: relative;
+  /* Narrower than the page's own measure. The point of the run is the
+     monument, and a pane that reaches the edges leaves it visible only as two
+     slivers down the sides -- which is not depth, it is a border. */
+  width: min(1040px, 100% - 7rem);
+  padding: clamp(2rem, 4vw, 3.6rem) clamp(1.35rem, 3.4vw, 3.2rem);
+  border-radius: clamp(14px, 1.6vw, 22px);
+  -webkit-backdrop-filter: blur(9px) saturate(118%);
+          backdrop-filter: blur(9px) saturate(118%);
+  box-shadow: 0 30px 70px rgba(9, 11, 15, .38), 0 1px 0 rgba(255, 255, 255, .05) inset;
+}
+
+/* dark panes */
+html.has-backdrop #night-operations > .container,
+html.has-backdrop #control > .container {
+  background: rgba(14, 17, 16, .62);
+  border: 1px solid rgba(255, 255, 255, .085);
+}
+
+/* light panes */
+html.has-backdrop #human-handoff > .container,
+html.has-backdrop #demo > .container,
+html.has-backdrop #operating-layer > .container,
+html.has-backdrop #implementation > .container {
+  background: rgba(247, 246, 241, .78);
+  border: 1px solid rgba(255, 255, 255, .5);
+}
+
+/* The panes want air around them, and the run wants to read as one passage
+   rather than six stacked boxes, so the padding moves off the section and on
+   to the glass and the gap between them stays even. */
+html.has-backdrop #night-operations,
+html.has-backdrop #human-handoff,
+html.has-backdrop #demo,
+html.has-backdrop #operating-layer,
+html.has-backdrop #implementation,
+html.has-backdrop #control {
+  /* Air between the panes, so the monument is seen whole in the gaps rather
+     than only through the glass. This is where the run breathes. */
+  padding: clamp(3rem, 7vw, 7rem) 0;
+}
+
+/* .demo-v2 clips its own overflow, which would cut the glass corners off. */
+html.has-backdrop #demo { overflow: visible; }
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop { display: none; }
+}

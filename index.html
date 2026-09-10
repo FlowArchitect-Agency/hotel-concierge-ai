@@ -12,11 +12,17 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=deck-r6">
+    <link rel="stylesheet" href="style.css?v=deck-r11">
     <link rel="stylesheet" href="eiffel-hero.css?v=1">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
 <body data-page="index">
+
+<!-- The monument standing behind the middle of the page. Empty in the
+     markup: backdrop.js inserts its canvas, and inserts nothing at all
+     if WebGL or the model is unavailable, in which case the sections
+     keep the solid backgrounds they fall back to. -->
+<div class="backdrop" aria-hidden="true"></div>
 
 <!-- Global navigation -->
 <nav id="navbar" class="site-nav" aria-label="Primary navigation">
@@ -262,6 +268,14 @@
 </section>
 
 <!-- The first hand-off into the forthcoming guest-journey story. -->
+<!-- The deck. Two chapters that slide over one another like dealt cards,
+     and only two: the trick reads as intent at two and as a tic at eight.
+     The wrapper is what ends it -- position:sticky is bounded by its
+     containing block, so without this the first two sections would stay
+     pinned behind the whole rest of the page and show through the glass
+     sections that follow instead of the monument. -->
+<div class="deck">
+
 <section class="journey-intro" id="platform">
   <div class="container journey-intro-inner">
     <div>
@@ -333,6 +347,8 @@
     </div>
   </div>
 </section>
+
+</div><!-- /.deck -->
 
 <!-- Story chapter 02: the operational system continues overnight. -->
 <section class="night-operations" id="night-operations">
@@ -671,6 +687,7 @@
            licence allows that credit to sit anywhere reasonable for the medium,
            so it lives here rather than over the artwork. -->
       <span class="footer-credit">3D model &ldquo;NOTRE DAME DE PARIS&rdquo; by Arquitecto T&eacute;cnico Luis Alberto Galdames M&aacute;rquez, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a></span>
+      <span class="footer-credit">3D model &ldquo;Arc de Triomphe, Paris&rdquo; by HoangHiepVu, licensed <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a></span>
     </div>
   </div>
 </footer>
@@ -826,6 +843,7 @@
     } }
     </script>
     <script type="module" src="monument.js?v=nd-read-r1"></script>
+    <script type="module" src="backdrop.js?v=4"></script>
     <script type="module">
       // Mounted on the 300vh run, not on #hero: the module reads scroll progress
       // from the element it is given, and #hero is taller than the run itself.
