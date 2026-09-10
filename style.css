@@ -541,7 +541,11 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
   .monument-figure { margin-bottom: .85rem; font-size: clamp(2.1rem, 9.5vw, 3.4rem); }
   .monument-note { max-width: none; font-size: .95rem; } }
 @media (prefers-reduced-motion: reduce) { .monument-stage { height: 100vh; } }
-.human-handoff { padding: clamp(5rem, 8vw, 8rem) 0 clamp(5.5rem, 9vw, 8.5rem); color: var(--v2-ink); background: var(--v2-paper); }.handoff-intro { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(250px, .52fr); gap: clamp(2rem, 7vw, 8rem); align-items: end; max-width: 1050px; margin-bottom: clamp(2.4rem, 5vw, 4.5rem); }.handoff-heading .chapter-eyebrow { margin-bottom: 1.2rem; }.handoff-intro h2 { margin: 0; font: 500 clamp(2.8rem, 4.6vw, 5.2rem)/.96 var(--serif); letter-spacing: -.06em; }.handoff-intro > p { max-width: 370px; margin: 0 0 .25rem; color: var(--v2-muted); font-size: .95rem; line-height: 1.65; }
+.human-handoff { padding: clamp(5rem, 8vw, 8rem) 0 clamp(5.5rem, 9vw, 8.5rem); color: var(--v2-ink); background: var(--v2-paper); }/* The 1050px cap left a quarter of the row empty on a wide screen while the
+   composition below ran the full width, so the section looked lopsided. The
+   intro now spans the same measure as the panels under it, and the
+   description sits at the right where the reception panel begins. */
+.handoff-intro { display: grid; grid-template-columns: minmax(360px, 1.15fr) minmax(280px, .85fr); gap: clamp(2rem, 7vw, 8rem); align-items: end; max-width: none; margin-bottom: clamp(2.4rem, 5vw, 4.5rem); }.handoff-heading .chapter-eyebrow { margin-bottom: 1.2rem; }.handoff-intro h2 { margin: 0; font: 500 clamp(2.8rem, 4.6vw, 5.2rem)/.96 var(--serif); letter-spacing: -.06em; }.handoff-intro > p { max-width: 370px; margin: 0 0 .25rem; color: var(--v2-muted); font-size: .95rem; line-height: 1.65; }
 .handoff-composition { display: grid; grid-template-columns: minmax(235px, .72fr) 36px minmax(0, 1.28fr); gap: clamp(1rem, 2.5vw, 2.6rem); align-items: stretch; }.handoff-guest-view { display: flex; flex-direction: column; padding: 1.3rem; background: #fbfaf6; border: 1px solid #dedcd4; border-radius: 8px; }.handoff-panel-label { margin-bottom: 1.35rem; color: #88877f; font-size: .57rem; font-weight: 730; letter-spacing: .09em; text-transform: uppercase; }.handoff-guest-name { display: flex; gap: .6rem; align-items: center; }.handoff-guest-name strong, .handoff-guest-name small { display: block; }.handoff-guest-name strong { color: #353630; font-size: .73rem; }.handoff-guest-name small { margin-top: .13rem; color: #85847c; font-size: .58rem; }.handoff-guest-view blockquote { margin: 1.3rem 0; color: #3e403b; font: 500 clamp(1.25rem, 1.8vw, 1.7rem)/1.3 var(--serif); letter-spacing: -.025em; }.handoff-signals { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem .55rem; margin: auto 0 0; padding-top: 1rem; border-top: 1px solid #e2e0d9; }.handoff-signals dt { margin-bottom: .16rem; color: #95938b; font-size: .5rem; letter-spacing: .06em; text-transform: uppercase; }.handoff-signals dd { margin: 0; color: #54554f; font-size: .62rem; font-weight: 660; }
 .handoff-bridge { position: relative; display: grid; min-height: 100%; place-items: center; }.handoff-bridge::before { width: 1px; height: 100%; content: ''; background: #d7d4ca; }.handoff-bridge span { position: absolute; width: 120px; padding: .42rem; color: #8f7a57; background: var(--v2-paper); font-size: .5rem; font-weight: 700; letter-spacing: .07em; line-height: 1.35; text-align: center; text-transform: uppercase; transform: rotate(-90deg); }
 .reception-desk { display: flex; flex-direction: column; overflow: hidden; background: #fff; border: 1px solid #d9d8d1; border-radius: 8px; box-shadow: var(--v2-shadow); }.reception-desk > header { display: flex; align-items: center; justify-content: space-between; min-height: 70px; padding: .9rem 1.1rem; border-bottom: 1px solid #e9e8e2; }.reception-desk header p, .reception-desk header h3 { margin: 0; }.reception-desk header p { margin-bottom: .16rem; color: #898881; font-size: .53rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.reception-desk header h3 { color: #31322e; font: 650 .88rem/1.1 var(--sans); }.handoff-status { padding: .32rem .48rem; color: #765d37; background: #f4efe4; border: 1px solid #e7d8bd; border-radius: 3px; font-size: .55rem; font-weight: 680; }.reception-brief { display: grid; gap: .9rem; padding: 1.1rem; }.reception-brief-guest { display: flex; gap: .6rem; align-items: center; }.reception-brief-guest strong, .reception-brief-guest small { display: block; }.reception-brief-guest strong { color: #363732; font-size: .7rem; }.reception-brief-guest small { margin-top: .12rem; color: #87867f; font-size: .58rem; }.reception-brief > dl { display: grid; gap: .62rem; margin: 0; }.reception-brief > dl div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: .65rem; }.reception-brief dt { color: #929188; font-size: .53rem; letter-spacing: .07em; text-transform: uppercase; }.reception-brief dd { margin: 0; color: #50514b; font-size: .64rem; font-weight: 620; }.ai-summary { padding: .76rem; background: #f4f5f1; border-left: 2px solid #79998f; }.ai-summary span { color: #66857b; font-size: .51rem; font-weight: 730; letter-spacing: .07em; text-transform: uppercase; }.ai-summary p { margin: .35rem 0 0; color: #4a514d; font-size: .67rem; line-height: 1.52; }.reception-actions { display: flex; gap: .55rem; margin-top: auto; padding: .85rem 1.1rem; border-top: 1px solid #e9e8e2; }.reception-action-primary, .reception-action-secondary { display: inline-flex; min-height: 35px; align-items: center; padding: .48rem .75rem; border-radius: 3px; font-size: .64rem; font-weight: 680; }.reception-action-primary { color: #f8f7f1; background: #252724; }.reception-action-secondary { color: #55564f; background: #fff; border: 1px solid #dcdad2; }
@@ -866,3 +870,37 @@ body > footer { position: relative; z-index: 1; }
     filter: none !important;
   }
 }
+
+/* ── Language ────────────────────────────────────────────────────────────
+   Three boxed buttons in a bordered pill is the default segmented control
+   every generated page ships with, and it read as exactly that. This is the
+   same three choices set as type: small caps, hairline separators, the active
+   one in brass over a drawn rule. Nothing but the letters and a mark. */
+.locale-switcher {
+  display: inline-flex; align-items: baseline; gap: 0;
+  padding: 0; border: 0; border-radius: 0; background: none;
+}
+.locale-switcher button {
+  position: relative;
+  min-width: 0; min-height: 0;
+  padding: .1rem .52rem;
+  color: var(--v2-muted); background: none; border: 0; border-radius: 0;
+  font: 700 .58rem/1 var(--sans);
+  letter-spacing: .14em; text-transform: uppercase;
+  transition: color 200ms ease;
+}
+.locale-switcher button + button { box-shadow: inset 1px 0 0 var(--v2-line); }
+.locale-switcher button:hover { color: var(--v2-ink); background: none; }
+.locale-switcher button.is-active { color: var(--v2-brass); background: none; }
+/* the drawn rule under the live language, in the brass of the eyebrows */
+.locale-switcher button.is-active::after {
+  content: ""; position: absolute; left: .52rem; right: .52rem; bottom: -.34rem;
+  height: 1.5px; background: var(--v2-brass);
+}
+.locale-switcher button:focus-visible { outline: 2px solid var(--v2-brass); outline-offset: 3px; }
+
+/* on the dusk hero the same control has to sit on a dark ground */
+.hero--scene .locale-switcher button { color: rgba(237,233,222,.62); }
+.hero--scene .locale-switcher button + button { box-shadow: inset 1px 0 0 rgba(237,233,222,.24); }
+.hero--scene .locale-switcher button.is-active { color: var(--lum-gold, #E4C48C); }
+.hero--scene .locale-switcher button.is-active::after { background: var(--lum-gold, #E4C48C); }

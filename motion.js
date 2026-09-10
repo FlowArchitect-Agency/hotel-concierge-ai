@@ -211,6 +211,51 @@
     }
   }
 
+  /* ── Counting figures ────────────────────────────────────────────────────
+     unitedcarriers.com counts its statistics up as they arrive rather than
+     printing them. Driven by scroll like everything else here, so the number
+     climbs under the reader's hand and holds wherever they stop.
+
+     The markup already contains the real figure, so with no JS -- or if this
+     never runs -- the correct number is simply there. */
+  var COUNTERS = [];
+  document.querySelectorAll('.night-demo-summary dt').forEach(function (el) {
+    var raw = el.textContent.trim();
+    var target = parseFloat(raw.replace(/[^0-9.]/g, ''));
+    if (isNaN(target)) return;
+    COUNTERS.push({ el: el, target: target,
+                    tail: raw.replace(/[0-9.,]/g, ''),
+                    deck: el.closest(DECK_SEL) });
+  });
+
+  function countersRead(vh) {
+    var y = window.pageYOffset, out = [];
+    for (var i = 0; i < COUNTERS.length; i++) {
+      var c = COUNTERS[i];
+      if (c.deck) {
+        /* Inside a stacked section the clock is the SECTION's travel, not the
+           element's position in the viewport. These figures sit at the foot of
+           the section, so by the time they had climbed far enough to count the
+           section had already locked and they simply appeared at their final
+           value. Measured across the section's whole passage instead, they
+           climb the entire time it is on screen. */
+        var enter = c.deck.offsetTop - vh;
+        var lock  = c.deck.offsetTop + c.deck.offsetHeight - vh;
+        out.push(clamp((y - enter) / ((lock - enter) || 1)));
+      } else {
+        out.push(clamp((vh * 1.02 - c.el.getBoundingClientRect().top) / (vh * 0.5)));
+      }
+    }
+    return out;
+  }
+
+  function countersWrite(ps) {
+    for (var i = 0; i < ps.length; i++) {
+      var c = COUNTERS[i];
+      c.el.textContent = Math.round(c.target * ease(ps[i])) + c.tail;
+    }
+  }
+
   function deckRead(vh) {
     var y = window.pageYOffset, out = [];
     for (var i = 0; i < DECK.length - 1; i++) {
@@ -246,6 +291,7 @@
       el.style.opacity = '';
     });
     DECK.forEach(function (sec) { sec.style.transform = ''; sec.style.filter = ''; });
+    COUNTERS.forEach(function (c) { c.el.textContent = c.target + c.tail; });
     if (err) console.error('motion.js stood down; content restored.', err);
   }
 
@@ -323,9 +369,12 @@
       try {
         var n = items.length, ps = new Array(n), i;
         atEnd = (window.pageYOffset + window.innerHeight) >= (root.scrollHeight - 2);
-        var deck = deckRead(window.innerHeight);                   /* read  */
+        var vh = window.innerHeight;
+        var deck = deckRead(vh);                                   /* read  */
+        var nums = countersRead(vh);                               /* read  */
         for (i = 0; i < n; i++) ps[i] = ease(progress(items[i]));  /* read  */
         deckWrite(deck);                                           /* write */
+        countersWrite(nums);                                       /* write */
         for (i = 0; i < n; i++) paint(items[i], ps[i]);            /* write */
       } catch (err) { surrender(err); }
     });
