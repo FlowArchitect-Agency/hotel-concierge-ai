@@ -18,8 +18,14 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
-const RUN_SEL = '#night-operations, #human-handoff, #demo,' +
-                '#operating-layer, #implementation, #control';
+/* The run begins AFTER the cathedral, not before it. Night operations used
+   to be part of it, which put one slide of arch in front of the Notre-Dame
+   stage: the turn started, the cathedral took the screen for five thousand
+   pixels, and the turn resumed on the other side. One monument interrupting
+   another. Now the cathedral has the page to itself and hands over to the
+   arch, which then turns without a break to the end. */
+const RUN_SEL = '#human-handoff, #demo, #operating-layer,' +
+                '#implementation, #control';
 
 /* A handle on the running scene, so it can be driven and looked at without
    a scroll and without requestAnimationFrame -- which a hidden tab never

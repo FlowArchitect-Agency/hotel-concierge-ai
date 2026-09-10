@@ -970,7 +970,6 @@ body > section {
    the monument is seen full-bleed in the margins -- and the content sits on a
    pane of glass instead. Scoped to html.has-backdrop so that if the layer
    never arrives, every one of these keeps the solid background it had. */
-html.has-backdrop #night-operations,
 html.has-backdrop #human-handoff,
 html.has-backdrop #demo,
 html.has-backdrop #operating-layer,
@@ -980,10 +979,9 @@ html.has-backdrop #control {
   border-top: 0;
 }
 
-/* The pane. Two variants, because the run alternates between sections that
-   carry light type and sections that carry dark: the glass has to be darker
-   than the type it holds or lighter than it, never in between. */
-html.has-backdrop #night-operations > .container,
+/* The pane. Two variants, because the run carries light type in one section
+   and dark type in the other four: the glass has to be darker than the type
+   it holds or lighter than it, never in between. */
 html.has-backdrop #human-handoff > .container,
 html.has-backdrop #demo > .container,
 html.has-backdrop #operating-layer > .container,
@@ -1002,7 +1000,6 @@ html.has-backdrop #control > .container {
 }
 
 /* dark panes */
-html.has-backdrop #night-operations > .container,
 html.has-backdrop #control > .container {
   background: rgba(16, 19, 18, .82);
   border: 1px solid rgba(255, 255, 255, .085);
@@ -1018,9 +1015,8 @@ html.has-backdrop #implementation > .container {
 }
 
 /* The panes want air around them, and the run wants to read as one passage
-   rather than six stacked boxes, so the padding moves off the section and on
-   to the glass and the gap between them stays even. */
-html.has-backdrop #night-operations,
+   rather than five stacked boxes, so the padding moves off the section and
+   on to the glass and the gap between them stays even. */
 html.has-backdrop #human-handoff,
 html.has-backdrop #demo,
 html.has-backdrop #operating-layer,
