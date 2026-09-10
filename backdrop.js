@@ -23,7 +23,17 @@ const RUN_SEL = '#night-operations, #human-handoff, #demo,' +
 
 const host = document.querySelector('.backdrop');
 const runs = Array.prototype.slice.call(document.querySelectorAll(RUN_SEL));
-if (host && runs.length && !matchMedia('(prefers-reduced-motion: reduce)').matches) start();
+
+/* A phone gets none of this. The glass needs margins the monument can be seen
+   in, and a 380px screen has none to give -- the pane would end up narrower
+   than the words in it, with a full-screen WebGL layer and a 1.9 MB download
+   paid for a sliver of stone down each side. The sections keep their solid
+   backgrounds and the page reads as it always did. */
+const ROOM = Math.min(innerWidth, screen.width || innerWidth) >= 760 &&
+             !matchMedia('(pointer: coarse)').matches;
+
+if (host && runs.length && ROOM &&
+    !matchMedia('(prefers-reduced-motion: reduce)').matches) start();
 
 function start() {
   const canvas = document.createElement('canvas');
