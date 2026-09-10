@@ -832,6 +832,10 @@ button .ico, a .ico { pointer-events: none; }
   border-top-right-radius: 50% 4.5vw;
 }
 
+/* The last card has nothing following it, so its hold would only be a band of
+   empty page above the footer -- which is what that gap was. */
+#discovery { margin-bottom: 0; }
+
 /* The footer is the last thing dealt. Without a position it would sit in the
    block layer, underneath every positioned section, and be covered by them. */
 body > footer { position: relative; z-index: 1; }

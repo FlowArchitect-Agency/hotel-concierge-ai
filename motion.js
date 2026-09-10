@@ -34,10 +34,13 @@
            + '.hotel-collection-modal, [role="dialog"], .conversation-thread,'
            + '.night-thread, .prearrival-thread';
 
-  /* Tested with matches() on the node itself, never closest(): several of the
-     wrappers this file targets carry .reveal, and an ancestor test would skip
-     everything inside them. */
-  var ALREADY = '.reveal';
+  /* The older `.reveal` system is no longer deferred to. Three of the biggest
+     panels on the page carry that class -- the demo shell, the control panel
+     and the implementation track -- and style.css neutralises `.reveal` inside
+     the operating layer, implementation, control and final-cta sections, so
+     those panels had no animation whatsoever. Since this file writes transform
+     and opacity inline, it wins over `.reveal`'s stylesheet rule wherever both
+     apply, and script.js adding `.revealed` on top is harmless. */
 
   /* container selector, how its children enter.
      'sides'  outer children hinge in from their own side, the middle one comes
@@ -49,6 +52,13 @@
      'alt'    peers arrive from alternating directions, chosen from how they are
               actually laid out -- a vertical list weaves left and right, a
               horizontal row alternates between rising and coming forward. */
+  /* The big panels -- the app mocks and tables -- get the tilt of their own,
+     rather than inheriting whatever their container's rule was. These are the
+     objects heavy enough for a turn to read on. */
+  var PANELS = ['.hero-product .product-app', '.prearrival-app', '.night-demo',
+                '.handoff-guest-view', '.reception-desk', '.chat-wrapper',
+                '.control-panel', '.implementation-track'];
+
   var RULES = [
     ['.hero-product .product-app-header', 'down'],
     ['.hero-product .product-app-body',   'sides'],
@@ -106,11 +116,20 @@
   /* The shapes. k counts DOWN from 1 (far off) to 0 (in place), so every term
      below is simply how much of the arrival is still left to undo. */
   var SHAPE = {
-    up:    function (k) { return 'perspective(1100px) translate3d(0,' + (52 * k * amp) + 'px,' + (-160 * k * amp) + 'px) rotateX(' + (7 * k) + 'deg)'; },
-    down:  function (k) { return 'perspective(1100px) translate3d(0,' + (-44 * k * amp) + 'px,' + (-120 * k * amp) + 'px) rotateX(' + (-7 * k) + 'deg)'; },
-    left:  function (k) { return 'perspective(1100px) translate3d(' + (-78 * k * amp) + 'px,' + (14 * k * amp) + 'px,' + (-200 * k * amp) + 'px) rotateY(' + (11 * k) + 'deg)'; },
-    right: function (k) { return 'perspective(1100px) translate3d(' + (78 * k * amp) + 'px,' + (14 * k * amp) + 'px,' + (-200 * k * amp) + 'px) rotateY(' + (-11 * k) + 'deg)'; },
-    'in':  function (k) { return 'perspective(1100px) translate3d(0,' + (22 * k * amp) + 'px,' + (-460 * k * amp) + 'px) rotateX(' + (3 * k) + 'deg)'; }
+    /* Amplitudes are deliberately large. Subtle is invisible: at 50px and 7
+       degrees these read as a faint settling rather than as movement, which is
+       the complaint. A panel should visibly arrive.
+
+       The side shapes carry a roll (rotateZ) on top of the hinge (rotateY), so
+       a table comes in tilted and straightens as it lands, the way the discs on
+       palmo.co.in turn as they settle. */
+    up:    function (k) { return 'perspective(1200px) translate3d(0,' + (96 * k * amp) + 'px,' + (-220 * k * amp) + 'px) rotateX(' + (10 * k) + 'deg)'; },
+    down:  function (k) { return 'perspective(1200px) translate3d(0,' + (-78 * k * amp) + 'px,' + (-180 * k * amp) + 'px) rotateX(' + (-10 * k) + 'deg)'; },
+    left:  function (k) { return 'perspective(1200px) translate3d(' + (-150 * k * amp) + 'px,' + (26 * k * amp) + 'px,' + (-280 * k * amp) + 'px) rotateY(' + (17 * k) + 'deg) rotateZ(' + (-3 * k) + 'deg)'; },
+    right: function (k) { return 'perspective(1200px) translate3d(' + (150 * k * amp) + 'px,' + (26 * k * amp) + 'px,' + (-280 * k * amp) + 'px) rotateY(' + (-17 * k) + 'deg) rotateZ(' + (3 * k) + 'deg)'; },
+    'in':  function (k) { return 'perspective(1200px) translate3d(0,' + (34 * k * amp) + 'px,' + (-620 * k * amp) + 'px) rotateX(' + (5 * k) + 'deg)'; },
+    /* palmo.co.in: arrives clearly off-axis and turns upright as it lands */
+    tilt:  function (k) { return 'perspective(1200px) translate3d(' + (60 * k * amp) + 'px,' + (110 * k * amp) + 'px,' + (-340 * k * amp) + 'px) rotateZ(' + (5.5 * k) + 'deg) rotateX(' + (8 * k) + 'deg)'; }
   };
 
   function clamp(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -123,7 +142,7 @@
 
   function tag(el, dir, order) {
     if (!el || el.hasAttribute('data-motion')) return false;
-    if (el.closest(SKIP) || el.matches(ALREADY)) return false;
+    if (el.closest(SKIP)) return false;
     el.setAttribute('data-motion', dir);
     el._motion = { shape: SHAPE[dir] || SHAPE.up, order: order };
     return true;
@@ -158,6 +177,14 @@
     });
   });
 
+  /* Panels are tagged after the container rules so they keep their own tilt if a
+     rule has not already claimed them. */
+  PANELS.forEach(function (sel) {
+    document.querySelectorAll(sel).forEach(function (el) {
+      if (tag(el, 'tilt', 0)) items.push(el);
+    });
+  });
+
   if (!items.length) return;
 
   var DECK = ['#platform', '#chapter-prearrival', '#night-operations',
@@ -165,6 +192,20 @@
               '#control', '#discovery']
     .map(function (sel) { return document.querySelector(sel); })
     .filter(Boolean);
+
+  /* A sticky section pinned at top:0 that is TALLER than the viewport can never
+     show its lower half. It locks the moment its top reaches the top of the
+     screen and then stops moving, so everything below the fold is unreachable --
+     the chat composer, the rest of the night operations table, the foot of the
+     handoff. Pinning it by however much it overflows instead lets it scroll all
+     the way through and only lock once its bottom has arrived, so the whole
+     section is read before the next one covers it. */
+  function fitDeck() {
+    var vh = window.innerHeight;
+    for (var i = 0; i < DECK.length; i++) {
+      DECK[i].style.top = Math.min(0, vh - DECK[i].offsetHeight) + 'px';
+    }
+  }
 
   function deckRead(vh) {
     var y = window.pageYOffset, out = [];
@@ -256,7 +297,10 @@
        tab, a starved main thread. Content is hidden until a frame paints it, so
        if the gap gets long enough to notice, give it all back rather than let
        the reader scroll through blank space. */
-    if (lastPaint && Date.now() - lastPaint > 1200 &&
+    /* Only when the document is actually visible. A hidden tab is not starved,
+       it is simply not being drawn, and treating that as failure would stand
+       the whole system down for good the first time the reader switched tabs. */
+    if (!document.hidden && lastPaint && Date.now() - lastPaint > 1200 &&
         root.classList.contains('motion-on')) { surrender(); return; }
     if (queued) return;
     queued = true;
@@ -282,10 +326,16 @@
      pushed back and dimmed: it recedes rather than simply being hidden. Driven
      by the same scroll, in the same read/write passes, so it scrubs with the
      hand like everything else. */
-  addEventListener('visibilitychange', tick);
+  /* Coming back to a tab that was not being drawn: the clock restarts, or the
+     gap since the last paint would look like starvation. */
+  addEventListener('visibilitychange', function () { lastPaint = Date.now(); tick(); });
   addEventListener('pageshow', tick);
+  addEventListener('load', function () { fitDeck(); tick(); });
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { fitDeck(); tick(); });
+  }
   addEventListener('scroll', tick, { passive: true });
-  addEventListener('resize', function () { measure(); tick(); });
+  addEventListener('resize', function () { measure(); fitDeck(); tick(); });
   /* Nothing is hidden until we have proved we can paint.
      `motion-on` is what hides the content, and the only thing that brings it
      back is a rendering frame. Hiding first and painting second means that if
@@ -297,6 +347,7 @@
     try {
       root.classList.add('motion-on');
       measure();
+      fitDeck();
       var ps0 = items.map(function (el) { return ease(progress(el)); });
       items.forEach(function (el, i) { paint(el, ps0[i]); });
     } catch (err) { surrender(err); }
