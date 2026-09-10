@@ -160,6 +160,36 @@
 
   if (!items.length) return;
 
+  var DECK = ['#platform', '#chapter-prearrival', '#night-operations',
+              '#human-handoff', '#demo', '#operating-layer', '#implementation',
+              '#control', '#discovery']
+    .map(function (sel) { return document.querySelector(sel); })
+    .filter(Boolean);
+
+  function deckRead(vh) {
+    var y = window.pageYOffset, out = [];
+    for (var i = 0; i < DECK.length - 1; i++) {
+      /* How far the NEXT section has climbed the screen: 0 while it is still
+         below the fold, 1 once it has reached the top and fully covered.
+
+         Measured from offsetTop, NOT getBoundingClientRect(). The next section
+         is sticky too, so once it has arrived its rect.top reads 0 forever --
+         which made every section read as fully covered from the moment it
+         appeared, and left the whole deck permanently shrunk and dimmed.
+         offsetTop is layout position and ignores the sticky offset. */
+      out.push(clamp(1 - (DECK[i + 1].offsetTop - y) / (vh || 1)));
+    }
+    return out;
+  }
+
+  function deckWrite(ps) {
+    for (var i = 0; i < ps.length; i++) {
+      var p = ease(ps[i]);
+      DECK[i].style.transform = p > 0.001 ? 'scale(' + (1 - 0.055 * p) + ')' : '';
+      DECK[i].style.filter = p > 0.001 ? 'brightness(' + (1 - 0.22 * p) + ')' : '';
+    }
+  }
+
   /* Everything below hides content and then relies on this script to bring it
      back. If any of it throws, the page is left blank rather than merely
      un-animated, so the whole run is guarded and gives the content back on
@@ -170,6 +200,7 @@
       el.style.transform = '';
       el.style.opacity = '';
     });
+    DECK.forEach(function (sec) { sec.style.transform = ''; sec.style.filter = ''; });
     if (err) console.error('motion.js stood down; content restored.', err);
   }
 
@@ -219,15 +250,25 @@
      system with no memory: whatever the scroll position, the page is right. */
   var atEnd = false;
   var queued = false;
+  var lastPaint = 0;
   function tick() {
+    /* Frames can stop arriving while scroll events keep coming -- a throttled
+       tab, a starved main thread. Content is hidden until a frame paints it, so
+       if the gap gets long enough to notice, give it all back rather than let
+       the reader scroll through blank space. */
+    if (lastPaint && Date.now() - lastPaint > 1200 &&
+        root.classList.contains('motion-on')) { surrender(); return; }
     if (queued) return;
     queued = true;
     requestAnimationFrame(function () {
       queued = false;
+      lastPaint = Date.now();
       try {
         var n = items.length, ps = new Array(n), i;
         atEnd = (window.pageYOffset + window.innerHeight) >= (root.scrollHeight - 2);
+        var deck = deckRead(window.innerHeight);                   /* read  */
         for (i = 0; i < n; i++) ps[i] = ease(progress(items[i]));  /* read  */
+        deckWrite(deck);                                           /* write */
         for (i = 0; i < n; i++) paint(items[i], ps[i]);            /* write */
       } catch (err) { surrender(err); }
     });
@@ -235,6 +276,12 @@
 
   /* A tab that stops rendering stops painting, and whatever state the elements
      were left in persists. Coming back has to re-derive it. */
+  /* ── The deck ──────────────────────────────────────────────────────────
+     The stacked sections cover one another. A cover with no depth to it reads
+     as a flat swap, so as the next section rises the one being covered is
+     pushed back and dimmed: it recedes rather than simply being hidden. Driven
+     by the same scroll, in the same read/write passes, so it scrubs with the
+     hand like everything else. */
   addEventListener('visibilitychange', tick);
   addEventListener('pageshow', tick);
   addEventListener('scroll', tick, { passive: true });

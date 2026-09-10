@@ -808,9 +808,28 @@ button .ico, a .ico { pointer-events: none; }
   min-height: 100vh;
   display: grid;
   align-content: center;
+  box-shadow: 0 -22px 55px rgba(18, 22, 18, .13);
+  transform-origin: 50% 0;
+  will-change: transform;
+
+  /* The hold. A section stuck at the top is covered the moment the next one
+     reaches the bottom of the screen, and with both exactly one viewport tall
+     that is immediately -- so you never got to read one before the next took
+     it. This margin is flow space after the section during which it stays
+     stuck and nothing else has arrived yet: time to actually read it. */
+  margin-bottom: 62vh;
+}
+
+/* The leading edge alternates so nine sections do not all arrive identically:
+   square-ish cards, then a wide shallow arc, the way crency.agency cuts one
+   section into the next. */
+#platform, #night-operations, #demo, #implementation, #discovery {
   border-top-left-radius: clamp(18px, 2.6vw, 40px);
   border-top-right-radius: clamp(18px, 2.6vw, 40px);
-  box-shadow: 0 -22px 55px rgba(18, 22, 18, .13);
+}
+#chapter-prearrival, #human-handoff, #operating-layer, #control {
+  border-top-left-radius: 50% 4.5vw;
+  border-top-right-radius: 50% 4.5vw;
 }
 
 /* The footer is the last thing dealt. Without a position it would sit in the
@@ -823,7 +842,11 @@ body > footer { position: relative; z-index: 1; }
   #demo, #operating-layer, #implementation, #control, #discovery {
     position: static;
     min-height: 0;
+    margin-bottom: 0;
     display: block;
     box-shadow: none;
+    border-radius: 0;
+    transform: none !important;
+    filter: none !important;
   }
 }
