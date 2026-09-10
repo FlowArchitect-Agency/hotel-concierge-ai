@@ -28,7 +28,6 @@
 (function () {
   var root = document.documentElement;
 
-  if (!('IntersectionObserver' in window)) return;
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
   var SKIP = '#hero-scene, #handoff-monument, #navbar, .site-nav, .chat-widget,'
@@ -170,15 +169,10 @@
     items.forEach(function (el) {
       el.style.transform = '';
       el.style.opacity = '';
-      el.style.willChange = '';
     });
     if (err) console.error('motion.js stood down; content restored.', err);
   }
 
-  root.classList.add('motion-on');
-  measure();
-
-  var atEnd = false;
   function progress(el) {
     var r = el.getBoundingClientRect();
     var vh = window.innerHeight || root.clientHeight;
@@ -201,38 +195,23 @@
          can be released. */
       el.style.transform = '';
       el.style.opacity = '';
-      el.style.willChange = '';
       return;
     }
     el.style.transform = el._motion.shape(1 - p);
     el.style.opacity = clamp(p * FADE);
   }
 
-  /* Only elements near the viewport are recomputed on a frame. */
-  var live = [];
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (entry) {
-      var el = entry.target;
-      var at = live.indexOf(el);
-      if (entry.isIntersecting) {
-        if (at < 0) { live.push(el); el.style.willChange = 'transform, opacity'; }
-      } else {
-        if (at >= 0) live.splice(at, 1);
-        el.style.willChange = '';
-        /* Above the viewport: leave it finished. Below it: leave it waiting. */
-        if (entry.boundingClientRect.top < 0) { el.style.transform = ''; el.style.opacity = ''; }
-        else { el.style.transform = el._motion.shape(1); el.style.opacity = 0; }
-      }
-    });
-    tick();
-  }, { rootMargin: '25% 0px 25% 0px' });
+  /* Every element is recomputed on every frame, and its state is derived purely
+     from its own position. There is deliberately no IntersectionObserver here.
+     Using one to decide what is visible makes correctness depend on an event:
+     an element was hidden by a "left the area" callback, and if the matching
+     "entered the area" callback was late, coalesced or missed -- which happens
+     whenever the tab is not rendering, and on fast jumps -- it stayed hidden
+     with nothing to correct it. That is what left whole panels blank mid-page.
 
-  items.forEach(function (el) { io.observe(el); });
-
-  /* Reads and writes are kept in separate passes. Measuring one element and
-     then styling it before measuring the next forces a synchronous layout per
-     element per frame, which on a page carrying two WebGL scenes is enough to
-     stall the main thread. */
+     Seventy-odd rects in a batched read pass costs almost nothing, and buys a
+     system with no memory: whatever the scroll position, the page is right. */
+  var atEnd = false;
   var queued = false;
   function tick() {
     if (queued) return;
@@ -240,22 +219,35 @@
     requestAnimationFrame(function () {
       queued = false;
       try {
-        var n = live.length, ps = new Array(n), i;
+        var n = items.length, ps = new Array(n), i;
         atEnd = (window.pageYOffset + window.innerHeight) >= (root.scrollHeight - 2);
-        for (i = 0; i < n; i++) ps[i] = ease(progress(live[i]));
-        for (i = 0; i < n; i++) paint(live[i], ps[i]);
+        for (i = 0; i < n; i++) ps[i] = ease(progress(items[i]));  /* read  */
+        for (i = 0; i < n; i++) paint(items[i], ps[i]);            /* write */
       } catch (err) { surrender(err); }
     });
   }
 
+  /* A tab that stops rendering stops painting, and whatever state the elements
+     were left in persists. Coming back has to re-derive it. */
+  addEventListener('visibilitychange', tick);
+  addEventListener('pageshow', tick);
   addEventListener('scroll', tick, { passive: true });
   addEventListener('resize', function () { measure(); tick(); });
-  /* First state without waiting for a scroll, in the same two passes. */
-  try {
-    var ps0 = items.map(function (el) { return ease(progress(el)); });
-    items.forEach(function (el, i) { paint(el, ps0[i]); });
-  } catch (err) { surrender(err); return; }
-  tick();
+  /* Nothing is hidden until we have proved we can paint.
+     `motion-on` is what hides the content, and the only thing that brings it
+     back is a rendering frame. Hiding first and painting second means that if
+     frames never arrive -- a tab that is never rendered, a browser throttling
+     rAF to nothing, a machine under load -- the page stays permanently blank.
+     Claiming the class from inside the first frame inverts that: the worst case
+     becomes a page with no animation, which is still a page that reads. */
+  requestAnimationFrame(function () {
+    try {
+      root.classList.add('motion-on');
+      measure();
+      var ps0 = items.map(function (el) { return ease(progress(el)); });
+      items.forEach(function (el, i) { paint(el, ps0[i]); });
+    } catch (err) { surrender(err); }
+  });
 
   /* Last line of defence. If nothing has been painted a moment after load --
      an observer that never fired, a frame that never ran -- give the content
