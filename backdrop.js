@@ -18,13 +18,15 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
-/* The run begins AFTER the cathedral, not before it. Night operations used
-   to be part of it, which put one slide of arch in front of the Notre-Dame
-   stage: the turn started, the cathedral took the screen for five thousand
-   pixels, and the turn resumed on the other side. One monument interrupting
-   another. Now the cathedral has the page to itself and hands over to the
-   arch, which then turns without a break to the end. */
-const RUN_SEL = '#human-handoff, #demo, #operating-layer,' +
+/* The run begins at chapter three and goes to the foot of the page.
+
+   Chapter two is the cathedral: the Notre-Dame stage and the handoff section
+   it opens, which belong together and are left alone. The arch takes over
+   from there and turns without a break to the end -- one monument at a time,
+   which is the whole reason the chapters were reordered. Anything listed
+   here gives up its background for glass, so the order of the page and the
+   membership of this list have to agree. */
+const RUN_SEL = '#night-operations, #demo, #operating-layer,' +
                 '#implementation, #control';
 
 /* A handle on the running scene, so it can be driven and looked at without

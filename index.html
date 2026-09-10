@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=deck-r15">
+    <link rel="stylesheet" href="style.css?v=deck-r16">
     <link rel="stylesheet" href="eiffel-hero.css?v=1">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
@@ -350,13 +350,111 @@
 
 </div><!-- /.deck -->
 
-<!-- Story chapter 02: the operational system continues overnight. -->
+
+<!-- Chapter 03 opener. Notre-Dame reassembles from the points of its own
+     photogrammetry scan and turns a full circle as you scroll. Decorative: the
+     chapter's actual content is the section below, so the canvas is hidden from
+     assistive tech and the caption is the only thing announced. -->
+<section class="monument-stage" id="handoff-monument">
+  <div class="monument-pin">
+    <canvas id="monument-canvas" aria-hidden="true"></canvas>
+    <!-- Standing chapter marker. Fills the head of the stage, ties the monument
+         back to what the product actually does, and the ticks show how far
+         through the sequence you are. -->
+    <div class="monument-marker">
+      <p class="chapter-eyebrow" data-i18n="home.handoff.eyebrow">02 &mdash; Human handoff</p>
+      <p class="monument-marker-line" data-i18n="home.handoff.monumentAsk">Guests ask about it every day. Your concierge already has the answer.</p>
+      <ol class="monument-ticks" aria-hidden="true"><li class="is-done"></li><li></li><li></li><li></li><li></li><li></li><li></li></ol>
+    </div>
+
+    <div class="monument-caption">
+      <p class="chapter-eyebrow" data-i18n="home.handoff.monument">Notre-Dame de Paris</p>
+      <!-- One card holds the headline slot at a time. monument.js advances them
+           from the same scroll progress that drives the camera, and each line is
+           masked by its own overflow so it wipes up into place rather than just
+           fading. The chapter line leads; the facts take over once the stone has
+           settled. -->
+      <div class="monument-cards">
+        <div class="monument-card is-on">
+          <h2 class="monument-figure"><span data-i18n="home.handoff.monumentLine">Rebuilt by hand.</span></h2>
+        </div>
+        <div class="monument-card">
+          <p class="monument-figure"><span data-i18n="home.handoff.fact.1.figure">1163</span></p>
+          <p class="monument-note" data-i18n="home.handoff.fact.1.body">Foundation stone laid under Bishop Maurice de Sully. It took 182 years to finish.</p>
+        </div>
+        <div class="monument-card">
+          <p class="monument-figure"><span data-i18n="home.handoff.fact.2.figure">1,300 oaks</span></p>
+          <p class="monument-note" data-i18n="home.handoff.fact.2.body">The medieval roof frame was known as la for&ecirc;t &mdash; the forest. Each beam came from a single tree.</p>
+        </div>
+        <div class="monument-card">
+          <p class="monument-figure"><span data-i18n="home.handoff.fact.3.figure">1859</span></p>
+          <p class="monument-note" data-i18n="home.handoff.fact.3.body">The fl&egrave;che was never medieval. Viollet-le-Duc added it during a nineteenth-century restoration.</p>
+        </div>
+        <div class="monument-card">
+          <p class="monument-figure"><span data-i18n="home.handoff.fact.4.figure">15 April 2019</span></p>
+          <p class="monument-note" data-i18n="home.handoff.fact.4.body">Fire took the roof and the fl&egrave;che in a single evening. The stone vaults held.</p>
+        </div>
+        <div class="monument-card">
+          <p class="monument-figure"><span data-i18n="home.handoff.fact.5.figure">12 million</span></p>
+          <p class="monument-note" data-i18n="home.handoff.fact.5.body">Visitors a year before the fire &mdash; more than any other monument in Europe.</p>
+        </div>
+        <div class="monument-card">
+          <p class="monument-figure"><span data-i18n="home.handoff.fact.6.figure">8 December 2024</span></p>
+          <p class="monument-note" data-i18n="home.handoff.fact.6.body">Reopened after five years, raised again by some 250 firms and 2,000 craftspeople.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Story chapter 02: AI prepares the staff-facing handoff when judgement matters.
+     The Notre-Dame stage above is this chapter's opener, which is why the two
+     sit together and why the Arc's run starts after them, not before. -->
+<section class="human-handoff" id="human-handoff">
+  <div class="container">
+    <header class="handoff-intro">
+      <div class="handoff-heading">
+        <p class="chapter-eyebrow">02 &mdash; Human handoff</p>
+        <h2>AI when it can.<br>People when it matters.</h2>
+      </div>
+      <p>ConciergeFlow recognises when staff attention is appropriate and gives the right person a concise operational brief.</p>
+    </header>
+
+    <div class="handoff-composition">
+      <section class="handoff-guest-view" aria-label="Guest request from Alex Morgan">
+        <div class="handoff-panel-label">Guest conversation</div>
+        <div class="handoff-guest-name"><span class="guest-avatar avatar-alex">AM</span><div><strong>Alex Morgan</strong><small>Suite 804 &middot; VIP anniversary stay</small></div></div>
+        <blockquote>Could you arrange a private Seine cruise tonight? We&rsquo;d like something quiet after 8 PM. Champagne if possible.</blockquote>
+        <dl class="handoff-signals">
+          <div><dt>Intent</dt><dd>Private experience</dd></div>
+          <div><dt>Timing</dt><dd>After 20:00</dd></div>
+          <div><dt>Guests</dt><dd>2</dd></div>
+          <div><dt>Preference</dt><dd>Quiet &middot; Champagne</dd></div>
+        </dl>
+      </section>
+
+      <div class="handoff-bridge" aria-hidden="true"><span>Context prepared for staff</span></div>
+
+      <section class="reception-desk" aria-label="Receptionist handoff for Alex Morgan">
+        <header><div><p>Reception desk</p><h3>Staff handoff</h3></div><span class="handoff-status">Staff attention recommended</span></header>
+        <div class="reception-brief">
+          <div class="reception-brief-guest"><span class="guest-avatar avatar-alex">AM</span><div><strong>Alex Morgan &middot; Suite 804</strong><small>2 guests &middot; VIP / anniversary stay</small></div></div>
+          <dl><div><dt>Request</dt><dd>Private Seine cruise tonight after 20:00</dd></div><div><dt>Preference</dt><dd>Quiet experience &middot; Champagne if available</dd></div></dl>
+          <div class="ai-summary"><span>AI summary</span><p>Guest is requesting a quiet private Seine cruise for two tonight after 20:00. Champagne preferred if available. No budget specified.</p></div>
+        </div>
+        <div class="reception-actions" aria-label="Staff actions shown in the interface preview"><span class="reception-action-primary">Take over</span><span class="reception-action-secondary">Assign</span></div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- Story chapter 03: the operational system continues overnight. -->
 <section class="night-operations" id="night-operations">
   <div class="container">
     <header class="night-intro">
       <div class="night-time-display"><span>03:14</span><small>Paris</small></div>
       <div>
-        <p class="chapter-eyebrow">02 &mdash; Night operations</p>
+        <p class="chapter-eyebrow">03 &mdash; Night operations</p>
         <h2>Your guests don&rsquo;t keep office hours.</h2>
       </div>
       <p>ConciergeFlow remains available when the front desk is quiet, prepares the appropriate action, and leaves the morning team with context.</p>
@@ -406,101 +504,6 @@
 
     <div class="night-demo-summary" aria-label="Demonstration night operational summary">
       <span>Demo night</span><dl><div><dt>14</dt><dd>conversations</dd></div><div><dt>5</dt><dd>service requests</dd></div><div><dt>3</dt><dd>languages</dd></div><div><dt>0</dt><dd>unanswered in this simulation</dd></div></dl>
-    </div>
-  </div>
-</section>
-
-<!-- Chapter 03 opener. Notre-Dame reassembles from the points of its own
-     photogrammetry scan and turns a full circle as you scroll. Decorative: the
-     chapter's actual content is the section below, so the canvas is hidden from
-     assistive tech and the caption is the only thing announced. -->
-<section class="monument-stage" id="handoff-monument">
-  <div class="monument-pin">
-    <canvas id="monument-canvas" aria-hidden="true"></canvas>
-    <!-- Standing chapter marker. Fills the head of the stage, ties the monument
-         back to what the product actually does, and the ticks show how far
-         through the sequence you are. -->
-    <div class="monument-marker">
-      <p class="chapter-eyebrow" data-i18n="home.handoff.eyebrow">03 &mdash; Human handoff</p>
-      <p class="monument-marker-line" data-i18n="home.handoff.monumentAsk">Guests ask about it every day. Your concierge already has the answer.</p>
-      <ol class="monument-ticks" aria-hidden="true"><li class="is-done"></li><li></li><li></li><li></li><li></li><li></li><li></li></ol>
-    </div>
-
-    <div class="monument-caption">
-      <p class="chapter-eyebrow" data-i18n="home.handoff.monument">Notre-Dame de Paris</p>
-      <!-- One card holds the headline slot at a time. monument.js advances them
-           from the same scroll progress that drives the camera, and each line is
-           masked by its own overflow so it wipes up into place rather than just
-           fading. The chapter line leads; the facts take over once the stone has
-           settled. -->
-      <div class="monument-cards">
-        <div class="monument-card is-on">
-          <h2 class="monument-figure"><span data-i18n="home.handoff.monumentLine">Rebuilt by hand.</span></h2>
-        </div>
-        <div class="monument-card">
-          <p class="monument-figure"><span data-i18n="home.handoff.fact.1.figure">1163</span></p>
-          <p class="monument-note" data-i18n="home.handoff.fact.1.body">Foundation stone laid under Bishop Maurice de Sully. It took 182 years to finish.</p>
-        </div>
-        <div class="monument-card">
-          <p class="monument-figure"><span data-i18n="home.handoff.fact.2.figure">1,300 oaks</span></p>
-          <p class="monument-note" data-i18n="home.handoff.fact.2.body">The medieval roof frame was known as la for&ecirc;t &mdash; the forest. Each beam came from a single tree.</p>
-        </div>
-        <div class="monument-card">
-          <p class="monument-figure"><span data-i18n="home.handoff.fact.3.figure">1859</span></p>
-          <p class="monument-note" data-i18n="home.handoff.fact.3.body">The fl&egrave;che was never medieval. Viollet-le-Duc added it during a nineteenth-century restoration.</p>
-        </div>
-        <div class="monument-card">
-          <p class="monument-figure"><span data-i18n="home.handoff.fact.4.figure">15 April 2019</span></p>
-          <p class="monument-note" data-i18n="home.handoff.fact.4.body">Fire took the roof and the fl&egrave;che in a single evening. The stone vaults held.</p>
-        </div>
-        <div class="monument-card">
-          <p class="monument-figure"><span data-i18n="home.handoff.fact.5.figure">12 million</span></p>
-          <p class="monument-note" data-i18n="home.handoff.fact.5.body">Visitors a year before the fire &mdash; more than any other monument in Europe.</p>
-        </div>
-        <div class="monument-card">
-          <p class="monument-figure"><span data-i18n="home.handoff.fact.6.figure">8 December 2024</span></p>
-          <p class="monument-note" data-i18n="home.handoff.fact.6.body">Reopened after five years, raised again by some 250 firms and 2,000 craftspeople.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Story chapter 03: AI prepares the staff-facing handoff when judgement matters. -->
-<section class="human-handoff" id="human-handoff">
-  <div class="container">
-    <header class="handoff-intro">
-      <div class="handoff-heading">
-        <p class="chapter-eyebrow">03 &mdash; Human handoff</p>
-        <h2>AI when it can.<br>People when it matters.</h2>
-      </div>
-      <p>ConciergeFlow recognises when staff attention is appropriate and gives the right person a concise operational brief.</p>
-    </header>
-
-    <div class="handoff-composition">
-      <section class="handoff-guest-view" aria-label="Guest request from Alex Morgan">
-        <div class="handoff-panel-label">Guest conversation</div>
-        <div class="handoff-guest-name"><span class="guest-avatar avatar-alex">AM</span><div><strong>Alex Morgan</strong><small>Suite 804 &middot; VIP anniversary stay</small></div></div>
-        <blockquote>Could you arrange a private Seine cruise tonight? We&rsquo;d like something quiet after 8 PM. Champagne if possible.</blockquote>
-        <dl class="handoff-signals">
-          <div><dt>Intent</dt><dd>Private experience</dd></div>
-          <div><dt>Timing</dt><dd>After 20:00</dd></div>
-          <div><dt>Guests</dt><dd>2</dd></div>
-          <div><dt>Preference</dt><dd>Quiet &middot; Champagne</dd></div>
-        </dl>
-      </section>
-
-      <div class="handoff-bridge" aria-hidden="true"><span>Context prepared for staff</span></div>
-
-      <section class="reception-desk" aria-label="Receptionist handoff for Alex Morgan">
-        <header><div><p>Reception desk</p><h3>Staff handoff</h3></div><span class="handoff-status">Staff attention recommended</span></header>
-        <div class="reception-brief">
-          <div class="reception-brief-guest"><span class="guest-avatar avatar-alex">AM</span><div><strong>Alex Morgan &middot; Suite 804</strong><small>2 guests &middot; VIP / anniversary stay</small></div></div>
-          <dl><div><dt>Request</dt><dd>Private Seine cruise tonight after 20:00</dd></div><div><dt>Preference</dt><dd>Quiet experience &middot; Champagne if available</dd></div></dl>
-          <div class="ai-summary"><span>AI summary</span><p>Guest is requesting a quiet private Seine cruise for two tonight after 20:00. Champagne preferred if available. No budget specified.</p></div>
-        </div>
-        <div class="reception-actions" aria-label="Staff actions shown in the interface preview"><span class="reception-action-primary">Take over</span><span class="reception-action-secondary">Assign</span></div>
-      </section>
     </div>
   </div>
 </section>
@@ -836,7 +839,7 @@
 
 <!-- Browser-safe Cloudflare Worker endpoint configuration. Never place a secret in config.js. -->
 <script src="config.js?v=task-10"></script>
-    <script src="i18n.js?v=nd-read-r1"></script>
+    <script src="i18n.js?v=ch-swap"></script>
     <script type="importmap">
     { "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -844,11 +847,11 @@
     } }
     </script>
     <script type="module" src="monument.js?v=nd-read-r1"></script>
-    <script type="module" src="backdrop.js?v=15"></script>
+    <script type="module" src="backdrop.js?v=16"></script>
     <script type="module">
       // Mounted on the 300vh run, not on #hero: the module reads scroll progress
       // from the element it is given, and #hero is taller than the run itself.
-      import { mount } from './eiffel-hero.js?v=25';
+      import { mount } from './eiffel-hero.js?v=26';
       const scene = document.getElementById('hero-scene');
       if (scene) {
         // The copy is written by the build rather than by a timer, so the two

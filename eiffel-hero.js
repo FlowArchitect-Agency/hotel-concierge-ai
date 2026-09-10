@@ -364,49 +364,22 @@ export function mount(root, options) {
   scene.add(group);
 
   /* -- cutting the tower out of the capture ------------------------------
-     The site stays exactly as it was flown. What has to go is the smooth
-     lump where the tower is, so the built one can stand in its place --
-     a cylinder on the tower's own axis, from a few metres above the
-     pavement upward, so the ground, the paths and the arch's own shadow
-     are all kept. */
-  var uClear = { value: 96 },     /* the tower's footprint, in plan       */
-      uSite  = { value: 132 };    /* fully site again beyond this         */
+     The site stays as it was flown; what has to go is the smooth lump where
+     the tower is, so the built one can stand in its place. A cylinder on the
+     tower's own axis, from a little above the pavement upward, so the
+     ground, the paths and the arch's shadow are all kept.
 
-  var PREAMBLE = [
-    'uniform float uClear;',
-    'uniform float uSite;',
-    'varying float vKeep;'
-  ].join('\n');
-
-  /* Positions are baked into world metres at load, so this reads plainly:
-     how far is this vertex from the tower's axis, and is it above the
-     pavement. Both conditions have to hold for it to be tower rather than
-     place, and only then is it dropped. */
-  var CUT = [
-    '#include <begin_vertex>',
-    'float dAxis = length(position.xz);',
-    'float site  = smoothstep(uClear, uSite, dAxis);',
-    'float low   = 1.0 - smoothstep(3.0, 11.0, position.y);',
-    'vKeep = clamp(max(site, low), 0.0, 1.0);'
-  ].join('\n');
-
-  var FRAG_PRE = 'varying float vKeep;';
-  var FRAG_CUT = [
-    'if (vKeep < 0.5) discard;',
-    '#include <dithering_fragment>'
-  ].join('\n');
-
-  function patch(mat) {
-    mat.onBeforeCompile = function (sh) {
-      sh.uniforms.uClear = uClear;
-      sh.uniforms.uSite = uSite;
-      sh.vertexShader = PREAMBLE + '\n' +
-        sh.vertexShader.replace('#include <begin_vertex>', CUT);
-      sh.fragmentShader = FRAG_PRE + '\n' +
-        sh.fragmentShader.replace('#include <dithering_fragment>', FRAG_CUT);
-    };
-    mat.needsUpdate = true;
-  }
+     Done to the index buffer at load, not to fragments at 60 Hz. It used to
+     be a `discard` in the fragment shader, and a discard tells the driver
+     that any fragment might kill itself, which turns off the early depth
+     test for the WHOLE mesh -- so all 1.4 M triangles were being shaded
+     before being depth-tested, every frame. That, with DoubleSide on top of
+     it, was the stutter: 46 ms a frame, and unchanged whether the tower was
+     one member in or finished, which is what gave it away as the capture
+     rather than the build. Cutting the triangles out once costs about a
+     fifth of a second at load and nothing afterwards, and leaves a stock
+     material the renderer can take its fast path through. */
+  var CUT_R = 96, CUT_Y = 8;
 
   /* -- the capture ------------------------------------------------------ */
   var site = null, siteReady = false;
@@ -454,6 +427,23 @@ export function mount(root, options) {
         .makeTranslation(-tipX, -groundY, -tipZ)
         .premultiply(new THREE.Matrix4().makeScale(scale, scale, scale));
       mesh.geometry.applyMatrix4(fit.clone().multiply(m4));
+
+      /* Drop every triangle with a corner inside the tower's cylinder. Read
+         straight off the typed arrays: the attribute accessors would make
+         this a several-second pause on four million vertices. */
+      var idx = mesh.geometry.index;
+      if (idx) {
+        var ia = idx.array, pav = mesh.geometry.attributes.position.array;
+        var R2 = CUT_R * CUT_R, keep = new ia.constructor(ia.length), kn = 0, ti;
+        for (ti = 0; ti < ia.length; ti += 3) {
+          var i0 = ia[ti] * 3, i1 = ia[ti + 1] * 3, i2 = ia[ti + 2] * 3;
+          if ((pav[i0 + 1] > CUT_Y && pav[i0] * pav[i0] + pav[i0 + 2] * pav[i0 + 2] < R2) ||
+              (pav[i1 + 1] > CUT_Y && pav[i1] * pav[i1] + pav[i1 + 2] * pav[i1 + 2] < R2) ||
+              (pav[i2 + 1] > CUT_Y && pav[i2] * pav[i2] + pav[i2 + 2] * pav[i2 + 2] < R2)) continue;
+          keep[kn++] = ia[ti]; keep[kn++] = ia[ti + 1]; keep[kn++] = ia[ti + 2];
+        }
+        mesh.geometry.setIndex(new THREE.BufferAttribute(keep.slice(0, kn), 1));
+      }
       mesh.geometry.computeBoundingSphere();
       mesh.position.set(0, 0, 0);
       mesh.rotation.set(0, 0, 0);
@@ -467,12 +457,73 @@ export function mount(root, options) {
         m.envMapIntensity = 0.5;
         if (m.roughness !== undefined) m.roughness = Math.min(1, m.roughness * 0.85 + 0.2);
         if (m.metalness !== undefined) m.metalness = 0.0;
-        m.side = THREE.DoubleSide;   /* a capture is a shell; it has holes */
-        patch(m);
+        /* Front faces only. A capture is a shell, and DoubleSide was there to
+           paper over any hole in it -- at the price of rasterising every
+           surface twice. (Lambert was tried here too and measured the same
+           to a tenth of a millisecond: this mesh is vertex-bound, not
+           fragment-bound, so there is nothing to win in the shading.) */
+        m.side = THREE.FrontSide;
       }
 
-      site = mesh;
-      group.add(mesh);
+      /* Cut into a grid of chunks so the frustum can throw most of it away.
+
+         The capture is nearly two kilometres long and the camera stands in
+         the middle of it looking one way, so roughly a third is behind the
+         reader at any moment -- and as one mesh with culling off, all of it
+         was drawn every frame regardless. The chunks share one copy of the
+         position, uv and normal buffers and differ only in their index, so
+         this costs no extra memory on the card; each just gets its own
+         bounding sphere, which has to be set by hand because
+         computeBoundingSphere() measures the whole shared attribute rather
+         than the part a given index actually reaches. */
+      site = new THREE.Group();
+      (function () {
+        var src = mesh.geometry, sIdx = src.index, sPos = src.attributes.position.array;
+        if (!sIdx) { site.add(mesh); return; }
+        var ia2 = sIdx.array, NX = 3, NZ = 8;
+        var bb = new THREE.Box3().setFromBufferAttribute(src.attributes.position);
+        var x0 = bb.min.x, z0 = bb.min.z;
+        var dx = (bb.max.x - x0) / NX || 1, dz = (bb.max.z - z0) / NZ || 1;
+        var bins = [], bi2;
+        for (bi2 = 0; bi2 < NX * NZ; bi2++) bins.push([]);
+        for (var t2 = 0; t2 < ia2.length; t2 += 3) {
+          var p0 = ia2[t2] * 3, p1 = ia2[t2 + 1] * 3, p2 = ia2[t2 + 2] * 3;
+          var cx = (sPos[p0] + sPos[p1] + sPos[p2]) / 3;
+          var cz = (sPos[p0 + 2] + sPos[p1 + 2] + sPos[p2 + 2]) / 3;
+          var gx = Math.min(NX - 1, Math.max(0, Math.floor((cx - x0) / dx)));
+          var gz = Math.min(NZ - 1, Math.max(0, Math.floor((cz - z0) / dz)));
+          var b2 = bins[gz * NX + gx];
+          b2.push(ia2[t2], ia2[t2 + 1], ia2[t2 + 2]);
+        }
+        for (bi2 = 0; bi2 < bins.length; bi2++) {
+          var list = bins[bi2];
+          if (!list.length) continue;
+          var g2 = new THREE.BufferGeometry();
+          g2.setAttribute('position', src.attributes.position);
+          if (src.attributes.uv) g2.setAttribute('uv', src.attributes.uv);
+          if (src.attributes.normal) g2.setAttribute('normal', src.attributes.normal);
+          g2.setIndex(new THREE.BufferAttribute(
+            new (kn > 65535 ? Uint32Array : Uint16Array)(list), 1));
+          var mnx = Infinity, mny = Infinity, mnz = Infinity,
+              mxx = -Infinity, mxy = -Infinity, mxz = -Infinity, li2;
+          for (li2 = 0; li2 < list.length; li2++) {
+            var q3 = list[li2] * 3, qx = sPos[q3], qy = sPos[q3 + 1], qz = sPos[q3 + 2];
+            if (qx < mnx) mnx = qx; if (qx > mxx) mxx = qx;
+            if (qy < mny) mny = qy; if (qy > mxy) mxy = qy;
+            if (qz < mnz) mnz = qz; if (qz > mxz) mxz = qz;
+          }
+          var ctr = new THREE.Vector3((mnx + mxx) / 2, (mny + mxy) / 2, (mnz + mxz) / 2);
+          g2.boundingBox = new THREE.Box3(new THREE.Vector3(mnx, mny, mnz),
+                                          new THREE.Vector3(mxx, mxy, mxz));
+          g2.boundingSphere = new THREE.Sphere(ctr,
+            0.5 * Math.sqrt((mxx - mnx) * (mxx - mnx) + (mxy - mny) * (mxy - mny) +
+                            (mxz - mnz) * (mxz - mnz)));
+          var chunk = new THREE.Mesh(g2, mesh.material);
+          chunk.frustumCulled = true;
+          site.add(chunk);
+        }
+      })();
+      group.add(site);
       siteReady = true;
       root.classList.add("eiffel-hero--ready");
       resize(); onScroll();
@@ -655,13 +706,20 @@ var iron = new THREE.MeshStandardMaterial({
   if (HEAVY) {
     try {
       var sz0 = renderer.getDrawingBufferSize(new THREE.Vector2());
+      /* No multisampling on the HDR target. Four samples on a half-float
+         buffer this size cost 18 ms of an 45 ms frame -- more than the whole
+         1.4-million-triangle capture -- for antialiasing that the bloom
+         immediately softens anyway. Measured: dropping it is the single
+         biggest thing on this page. */
       composer = new EffectComposer(renderer,
-        new THREE.WebGLRenderTarget(sz0.x, sz0.y, { type: THREE.HalfFloatType, samples: 4 }));
+        new THREE.WebGLRenderTarget(sz0.x, sz0.y, { type: THREE.HalfFloatType }));
       composer.addPass(new RenderPass(scene, camera));
       /* Threshold high, strength modest: only the lamps and the beacon are
          meant to bleed. Lower and the whole lit face of the tower blooms and
          the picture turns to milk. */
-      bloom = new UnrealBloomPass(new THREE.Vector2(sz0.x, sz0.y), 0.42, 0.5, 0.95);
+      /* The blur runs at half resolution. Nobody has ever seen the edge of a
+         bloom kernel, and it is a quarter of the fragments. */
+      bloom = new UnrealBloomPass(new THREE.Vector2(sz0.x * 0.5, sz0.y * 0.5), 0.42, 0.5, 0.95);
       composer.addPass(bloom);
       composer.addPass(new OutputPass());
     } catch (e) { composer = null; }
@@ -733,7 +791,7 @@ var iron = new THREE.MeshStandardMaterial({
     if (composer) {
       var dpr = renderer.getPixelRatio();
       composer.setSize(w, hgt);
-      if (bloom) bloom.setSize(w * dpr, hgt * dpr);
+      if (bloom) bloom.setSize(w * dpr * 0.5, hgt * dpr * 0.5);
     }
     camera.aspect = w / hgt; camera.updateProjectionMatrix();
   }

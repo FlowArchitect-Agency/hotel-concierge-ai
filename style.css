@@ -970,7 +970,7 @@ body > section {
    the monument is seen full-bleed in the margins -- and the content sits on a
    pane of glass instead. Scoped to html.has-backdrop so that if the layer
    never arrives, every one of these keeps the solid background it had. */
-html.has-backdrop #human-handoff,
+html.has-backdrop #night-operations,
 html.has-backdrop #demo,
 html.has-backdrop #operating-layer,
 html.has-backdrop #implementation,
@@ -979,10 +979,10 @@ html.has-backdrop #control {
   border-top: 0;
 }
 
-/* The pane. Two variants, because the run carries light type in one section
-   and dark type in the other four: the glass has to be darker than the type
-   it holds or lighter than it, never in between. */
-html.has-backdrop #human-handoff > .container,
+/* The pane. Two variants, because the run carries light type in two of the
+   five sections and dark type in the other three: the glass has to be
+   darker than the type it holds or lighter than it, never in between. */
+html.has-backdrop #night-operations > .container,
 html.has-backdrop #demo > .container,
 html.has-backdrop #operating-layer > .container,
 html.has-backdrop #implementation > .container,
@@ -999,14 +999,14 @@ html.has-backdrop #control > .container {
   box-shadow: 0 34px 80px rgba(40, 44, 52, .22), 0 1px 0 rgba(255, 255, 255, .5) inset;
 }
 
-/* dark panes */
+/* dark panes: the two sections that carry light type */
+html.has-backdrop #night-operations > .container,
 html.has-backdrop #control > .container {
   background: rgba(16, 19, 18, .82);
   border: 1px solid rgba(255, 255, 255, .085);
 }
 
 /* light panes */
-html.has-backdrop #human-handoff > .container,
 html.has-backdrop #demo > .container,
 html.has-backdrop #operating-layer > .container,
 html.has-backdrop #implementation > .container {
@@ -1017,7 +1017,7 @@ html.has-backdrop #implementation > .container {
 /* The panes want air around them, and the run wants to read as one passage
    rather than five stacked boxes, so the padding moves off the section and
    on to the glass and the gap between them stays even. */
-html.has-backdrop #human-handoff,
+html.has-backdrop #night-operations,
 html.has-backdrop #demo,
 html.has-backdrop #operating-layer,
 html.has-backdrop #implementation,
