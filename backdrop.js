@@ -238,21 +238,51 @@ function start() {
   const lerp = (a, b, t) => a + (b - a) * t;
   const easeInOut = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
+  /* Progress is measured across the six sections THEMSELVES, added together,
+     rather than across the distance from the first to the last.
+
+     Two reasons, and the second one is the whole bug. The Notre-Dame stage
+     sits inside that distance and is over five thousand pixels of opaque
+     section: measured end to end, a third of the turn was spent behind it,
+     unseen. Adding the sections up instead means the arch turns while a
+     slide is on screen and waits while the cathedral has it, so the
+     revolution maps onto the slides -- which is what it is for.
+
+     And the reason it was turning once at the top and then standing still
+     for the rest of the page: the old version took getBoundingClientRect()
+     and then asked the RECT for offsetHeight. A DOMRect has no such
+     property, so the end of the run was NaN, and `(NaN) || 1` -- NaN being
+     falsy -- quietly made the whole run one pixel long. Every scroll after
+     the first landed at progress 1. The `|| 1` read like a divide-by-zero
+     guard and was actually swallowing a typo, so nothing ever complained. */
   function onScroll() {
     const vh = innerHeight || document.documentElement.clientHeight || 0;
     if (vh <= 0) return;              /* a zero viewport makes every ratio NaN */
 
-    const first = runs[0].getBoundingClientRect();
-    const last  = runs[runs.length - 1].getBoundingClientRect();
-    const top   = first.top + scrollY;
-    const end   = last.top + scrollY + last.offsetHeight;
-    const travel = (end - top - vh) || 1;
-    const next = (scrollY - top + vh * 0.85) / travel;
-    if (!isFinite(next)) return;
-    p = Math.min(Math.max(next, 0), 1);
+    let total = 0, acc = 0, done = false;
+    const eye = scrollY + vh * 0.5;
+    let firstTop = Infinity, lastBottom = -Infinity;
+
+    for (const el of runs) {
+      const r = el.getBoundingClientRect();
+      const a = r.top + scrollY, b = r.bottom + scrollY, h = b - a;
+      if (h <= 0) continue;
+      total += h;
+      firstTop = Math.min(firstTop, r.top);
+      lastBottom = Math.max(lastBottom, r.bottom);
+      if (done) continue;
+      if (eye >= b) acc += h;
+      else if (eye > a) { acc += eye - a; done = true; }
+      else done = true;
+    }
+
+    if (total > 0) {
+      const next = acc / total;
+      if (isFinite(next)) p = Math.min(Math.max(next, 0), 1);
+    }
 
     /* Only paint while some part of the run is actually on screen. */
-    const on = first.top < vh && last.bottom > 0;
+    const on = firstTop < vh && lastBottom > 0;
     host.classList.toggle('is-live', on);
     if (on && !raf) raf = requestAnimationFrame(frame);
     if (on && !seen) { seen = true; eased = p; }
