@@ -92,8 +92,8 @@
      lower half of the viewport was mid-fade at all times, so reading down the
      page you met text that was not there yet. Now anything above the bottom
      third is fully arrived. */
-  var ENTER  = 1.06;   /* progress 0 while the element's top is this far down */
-  var SETTLE = 0.55;   /* progress 1 once that edge has risen to here */
+  var ENTER  = 1.14;   /* progress 0 while the element's top is this far down */
+  var SETTLE = 0.30;   /* progress 1 once that edge has risen to here */
   var LAG    = 0.055;  /* each later sibling's window opens this much later */
 
   /* Opacity finishes well before the movement does. Legibility and motion are
@@ -101,7 +101,7 @@
      keep travelling into place while you scroll. Tying them together is what
      makes scroll animation feel like content withheld rather than content
      arriving. */
-  var FADE = 2.6;
+  var FADE = 3.4;
 
   /* Travel is scaled to the viewport. A fixed sideways offset that reads well on
      a desktop is most of a phone's width, and since body carries
@@ -149,6 +149,17 @@
     return true;
   }
 
+  var DECK_SEL = '#platform, #chapter-prearrival, #night-operations,'
+               + '#human-handoff, #demo, #operating-layer, #implementation,'
+               + '#control';
+  var DECK_ORDER = [];
+  var DECK = ['#platform', '#chapter-prearrival', '#night-operations',
+              '#human-handoff', '#demo', '#operating-layer', '#implementation',
+              '#control']
+    .map(function (sel) { return document.querySelector(sel); })
+    .filter(Boolean);
+  DECK_ORDER = DECK;
+
   var items = [];
   RULES.forEach(function (rule) {
     document.querySelectorAll(rule[0]).forEach(function (container) {
@@ -161,17 +172,22 @@
       var isRow = kids.length > 1 &&
         Math.abs(kids[1].getBoundingClientRect().top - kids[0].getBoundingClientRect().top) < 8;
 
+      /* Every section leaning the same way is what makes nine of them feel like
+         one. The bias flips section by section, so one gathers from the left and
+         the next from the right. */
+      var flip = (DECK_ORDER.indexOf(container.closest(DECK_SEL)) % 2) === 1;
+
       kids.forEach(function (kid, i) {
         var dir = rule[1];
         if (dir === 'sides') {
           dir = kids.length < 2 ? 'up'
-              : i === 0 ? 'left'
-              : i === kids.length - 1 ? 'right'
+              : i === 0 ? (flip ? 'right' : 'left')
+              : i === kids.length - 1 ? (flip ? 'left' : 'right')
               : 'in';
         } else if (dir === 'alt') {
           dir = kids.length < 2 ? 'up'
-              : isRow ? (i % 2 ? 'in' : 'up')
-              : (i % 2 ? 'right' : 'left');
+              : isRow ? ((i % 2) ^ flip ? 'in' : 'up')
+              : ((i % 2) ^ flip ? 'right' : 'left');
         }
         if (tag(kid, dir, i)) items.push(kid);
       });
@@ -188,14 +204,6 @@
 
   if (!items.length) return;
 
-  var DECK_SEL = '#platform, #chapter-prearrival, #night-operations,'
-               + '#human-handoff, #demo, #operating-layer, #implementation,'
-               + '#control';
-  var DECK = ['#platform', '#chapter-prearrival', '#night-operations',
-              '#human-handoff', '#demo', '#operating-layer', '#implementation',
-              '#control']
-    .map(function (sel) { return document.querySelector(sel); })
-    .filter(Boolean);
 
   /* A sticky section pinned at top:0 that is TALLER than the viewport can never
      show its lower half. It locks the moment its top reaches the top of the

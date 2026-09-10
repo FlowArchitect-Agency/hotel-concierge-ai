@@ -824,7 +824,7 @@ button .ico, a .ico { pointer-events: none; }
      that is immediately -- so you never got to read one before the next took
      it. This margin is flow space after the section during which it stays
      stuck and nothing else has arrived yet: time to actually read it. */
-  margin-bottom: 62vh;
+  margin-bottom: 92vh;
 }
 
 /* One modest leading edge for all of them. The wide elliptical arc produced a
