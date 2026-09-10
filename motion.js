@@ -160,6 +160,21 @@
   });
 
   if (!items.length) return;
+
+  /* Everything below hides content and then relies on this script to bring it
+     back. If any of it throws, the page is left blank rather than merely
+     un-animated, so the whole run is guarded and gives the content back on
+     failure. Motion is a nicety; the words are the product. */
+  function surrender(err) {
+    root.classList.remove('motion-on');
+    items.forEach(function (el) {
+      el.style.transform = '';
+      el.style.opacity = '';
+      el.style.willChange = '';
+    });
+    if (err) console.error('motion.js stood down; content restored.', err);
+  }
+
   root.classList.add('motion-on');
   measure();
 
@@ -224,19 +239,33 @@
     queued = true;
     requestAnimationFrame(function () {
       queued = false;
-      var n = live.length, ps = new Array(n), i;
-      atEnd = (window.pageYOffset + window.innerHeight) >= (root.scrollHeight - 2);
-      for (i = 0; i < n; i++) ps[i] = ease(progress(live[i]));
-      for (i = 0; i < n; i++) paint(live[i], ps[i]);
+      try {
+        var n = live.length, ps = new Array(n), i;
+        atEnd = (window.pageYOffset + window.innerHeight) >= (root.scrollHeight - 2);
+        for (i = 0; i < n; i++) ps[i] = ease(progress(live[i]));
+        for (i = 0; i < n; i++) paint(live[i], ps[i]);
+      } catch (err) { surrender(err); }
     });
   }
 
   addEventListener('scroll', tick, { passive: true });
   addEventListener('resize', function () { measure(); tick(); });
   /* First state without waiting for a scroll, in the same two passes. */
-  (function () {
-    var ps = items.map(function (el) { return ease(progress(el)); });
-    items.forEach(function (el, i) { paint(el, ps[i]); });
-  })();
+  try {
+    var ps0 = items.map(function (el) { return ease(progress(el)); });
+    items.forEach(function (el, i) { paint(el, ps0[i]); });
+  } catch (err) { surrender(err); return; }
   tick();
+
+  /* Last line of defence. If nothing has been painted a moment after load --
+     an observer that never fired, a frame that never ran -- give the content
+     back rather than leave a page of blank space. */
+  setTimeout(function () {
+    var stuck = items.filter(function (el) {
+      var r = el.getBoundingClientRect();
+      var onScreen = r.top < window.innerHeight * 0.75 && r.bottom > 0;
+      return onScreen && parseFloat(getComputedStyle(el).opacity) < 0.05;
+    });
+    if (stuck.length) surrender();
+  }, 2500);
 })();

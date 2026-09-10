@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=motion-r1">
+    <link rel="stylesheet" href="style.css?v=failopen-r1">
     <link rel="stylesheet" href="eiffel-hero.css?v=1">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
@@ -848,20 +848,42 @@
           [0.93, '.hero-ctas']              // the summit: the copy completes with it
         ].map(([at, sel]) => [at, scene.querySelector(sel)]).filter(([, el]) => el);
 
+        // `is-sync` hides every line until the build reveals it, so it must only
+        // ever be on while something is actually driving that reveal. If the
+        // scene cannot run -- no WebGL context, a throw during mount, anything
+        // at all -- the copy has to come back rather than stay hidden, or the
+        // hero is a blank sky. This has to fail open: the headline is the page.
+        const speak = () => scene.classList.remove('is-sync');
+
         // With no JS, or with reduced motion (where the pin collapses and there
         // is no scroll to sync to), the resting state in CSS is fully visible.
         if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
           scene.classList.add('is-sync');
         }
-        mount(scene, {
-          quality: 'hero',
-          onProgress(p) {
-            for (const [at, el] of steps) el.classList.toggle('is-in', p >= at);
-          }
-        });
+
+        // If nothing has reported progress shortly after mount, assume it never
+        // will. Covers the silent failures a callback cannot: a lost context, a
+        // module that resolved but never rendered, a decoder that never landed.
+        let spoke = false;
+        const watchdog = setTimeout(speak, 1400);
+
+        try {
+          mount(scene, {
+            quality: 'hero',
+            onUnavailable: () => { clearTimeout(watchdog); speak(); },
+            onProgress(p) {
+              if (!spoke) { spoke = true; clearTimeout(watchdog); }
+              for (const [at, el] of steps) el.classList.toggle('is-in', p >= at);
+            }
+          });
+        } catch (err) {
+          clearTimeout(watchdog);
+          speak();
+          console.error('eiffel-hero failed to mount; hero copy restored.', err);
+        }
       }
     </script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r3"></script>
-    <script src="motion.js?v=11" defer></script>
+    <script src="motion.js?v=12" defer></script>
 </body>
 </html>
