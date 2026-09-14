@@ -150,7 +150,10 @@ function start(){
     const span = r.height - innerHeight;
     const p = Math.min(1, Math.max(0, -r.top / (span || 1)));
 
-    target.assemble = Math.min(1, p / 0.16);   // solid early, then it turns
+    // Assembly starts as the stage comes up the screen, not once it has pinned:
+    // keyed to the pinned run alone, the reader scrolled through a full screen
+    // of loose points in an empty sky before anything read as a building.
+    target.assemble = Math.min(1, Math.max(0, (innerHeight - r.top) / (innerHeight * 1.3)));
 
     const n = STOPS.length - 1;
     const seg = Math.min(n - 1, Math.floor(p * n));
