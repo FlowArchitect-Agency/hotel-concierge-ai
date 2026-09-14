@@ -12,8 +12,8 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=deck-r17">
-    <link rel="stylesheet" href="eiffel-hero.css?v=2">
+    <link rel="stylesheet" href="style.css?v=deck-r18">
+    <link rel="stylesheet" href="eiffel-hero.css?v=3">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
 <body data-page="index">
@@ -849,9 +849,9 @@
     <script type="module" src="monument.js?v=nd-read-r1"></script>
     <script type="module" src="backdrop.js?v=16"></script>
     <script type="module">
-      // Mounted on the 440vh run, not on #hero: the module reads scroll progress
+      // Mounted on the 800vh run, not on #hero: the module reads scroll progress
       // from the element it is given, and #hero is taller than the run itself.
-      import { mount } from './eiffel-hero.js?v=27';
+      import { mount } from './eiffel-hero.js?v=28';
       const scene = document.getElementById('hero-scene');
       if (scene) {
         // The copy is written by the build rather than by a timer, so the two
@@ -860,7 +860,7 @@
         // (This replaces the module CSS's .is-staged stagger, which runs on
         // animation-delay and would drift out of step with the scroll.)
         // Thresholds are build percentages, not scroll fractions -- the module
-        // reaches 100% at 72% of the pinned run and holds there, so keying
+        // reaches 100% at 70% of the pinned run and holds there, so keying
         // off scroll would finish the copy less than half way up the tower.
         const steps = [
           [0.01, '.hero-eyebrow'],          // footings

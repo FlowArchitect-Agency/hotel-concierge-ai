@@ -242,6 +242,21 @@ export function mount(root, options) {
 
   members.sort(function (a, b) { return (a[0].y + a[1].y) - (b[0].y + b[1].y); });
 
+  /* Running height reached after each member, for pacing the build by height
+     as well as by member count. By count alone the legs (thousands of
+     members) ate most of the scroll and the thin upper shaft shot up from
+     80% to done in a flick of the wheel. */
+  var memberTop = [], runTop = 0;
+  for (var mt = 0; mt < members.length; mt++) {
+    runTop = Math.max(runTop, members[mt][0].y, members[mt][1].y);
+    memberTop.push(runTop);
+  }
+  function countForHeight(h) {
+    var lo = 0, hi = memberTop.length;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (memberTop[mid] <= h) lo = mid + 1; else hi = mid; }
+    return lo;
+  }
+
   /* -- scene ------------------------------------------------------------ */
   var scene = new THREE.Scene();
 
@@ -348,7 +363,7 @@ export function mount(root, options) {
   var camera = new THREE.PerspectiveCamera(46, 1, 1, 9000);
   var renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, powerPreference: "high-performance" });
   } catch (e) { bail(); return; }
   renderer.setClearColor(0x16201A, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -740,7 +755,7 @@ var iron = new THREE.MeshStandardMaterial({
      about a screen of scroll while the camera draws back to show all of it.
      Finishing at 88% left two wheel clicks between "90%" and the hero
      scrolling away, so the complete tower was never actually seen. */
-  var BUILD_TO = 0.72;
+  var BUILD_TO = 0.7;
 
   function apply(p) {
     var q = isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
@@ -749,7 +764,10 @@ var iron = new THREE.MeshStandardMaterial({
        tower's own members have been riveted. They are sorted by height, so
        counting up them builds it from the footings to the spire. */
     var total = members.length;
-    lattice.count = Math.max(0, Math.min(total, Math.floor(q * total)));
+    /* Half by count, half by height: each scroll step adds a similar share of
+       both rivets and metres, so no stage of the climb runs away. */
+    var byHeight = countForHeight(q * (memberTop[total - 1] || 0));
+    lattice.count = Math.max(0, Math.min(total, Math.floor(q * total * 0.5 + byHeight * 0.5)));
 
     var topH = 0;
     if (lattice.count > 0) {
@@ -787,7 +805,7 @@ var iron = new THREE.MeshStandardMaterial({
     var w = canvas.clientWidth || pin.clientWidth || section.clientWidth ||
             window.innerWidth || 1;
     var hgt = canvas.clientHeight || pin.clientHeight || window.innerHeight || 1;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, composer ? 1.5 : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, composer ? 1.25 : 1.5) * renderScale);
     renderer.setSize(w, hgt, false);
     if (composer) {
       var dpr = renderer.getPixelRatio();
@@ -797,7 +815,28 @@ var iron = new THREE.MeshStandardMaterial({
     camera.aspect = w / hgt; camera.updateProjectionMatrix();
   }
 
-  function frame() {
+  /* Adaptive resolution. The capture is 1.4 million triangles and the frame
+     budget is spent per pixel, so when frames run long the render scale steps
+     down (and back up when there is headroom). A slightly softer picture
+     that tracks the scroll reads far better than a sharp one that stutters. */
+  var renderScale = 1, lastFrameAt = 0, frameAvg = 16, framesSinceTune = 0;
+  function tune(now) {
+    if (lastFrameAt) {
+      var dt = Math.min(now - lastFrameAt, 100);
+      frameAvg += (dt - frameAvg) * 0.1;
+      if (++framesSinceTune >= 30) {
+        framesSinceTune = 0;
+        var next = renderScale;
+        if (frameAvg > 20 && renderScale > 0.5) next = Math.max(0.5, renderScale - 0.1);
+        else if (frameAvg < 13 && renderScale < 1) next = Math.min(1, renderScale + 0.05);
+        if (next !== renderScale) { renderScale = next; resize(); }
+      }
+    }
+    lastFrameAt = now;
+  }
+
+  function frame(now) {
+    tune(now || performance.now());
     step();
     raf = visible ? requestAnimationFrame(frame) : null;
   }
@@ -893,7 +932,7 @@ var iron = new THREE.MeshStandardMaterial({
   new IntersectionObserver(function (entries) {
     var on = entries[0].isIntersecting;
     visible = on;
-    if (on && !raf) { resize(); onScroll(); raf = requestAnimationFrame(frame); }
+    if (on && !raf) { lastFrameAt = 0; resize(); onScroll(); raf = requestAnimationFrame(frame); }
   }, { rootMargin: "120px" }).observe(section);
 
   /* And measure again once layout has certainly settled: the first pass runs

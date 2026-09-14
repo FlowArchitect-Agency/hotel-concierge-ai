@@ -14,7 +14,7 @@
 .hero--scene {
   position: relative;
   isolation: isolate;
-  height: var(--eiffel-run, 440vh);
+  height: var(--eiffel-run, 800vh);
   background: #12203E;              /* matches the scene's upper sky, so the
                                        page never flashes white before WebGL */
   color: #F3F1EA;
