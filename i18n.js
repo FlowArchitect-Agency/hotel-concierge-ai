@@ -279,6 +279,34 @@
   Object.assign(copy.es, { "demo.website.service": "A su servicio", "brief.review.other": "Otros detalles", "brief.presentationHint": "Si no hay nada concreto, puede escribir «Nada en particular»." });
   pages.demo.push(["#websiteConciergeTitle", "demo.website.service"]);
 
+  Object.assign(copy.en, {
+    "home.story.eyebrow": "One request, start to finish",
+    "home.story.title": "A guest writes. The service is already moving.",
+    "home.story.s1.title": "The guest writes, in their own words", "home.story.s1.body": "A late landing at CDG and a question about getting to the hotel.",
+    "home.story.s2.title": "ConciergeFlow understands the need", "home.story.s2.body": "Intent, arrival time and the guest’s stay are read together.",
+    "home.story.s3.title": "It answers like the hotel would", "home.story.s3.body": "One warm reply, and only the question that matters: the flight number.",
+    "home.story.s4.title": "Your team gets it ready to act on", "home.story.s4.body": "A transfer request prepared with full context. Staff confirm it.",
+    "home.story.foot": "Available day and night, in the guest’s language."
+  });
+  Object.assign(copy.fr, {
+    "home.story.eyebrow": "Une demande, du début à la fin",
+    "home.story.title": "Un client écrit. Le service est déjà en marche.",
+    "home.story.s1.title": "Le client écrit, avec ses propres mots", "home.story.s1.body": "Une arrivée tardive à CDG et une question pour rejoindre l’hôtel.",
+    "home.story.s2.title": "ConciergeFlow comprend le besoin", "home.story.s2.body": "L’intention, l’heure d’arrivée et le séjour sont lus ensemble.",
+    "home.story.s3.title": "Il répond comme le ferait l’hôtel", "home.story.s3.body": "Une réponse chaleureuse, et la seule question utile : le numéro de vol.",
+    "home.story.s4.title": "Votre équipe a tout pour agir", "home.story.s4.body": "Une demande de transfert préparée avec tout le contexte. L’équipe la confirme.",
+    "home.story.foot": "Disponible jour et nuit, dans la langue du client."
+  });
+  Object.assign(copy.es, {
+    "home.story.eyebrow": "Una solicitud, de principio a fin",
+    "home.story.title": "Un huésped escribe. El servicio ya está en marcha.",
+    "home.story.s1.title": "El huésped escribe, con sus propias palabras", "home.story.s1.body": "Una llegada tardía a CDG y una pregunta sobre cómo llegar al hotel.",
+    "home.story.s2.title": "ConciergeFlow entiende la necesidad", "home.story.s2.body": "La intención, la hora de llegada y la estancia se leen juntas.",
+    "home.story.s3.title": "Responde como lo haría el hotel", "home.story.s3.body": "Una respuesta cálida y solo la pregunta necesaria: el número de vuelo.",
+    "home.story.s4.title": "Su equipo lo tiene listo para actuar", "home.story.s4.body": "Una solicitud de traslado preparada con todo el contexto. El equipo la confirma.",
+    "home.story.foot": "Disponible día y noche, en el idioma del huésped."
+  });
+
   function interpolate(value, variables = {}) { return String(value).replace(/{{(\w+)}}/g, (_, key) => variables[key] ?? ""); }
   function localeFromUrl() { const value = new URLSearchParams(window.location.search).get("lang"); return SUPPORTED.has(value) ? value : ""; }
   function savedLocale() { try { const value = localStorage.getItem(STORAGE_KEY); return SUPPORTED.has(value) ? value : ""; } catch { return ""; } }

@@ -1032,6 +1032,10 @@ restoreConversation();
     const reply = replyBubble?.querySelector('p');
     if (!guest || !reply || !think || !prepared) return;
 
+    // The story column beside the preview follows the same loop.
+    const story = document.querySelector('#hero .hero-story');
+    const stage = (n) => { if (story) story.dataset.stage = String(n); };
+
     const guestText = guest.textContent;
     const replyText = reply.textContent;
     const steps = [guestBubble, think, replyBubble, prepared];
@@ -1069,27 +1073,32 @@ restoreConversation();
       for (;;) {
         await gate();
         steps.forEach((el) => el.classList.remove('is-shown'));
+        stage(0);
         guest.textContent = '';
         reply.textContent = '';
         await sleep(850);
 
         await gate();
         guestBubble.classList.add('is-shown');
+        stage(1);
         await type(guest, guestText, 26);
         await sleep(600);
 
         await gate();
         think.classList.add('is-shown');
+        stage(2);
         await sleep(1500);
         think.classList.remove('is-shown');
 
         await gate();
         replyBubble.classList.add('is-shown');
+        stage(3);
         await type(reply, replyText, 20);
         await sleep(500);
 
         await gate();
         prepared.classList.add('is-shown');
+        stage(4);
         await sleep(6500);
       }
     })();
