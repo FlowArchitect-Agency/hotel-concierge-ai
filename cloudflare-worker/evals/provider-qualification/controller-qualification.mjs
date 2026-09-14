@@ -12,6 +12,7 @@
 
 import { writeFileSync } from 'node:fs';
 import { buildSemanticControllerPrompt, parseSemanticControllerOutput } from '../../src/semantic-controller.js';
+import { complete } from '../../src/llm/index.js';
 
 const OUT = process.argv[2] || 'controller-qualification.json';
 // Reasoning models (nemotron, minimax, deepseek) emit their chain-of-thought as
@@ -19,8 +20,9 @@ const OUT = process.argv[2] || 'controller-qualification.json';
 // every plan was scored invalid -- a measurement artefact, not a model failure.
 // Production's default of 350 (src/llm/schemas.js) is lower still.
 const MAX_TOKENS = Number(process.env.QUALIFY_MAX_TOKENS || 2500);
-const KEYS = { openrouter: process.env.OPENROUTER_API_KEY, nvidia: process.env.NVIDIA_API_KEY };
+const KEYS = { openrouter: process.env.OPENROUTER_API_KEY, nvidia: process.env.NVIDIA_API_KEY, groq: process.env.GROQ_API_KEY };
 const URLS = {
+  groq: 'https://api.groq.com/openai/v1/chat/completions',
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
   nvidia: 'https://integrate.api.nvidia.com/v1/chat/completions',
 };
@@ -106,6 +108,19 @@ function scoreCase(plan, expect) {
 // throttle. A 429 that survives every retry is reported separately as a
 // capacity finding rather than being scored as a wrong answer.
 async function callModel(provider, model, prompt) {
+  // Groq goes through the production gateway so its per-model transport
+  // settings (reasoning_effort / reasoning_format) and the production 320-token
+  // controller budget are exactly what a live turn would use.
+  if (provider === 'groq') {
+    const env = { GROQ_API_KEY: KEYS.groq, GROQ_MODEL: model };
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await complete(env, { purpose: 'semantic_controller', messages: [{ role: 'user', content: prompt }], max_tokens: 320 });
+      if (result.status === 'success') return result.content;
+      if (result.status !== 'rate_limited') throw new Error(`groq ${result.status} ${result.error_code || ''}`);
+      await new Promise((r) => setTimeout(r, 20000));
+    }
+    throw new Error('groq rate_limited after retries');
+  }
   let wait = 6000;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const res = await fetch(URLS[provider], {

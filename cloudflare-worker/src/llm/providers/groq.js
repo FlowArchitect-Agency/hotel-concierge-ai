@@ -28,7 +28,7 @@ export function completeGroq({ apiKey, request, fetchImpl } = {}) {
       // against Groq: reasoning_format 'hidden' alone yields clean, parseable
       // JSON content with zero reasoning tokens.
       if (qwen) Object.assign(transformed, { reasoning_effort: 'none', reasoning_format: 'hidden' });
-      else if (gptOss) Object.assign(transformed, { reasoning_format: 'hidden' });
+      else if (gptOss) Object.assign(transformed, { reasoning_format: 'hidden', reasoning_effort: 'low' });
       return transformed;
     },
   });

@@ -9,6 +9,37 @@ export const MODEL_QUALIFICATIONS = Object.freeze([
     benchmarkScore: 'Task 13A live semantic 20/20; local Task 13B contracts',
     productionApproved: false,
   },
+  // Groq siblings: separate per-model free-tier budgets, used via
+  // GROQ_MODEL_CHAIN. Controller evidence is the production prompt + strict
+  // parser through the production gateway; response evidence is a 6-turn live
+  // replay through src/index.js with hotel data deliberately unavailable, so a
+  // model that invents facts shows it.
+  {
+    provider: 'groq',
+    model: 'openai/gpt-oss-120b',
+    controllerQualified: true,
+    responseQualified: true,
+    benchmarkScore: 'controller-qualification 14/15, 0 unparseable; replay 5/5 grounded, no invented facts (2026-09-14)',
+    productionApproved: false,
+  },
+  {
+    provider: 'groq',
+    model: 'qwen/qwen3.8-27b',
+    controllerQualified: true,
+    responseQualified: true,
+    benchmarkScore: 'controller-qualification 11/15, 0 unparseable (misses were label choices); replay 5/5 valid, no invented facts (2026-09-14)',
+    productionApproved: false,
+  },
+  {
+    // Plans well, but with no hotel facts available it stated breakfast hours
+    // it had never been given. Never let it write to a guest.
+    provider: 'groq',
+    model: 'openai/gpt-oss-20b',
+    controllerQualified: true,
+    responseQualified: false,
+    benchmarkScore: 'controller-qualification 12/15, 0 unparseable; replay invented breakfast hours (2026-09-14)',
+    productionApproved: false,
+  },
   {
     // Reached at runtime through the openai-compatible provider pointed at
     // NVIDIA's integrate endpoint, which is the same endpoint this evidence was

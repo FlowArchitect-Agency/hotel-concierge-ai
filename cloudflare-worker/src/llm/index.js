@@ -64,6 +64,45 @@ function providerConfig(env, provider, model) {
   };
 }
 
+// Groq enforces its free-tier token limits per MODEL, not per account, so each
+// sibling model is a separate budget. GROQ_MODEL_CHAIN lists them in order of
+// preference; only entries with qualification evidence for this purpose are
+// ever called.
+function groqChainCandidates(env, primary, purpose) {
+  if (primary.provider !== 'groq') return [];
+  return configured(env.GROQ_MODEL_CHAIN).split(',').map(configured).filter(Boolean)
+    .filter((model) => model !== primary.model && qualifiedForPurpose('groq', model, purpose))
+    .map((model) => providerConfig(env, 'groq', model));
+}
+
+// A model that just returned 429 is skipped for a short while so the next turn
+// goes straight to a sibling with budget left instead of paying for a doomed
+// call first. Per isolate, best effort; a cooled model is moved to the back of
+// the line, never dropped.
+const RATE_LIMIT_COOLDOWN_MIN_MS = 15_000;
+const RATE_LIMIT_COOLDOWN_MAX_MS = 10 * 60_000;
+const cooldownUntil = new Map();
+
+function cooldownKey(candidate) {
+  return `${candidate.provider}|${candidate.model}`;
+}
+
+function markRateLimited(candidate, retryAfterMs) {
+  const hinted = Number(retryAfterMs);
+  const ms = Number.isFinite(hinted) && hinted > 0 ? hinted : RATE_LIMIT_COOLDOWN_MIN_MS;
+  cooldownUntil.set(cooldownKey(candidate), Date.now() + Math.min(Math.max(ms, RATE_LIMIT_COOLDOWN_MIN_MS), RATE_LIMIT_COOLDOWN_MAX_MS));
+}
+
+function readyFirst(candidates) {
+  const now = Date.now();
+  const cooled = (candidate) => (cooldownUntil.get(cooldownKey(candidate)) || 0) > now;
+  return [...candidates.filter((candidate) => !cooled(candidate)), ...candidates.filter(cooled)];
+}
+
+export function resetRateLimitCooldowns() {
+  cooldownUntil.clear();
+}
+
 function fallbackCandidate(env, primary, purpose) {
   const provider = configured(env.LLM_FALLBACK_PROVIDER || primary.provider).toLowerCase();
   const model = configured(env.LLM_FALLBACK_MODEL || (provider === 'groq' ? env.GROQ_FALLBACK_MODEL : ''));
@@ -122,7 +161,9 @@ const RATE_LIMIT_RETRY_MAX_MS = 4000;
 // therefore needs a floor, applied per candidate so the Qwen primary keeps its
 // small, cheap budget.
 const REASONING_MODEL_MIN_TOKENS = 2500;
-const REASONING_MODEL_PATTERN = /nemotron|minimax|deepseek|qwq|magistral|thinking/i;
+// gpt-oss belongs here too: its hidden reasoning still spends completion
+// tokens, so at 320 it returned empty content on most controller calls.
+const REASONING_MODEL_PATTERN = /nemotron|minimax|deepseek|qwq|magistral|thinking|gpt-oss/i;
 
 function candidateMaxTokens(candidate, request) {
   if (!REASONING_MODEL_PATTERN.test(String(candidate.model))) return request.max_tokens;
@@ -138,9 +179,13 @@ export async function complete(env, rawRequest, { fetchImpl } = {}) {
   const request = normalizeLlmRequest(rawRequest);
   const provider = providerName(env);
   const primary = providerConfig(env, provider, rawRequest.model || primaryModel(env, provider, request.purpose));
-  const candidates = [primary, fallbackCandidate(env, primary, request.purpose)].filter(Boolean);
+  const configuredCandidates = [primary, ...groqChainCandidates(env, primary, request.purpose), fallbackCandidate(env, primary, request.purpose)]
+    .filter(Boolean)
+    .filter((candidate, index, all) => all.findIndex((other) => cooldownKey(other) === cooldownKey(candidate)) === index);
+  const candidates = readyFirst(configuredCandidates);
   let last = normalizedResult({ status: 'provider_error', provider: primary.provider, model: primary.model, error_code: 'no_candidate' });
   for (const [index, candidate] of candidates.entries()) {
+    const isLast = index === candidates.length - 1;
     if (!candidate.apiKey || !candidate.model || (candidate.provider !== 'groq' && !candidate.baseUrl)) {
       last = normalizedResult({ status: 'provider_error', provider: candidate.provider, model: candidate.model, attempts: index + 1, fallback_used: index > 0, error_code: 'missing_configuration' });
       continue;
@@ -148,7 +193,10 @@ export async function complete(env, rawRequest, { fetchImpl } = {}) {
     const candidateRequest = { ...request, model: candidate.model, max_tokens: candidateMaxTokens(candidate, request) };
     const raw = await providerComplete(candidate, candidateRequest, fetchImpl);
     let result = validateStructured(raw, request);
-    if (result.status === 'rate_limited') {
+    if (result.status === 'rate_limited') markRateLimited(candidate, raw?.retry_after_ms);
+    // With a sibling model still to try, switching is faster than waiting out
+    // this model's window. Only the last candidate waits and retries.
+    if (result.status === 'rate_limited' && isLast) {
       // Honour the provider's retry-after when it gives one, capped so a guest
       // never waits more than a few seconds. The old fixed ~0.5 s pause could
       // not outlast Groq's per-MINUTE token window (8,000 tokens on this
@@ -161,8 +209,11 @@ export async function complete(env, rawRequest, { fetchImpl } = {}) {
       await sleep(waitMs);
       result = validateStructured(await providerComplete(candidate, candidateRequest, fetchImpl), request);
     }
-    last = normalizedResult({ ...result, attempts: index + 1, fallback_used: index > 0 });
-    if (last.status === 'success') return last;
+    last = normalizedResult({ ...result, attempts: index + 1, fallback_used: cooldownKey(candidate) !== cooldownKey(primary) });
+    if (last.status === 'success') {
+      cooldownUntil.delete(cooldownKey(candidate));
+      return last;
+    }
   }
   return last;
 }

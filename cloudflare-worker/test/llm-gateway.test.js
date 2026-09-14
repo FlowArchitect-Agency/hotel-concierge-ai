@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseModelJson } from '../src/concierge.js';
 import { parseSemanticControllerOutput } from '../src/semantic-controller.js';
-import { completeStructured, completeText, llmConfigurationStatus } from '../src/llm/index.js';
+import { completeStructured, completeText, llmConfigurationStatus, resetRateLimitCooldowns } from '../src/llm/index.js';
 
 const semanticJson = JSON.stringify({
   interaction_type: 'conversation', guest_goal: 'answer the previous question', context_summary: 'Guest asks why the question was asked.',
@@ -386,22 +386,21 @@ test('Groq transport sends per-model reasoning settings that the provider actual
 
   await completeText({ GROQ_API_KEY: 'k', GROQ_MODEL: 'openai/gpt-oss-20b' },
     { purpose: 'response_generator', messages: [{ role: 'user', content: 'hi' }] }, { fetchImpl });
-  assert.equal(sent[1].reasoning_effort, undefined, 'gpt-oss must NOT receive reasoning_effort:none (HTTP 400)');
+  assert.notEqual(sent[1].reasoning_effort, 'none', 'gpt-oss must NOT receive reasoning_effort:none (HTTP 400)');
   assert.equal(sent[1].reasoning_format, 'hidden', 'gpt-oss needs hidden reasoning to return content');
 });
 
 test('An unqualified fallback model is never selected, even when configured', async () => {
-  // GROQ_FALLBACK_MODEL is set in production but openai/gpt-oss-20b carries no
-  // groq qualification entry, and the nvidia evidence records it as failing
-  // controller qualification. It must stay unselected until real evidence for
-  // this provider/model/purpose exists.
+  // A configured model with no qualification entry for this provider must stay
+  // unselected until real evidence for this provider/model/purpose exists.
+  resetRateLimitCooldowns();
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push(JSON.parse(options.body).model);
     return new Response('{"error":"rate limited"}', { status: 429 });
   };
   const result = await completeText(
-    { GROQ_API_KEY: 'k', GROQ_MODEL: 'qwen/qwen3.6-27b', GROQ_FALLBACK_MODEL: 'openai/gpt-oss-20b' },
+    { GROQ_API_KEY: 'k', GROQ_MODEL: 'qwen/qwen3.6-27b', GROQ_FALLBACK_MODEL: 'allam-2-7b', GROQ_MODEL_CHAIN: 'allam-2-7b' },
     { purpose: 'semantic_controller', messages: [{ role: 'user', content: 'hi' }] },
     { fetchImpl },
   );
@@ -430,4 +429,73 @@ test('Reasoning-model candidates get a token floor so their JSON is not truncate
     { purpose: 'response_generator', max_tokens: 350, messages: [{ role: 'user', content: 'hi' }] }, { fetchImpl },
   );
   assert.ok(seen[1].max_tokens >= 2500, `reasoning model must get a floor, got ${seen[1].max_tokens}`);
+});
+
+// Groq's free-tier limits are per model. Before GROQ_MODEL_CHAIN, a 429 on the
+// primary meant a wait, one retry on the SAME exhausted model, and then the
+// guest got the fallback sentence -- while sibling models sat unused.
+const CHAIN = 'openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b';
+
+test('a rate-limited primary switches straight to the next Groq sibling, without waiting', async () => {
+  resetRateLimitCooldowns();
+  const models = [];
+  const startedAt = Date.now();
+  const result = await completeText(env({ GROQ_MODEL_CHAIN: CHAIN }), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Hello' }],
+  }, {
+    fetchImpl: async (url, options) => {
+      const { model } = JSON.parse(options.body);
+      models.push(model);
+      return model === 'qwen/qwen3.6-27b'
+        ? new Response(null, { status: 429, headers: { 'retry-after': '3' } })
+        : jsonResponse('Breakfast starts at 7am.');
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.equal(result.model, 'openai/gpt-oss-120b');
+  assert.equal(result.fallback_used, true);
+  assert.deepEqual(models, ['qwen/qwen3.6-27b', 'openai/gpt-oss-120b']);
+  assert.ok(Date.now() - startedAt < 1000, 'switching must not wait out the exhausted model');
+});
+
+test('the chain keeps going until a model with budget answers', async () => {
+  resetRateLimitCooldowns();
+  const models = [];
+  const result = await completeStructured(env({ GROQ_MODEL_CHAIN: CHAIN }), semanticRequest(), {
+    parse: semanticParser,
+    fetchImpl: async (url, options) => {
+      const { model } = JSON.parse(options.body);
+      models.push(model);
+      return model === 'openai/gpt-oss-20b' ? jsonResponse(semanticJson) : new Response(null, { status: 429 });
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.deepEqual(models, ['qwen/qwen3.6-27b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-20b']);
+});
+
+test('a model qualified only for planning never writes a guest reply', async () => {
+  resetRateLimitCooldowns();
+  const models = [];
+  const result = await completeText(env({ GROQ_MODEL_CHAIN: 'openai/gpt-oss-20b' }), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Hello' }],
+  }, { fetchImpl: async (url, options) => { models.push(JSON.parse(options.body).model); return new Response(null, { status: 429 }); } });
+  assert.equal(result.status, 'rate_limited');
+  assert.ok(!models.includes('openai/gpt-oss-20b'));
+});
+
+test('the next turn starts on a sibling while the exhausted model cools down', async () => {
+  resetRateLimitCooldowns();
+  const models = [];
+  const fetchImpl = async (url, options) => {
+    const { model } = JSON.parse(options.body);
+    models.push(model);
+    return model === 'qwen/qwen3.6-27b' ? new Response(null, { status: 429, headers: { 'retry-after': '60' } }) : jsonResponse('ok');
+  };
+  const request = { purpose: 'response_generator', messages: [{ role: 'user', content: 'Hello' }] };
+  await completeText(env({ GROQ_MODEL_CHAIN: CHAIN }), request, { fetchImpl });
+  models.length = 0;
+  const second = await completeText(env({ GROQ_MODEL_CHAIN: CHAIN }), request, { fetchImpl });
+  assert.equal(second.status, 'success');
+  assert.deepEqual(models, ['openai/gpt-oss-120b'], 'the cooled-down primary is not called first');
+  resetRateLimitCooldowns();
 });

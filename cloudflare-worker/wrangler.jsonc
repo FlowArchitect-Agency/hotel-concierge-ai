@@ -22,7 +22,7 @@
     "DEMO_ALLOWED_ORIGIN": "https://flowarchitect-agency.github.io",
     "HOTEL_NAME": "H\u00f4tel Lumi\u00e8re Paris",
     "HOTEL_CITY": "Paris",
-    "LEADS_AIRTABLE_BASE_ID": "app5IahpKr1nBhU8O",
+    "LEADS_AIRTABLE_BASE_ID": "appSXF8ihp1UaXALl",
     "DISCOVERY_BRIEF_PDF_FIELD_ID": "fld9dACylrANXzOS8",
     // Groq enforces its token-per-day budget PER MODEL, not per account, so a
     // sibling model on the same key carries its own full daily budget. Both
@@ -30,6 +30,7 @@
     // valid plans on the production controller prompt and has its own budget.
     "GROQ_MODEL": "qwen/qwen3.6-27b",
     "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b",
+    "GROQ_MODEL_CHAIN": "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b",
 
     // Cross-provider failover to NVIDIA is WIRED BUT DELIBERATELY OFF.
     //
