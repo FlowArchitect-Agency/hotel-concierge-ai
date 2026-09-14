@@ -891,7 +891,7 @@ var iron = new THREE.MeshStandardMaterial({
     camera.position.set(Math.sin(ang) * rad,
                         28 + framed * 0.11 + held * 46 + Math.sin(clock * 0.7) * 2.5,
                         Math.cos(ang) * rad);
-    camera.lookAt(0, framed * (tall ? 0.95 : 0.62) + held * 8, 0);
+    camera.lookAt(0, framed * (tall ? 1.12 : 0.62) + held * 8, 0);
 
     lighthouse.rotation.y = clock * 3.4;
     uplight.intensity = 15000 + Math.sin(clock * 2.2) * 1400;

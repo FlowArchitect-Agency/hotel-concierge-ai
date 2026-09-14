@@ -38,20 +38,19 @@ export let probe = null;
 const host = document.querySelector('.backdrop');
 const runs = Array.prototype.slice.call(document.querySelectorAll(RUN_SEL));
 
-/* A phone gets none of this. The glass needs margins the monument can be seen
-   in, and a 380px screen has none to give -- the pane would end up narrower
-   than the words in it, with a full-screen WebGL layer and a 1.9 MB download
-   paid for a sliver of stone down each side. The sections keep their solid
-   backgrounds and the page reads as it always did. */
 /* A width of zero is not a narrow screen, it is a screen that has not been
    measured yet -- a hidden tab, a pane before layout. Treating it as narrow
    switched the whole layer off permanently on a viewport that was about to
    turn out to be 1400px wide. Fall through to what the display says, and let
    the pointer test carry the actual phone case. */
 const VW = innerWidth || document.documentElement.clientWidth || screen.width || 1280;
-const ROOM = VW >= 760 && !matchMedia('(pointer: coarse)').matches;
+/* Phones get the monument too now: the panes narrow and the gaps between them
+   open up (style.css, max-width 760px), so the Arc is seen between slides
+   rather than in slivers down the sides. They render at a lower pixel ratio
+   and from further back, since a portrait frame is a fraction of the width. */
+const PHONE = VW < 760 || matchMedia('(pointer: coarse)').matches;
 
-if (host && runs.length && ROOM &&
+if (host && runs.length &&
     !matchMedia('(prefers-reduced-motion: reduce)').matches) start();
 
 function start() {
@@ -64,7 +63,7 @@ function start() {
   } catch (e) { return; }
   host.insertBefore(canvas, host.firstChild);
 
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, PHONE ? 1.5 : 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
@@ -339,7 +338,9 @@ function start() {
     const A = STOPS[i], B = STOPS[i + 1];
     const az = lerp(A.az, B.az, k),
           el = lerp(A.el, B.el, k),
-          ds = lerp(A.dist, B.dist, k) * radius;
+          /* a portrait frame is a fraction of the width: stand back so the
+             whole arch stays in it (landscape frames are unchanged) */
+          ds = lerp(A.dist, B.dist, k) * radius * (camera.aspect < 0.8 ? 2.3 : 1);
 
     /* The turn is the camera's, not the model's: spinning the pivot instead
        would take the avenues and the traffic round with it, and the place
@@ -361,7 +362,7 @@ function start() {
   function resize() {
     const w = host.clientWidth || innerWidth || 1280;
     const h = host.clientHeight || innerHeight || 800;
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, PHONE ? 1.5 : 2));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
