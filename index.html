@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=deck-r24">
+    <link rel="stylesheet" href="style.css?v=deck-r25">
     <link rel="stylesheet" href="eiffel-hero.css?v=4">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
@@ -463,6 +463,14 @@
   </div>
 </section>
 
+<!-- The Arc run. arc-run.js pins this window and moves the slides inside it
+     at a third of the scroll, so the run takes three times the scrolling.
+     Without the script it is an inert wrapper and the sections scroll as
+     normal. -->
+<div class="arc-run">
+<div class="arc-run-pin">
+<div class="arc-run-track">
+
 <!-- Story chapter 03: the operational system continues overnight. -->
 <section class="night-operations" id="night-operations">
   <div class="container">
@@ -676,6 +684,10 @@
     </div>
   </div>
 </section>
+
+</div><!-- /.arc-run-track -->
+</div><!-- /.arc-run-pin -->
+</div><!-- /.arc-run -->
 
 <!-- Final conversion -->
 <section class="final-cta" id="discovery">
@@ -931,6 +943,7 @@
       }
     </script>
     <script src="script.js?v=conciergeflow-v2-product-proof-r5"></script>
+    <script src="arc-run.js?v=1" defer></script>
     <script src="motion.js?v=28" defer></script>
 </body>
 </html>

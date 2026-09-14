@@ -972,7 +972,8 @@ body > footer { position: relative; z-index: 1; }
    the Arc with its own background hidden and its type unreadable. The ID rules
    above still win for `position` on the two deck sections, so this only picks
    up the ones that had no position of their own. */
-body > section {
+body > section,
+.arc-run-track > section {
   position: relative;
   z-index: 1;
 }
@@ -1159,3 +1160,11 @@ html.has-backdrop #demo { overflow: visible; }
     box-shadow: 0 18px 44px rgba(40, 44, 52, .2), 0 1px 0 rgba(255, 255, 255, .5) inset;
   }
 }
+
+/* ── The Arc run, slowed ───────────────────────────────────────────────────
+   arc-run.js adds .is-slow, sets the run's height and moves the track. The
+   pin clips rather than scrolls (overflow: clip), so focusing the demo input
+   can never scroll the window's contents out from under the transform. */
+.arc-run { position: relative; z-index: 1; overflow-anchor: none; }
+.arc-run.is-slow > .arc-run-pin { position: sticky; top: 0; height: 100vh; overflow: clip; }
+.arc-run.is-slow .arc-run-track { will-change: transform; }
