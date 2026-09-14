@@ -142,7 +142,7 @@ function renderRecommendations(recommendations, animate = true) {
     const image = document.createElement('img');
     image.className = 'recommendation-image';
     image.src = validExternalUrl(recommendation.image_url) || FALLBACK_CARD_IMAGE;
-    image.alt = `${recommendation.name} dining atmosphere`;
+    image.alt = `${recommendation.name}`;
     image.loading = 'lazy';
     image.addEventListener('error', () => { image.src = FALLBACK_CARD_IMAGE; }, { once: true });
     imageWrap.appendChild(image);
