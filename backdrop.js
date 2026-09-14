@@ -221,7 +221,7 @@ function start() {
      the page instead of restarting at every heading. Everything below is a
      pure function of that number: no timers, no easing state, no memory --
      scroll back up and it winds back exactly the way it came. */
-  let p = 0, eased = 0, raf = null, seen = false, clock = 0;
+  let p = 0, eased = 0, raf = null, seen = false, clock = 0, entry = 0;
 
   /* A full turn, and it starts overhead. Straight down on the Etoile is the
      one view that explains the place -- twelve avenues and a ring of light --
@@ -289,6 +289,10 @@ function start() {
       if (isFinite(next)) p = Math.min(Math.max(next, 0), 1);
     }
 
+    /* How far the run's first section has come up the screen: 0 as its top
+       enters at the bottom, 1 once it has risen most of a screen. */
+    if (isFinite(firstTop)) entry = Math.min(1, Math.max(0, (vh - firstTop) / (vh * 0.9)));
+
     /* Only paint while some part of the run is actually on screen. */
     const on = firstTop < vh && lastBottom > 0;
     host.classList.toggle('is-live', on);
@@ -315,7 +319,11 @@ function start() {
     clock += 0.016;
 
     /* The stone gathers over the first fifth of the run and holds. */
-    uAssemble.value = Math.min(1, eased / 0.22);
+    /* It used to gather over the first fifth of the run, which left the sky
+       behind the first slide almost empty just after the cathedral. It now
+       forms as the run comes up the screen, and is whole by the time the
+       first slide is in place. */
+    uAssemble.value = Math.min(1, Math.max(entry, eased / 0.22));
 
     /* Between waypoints, eased so the camera settles into each attitude
        rather than sweeping through it at constant speed. */

@@ -1032,10 +1032,6 @@ restoreConversation();
     const reply = replyBubble?.querySelector('p');
     if (!guest || !reply || !think || !prepared) return;
 
-    // The story column beside the preview follows the same loop.
-    const story = document.querySelector('#hero .hero-story');
-    const stage = (n) => { if (story) story.dataset.stage = String(n); };
-
     const guestText = guest.textContent;
     const replyText = reply.textContent;
     const steps = [guestBubble, think, replyBubble, prepared];
@@ -1073,32 +1069,27 @@ restoreConversation();
       for (;;) {
         await gate();
         steps.forEach((el) => el.classList.remove('is-shown'));
-        stage(0);
         guest.textContent = '';
         reply.textContent = '';
         await sleep(850);
 
         await gate();
         guestBubble.classList.add('is-shown');
-        stage(1);
         await type(guest, guestText, 26);
         await sleep(600);
 
         await gate();
         think.classList.add('is-shown');
-        stage(2);
         await sleep(1500);
         think.classList.remove('is-shown');
 
         await gate();
         replyBubble.classList.add('is-shown');
-        stage(3);
         await type(reply, replyText, 20);
         await sleep(500);
 
         await gate();
         prepared.classList.add('is-shown');
-        stage(4);
         await sleep(6500);
       }
     })();
@@ -1119,5 +1110,45 @@ restoreConversation();
     document.addEventListener('visibilitychange', sync);
   } catch (error) {
     console.warn('hero conversation skipped:', error);
+  }
+})();
+
+/* ---------------------------------------------------------------------------
+   Hero story column: the row that is open follows the scroll. Progress is how
+   far the preview has travelled up the screen, from its top reaching 85% of
+   the viewport to its bottom reaching 40% -- the stretch in which it is being
+   read -- split evenly across the four rows.
+   ------------------------------------------------------------------------ */
+(function heroStory() {
+  try {
+    const story = document.querySelector('#hero .hero-story');
+    const preview = document.querySelector('#hero .hero-product');
+    if (!story || !preview) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const rows = [...story.querySelectorAll('.hero-story-steps li')];
+    if (!rows.length) return;
+    story.classList.add('is-driven');
+
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const vh = window.innerHeight || 0;
+      if (!vh) return;
+      const r = preview.getBoundingClientRect();
+      const start = vh * 0.85;
+      const travel = Math.max(1, r.height + start - vh * 0.4);
+      const t = Math.min(0.999, Math.max(0, (start - r.top) / travel));
+      const active = Math.floor(t * rows.length);
+      rows.forEach((row, i) => {
+        row.classList.toggle('is-active', i === active);
+        row.classList.toggle('is-past', i < active);
+      });
+    };
+    const request = () => { if (!frame) frame = requestAnimationFrame(update); };
+    window.addEventListener('scroll', request, { passive: true });
+    window.addEventListener('resize', request, { passive: true });
+    update();
+  } catch (error) {
+    console.warn('hero story skipped:', error);
   }
 })();
