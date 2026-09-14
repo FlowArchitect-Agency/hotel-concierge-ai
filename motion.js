@@ -215,7 +215,12 @@
   function fitDeck() {
     var vh = window.innerHeight;
     for (var i = 0; i < DECK.length; i++) {
-      DECK[i].style.top = Math.min(0, vh - DECK[i].offsetHeight) + 'px';
+      /* Only a section that is actually sticky. On the positioned-but-not-pinned
+         sections of the monument run, a negative top is a relative offset: it
+         pulled each one up by its own overflow, so the tallest (implementation)
+         slid into the pane above it and the gaps between panes went uneven. */
+      var sticky = getComputedStyle(DECK[i]).position === 'sticky';
+      DECK[i].style.top = sticky ? Math.min(0, vh - DECK[i].offsetHeight) + 'px' : '';
     }
   }
 
