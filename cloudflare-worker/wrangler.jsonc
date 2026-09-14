@@ -31,6 +31,9 @@
     "GROQ_MODEL": "qwen/qwen3.6-27b",
     "GROQ_FALLBACK_MODEL": "qwen/qwen3.8-27b",
     "GROQ_MODEL_CHAIN": "openai/gpt-oss-120b,qwen/qwen3.8-27b",
+    // Curated Paris directory answers discovery requests first; ScrapingBee
+    // runs only when nothing in it fits (src/tools/external-search/directory.js).
+    "PARIS_DIRECTORY": "on",
 
     // Cross-provider failover to NVIDIA is WIRED BUT DELIBERATELY OFF.
     //

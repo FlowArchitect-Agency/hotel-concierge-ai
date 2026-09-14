@@ -1,6 +1,7 @@
 import { parseExternalResults } from '../../concierge.js';
 import { toolResult } from '../schemas.js';
 import { searchScrapingBee } from './providers/scrapingbee.js';
+import { searchParisDirectory } from './directory.js';
 
 const PROVIDERS = Object.freeze({ scrapingbee: searchScrapingBee });
 
@@ -65,6 +66,21 @@ export async function runExternalSearch({ input, env, context = {}, fetchImpl = 
   const primary = clean(env?.EXTERNAL_SEARCH_PROVIDER || 'scrapingbee', 48).toLowerCase();
   const fallback = clean(env?.EXTERNAL_SEARCH_FALLBACK_PROVIDER, 48).toLowerCase();
   const classification = asClassification(input, context);
+  // The curated directory answers first: instant, free, and no scraped page
+  // titles posing as venue names. Live search runs only when nothing fits.
+  if (clean(env?.PARIS_DIRECTORY, 8).toLowerCase() === 'on') {
+    const local = searchParisDirectory({
+      query: [input.query, context.classification?.rawMessage].filter(Boolean).join(' '),
+      searchQuery: [classification.cuisine?.label, classification.searchQuery].filter(Boolean).join(' '),
+      location: input.location || context.location || '',
+    });
+    if (local.length) {
+      return toolResult('external_search', 'success', {
+        data: { results: local.map((item) => normalize(item, 'paris_directory', classification.category)) },
+        meta: { provider_used: 'paris_directory', fallback_used: false },
+      });
+    }
+  }
   const query = buildQuery(input, { ...context, classification });
   const selected = { ...PROVIDERS, ...(providers || {}) };
   const invoke = async (name) => {
