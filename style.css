@@ -1068,60 +1068,54 @@ html.has-backdrop #demo { overflow: visible; }
 }
 @media (prefers-reduced-motion: reduce) { #human-handoff::before { display: none; } }
 
-
 /* ── The story beside the hero preview ─────────────────────────────────────
-   The preview takes the wide column; this fills the other one with what the
-   preview is showing, step by step, lit in time with its playback. */
+   An editorial index rather than a progress widget: numbered rows on hairline
+   rules. The row the reader has scrolled to opens and takes the ink; rows
+   already passed stay legible; rows ahead wait in grey. Driven by scroll
+   position (script.js), so it moves exactly as fast as the reader does. */
 .hero-story {
   align-self: center;
-  padding: clamp(1rem, 3vw, 2.5rem) 0 clamp(1rem, 3vw, 2.5rem) clamp(0rem, 1vw, 1rem);
+  padding: clamp(1rem, 3vw, 2.5rem) 0 clamp(1rem, 3vw, 2.5rem) clamp(0rem, 1.5vw, 1.25rem);
   color: var(--lum-ink, #1f2a24);
 }
 /* Clear of the dusk run the preview overlaps, so dark type never sits on it. */
 .hero-v2.has-scene .hero-story { margin-top: clamp(4rem, 12vh, 9rem); }
-.hero-story-eyebrow { margin: 0 0 .9rem; color: #93713f; font-size: .66rem; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
-.hero-story-title { margin: 0 0 clamp(1.6rem, 3vw, 2.4rem); max-width: 17ch;
-  font-family: var(--serif); font-weight: 420; font-size: clamp(1.9rem, 2.9vw, 2.9rem); line-height: 1.02; letter-spacing: -.035em; }
-.hero-story-steps { position: relative; margin: 0; padding: 0; list-style: none; }
-.hero-story-steps::before, .hero-story-steps::after {
-  content: ""; position: absolute; left: 7px; top: 10px; width: 2px; border-radius: 2px; }
-.hero-story-steps::before { bottom: 18px; background: rgba(62, 76, 66, .14); }
-.hero-story-steps::after { height: 0; background: linear-gradient(#b08a4e, #93713f);
-  transition: height 700ms cubic-bezier(.22, 1, .36, 1); }
-.hero-story[data-stage="1"] .hero-story-steps::after { height: 8%; }
-.hero-story[data-stage="2"] .hero-story-steps::after { height: 35%; }
-.hero-story[data-stage="3"] .hero-story-steps::after { height: 62%; }
-.hero-story[data-stage="4"] .hero-story-steps::after { height: calc(100% - 28px); }
+.hero-story-eyebrow { margin: 0 0 1rem; color: #93713f; font-size: .64rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
+.hero-story-title { margin: 0 0 clamp(1.8rem, 3.2vw, 2.6rem); max-width: 16ch;
+  font-family: var(--serif); font-weight: 400; font-size: clamp(2rem, 3vw, 3rem); line-height: 1; letter-spacing: -.04em; }
 
-.hero-story-steps li { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 1rem;
-  padding: 0 0 clamp(1.1rem, 2vw, 1.5rem); opacity: .38; transform: translateX(-4px);
-  transition: opacity 500ms ease, transform 600ms cubic-bezier(.22, 1, .36, 1); }
-.hero-story-dot { position: relative; z-index: 1; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%;
-  background: var(--v2-paper, #f7f5f0); box-shadow: inset 0 0 0 2px rgba(62, 76, 66, .28);
-  transition: box-shadow 400ms ease 120ms, background 400ms ease 120ms; }
-.hero-story-steps strong { display: block; font-size: .98rem; font-weight: 650; line-height: 1.3; }
-.hero-story-steps p { margin: .25rem 0 0; color: var(--lum-muted, #5f6660); font-size: .88rem; line-height: 1.5; max-width: 34ch; }
+.hero-story-steps { margin: 0; padding: 0; list-style: none; counter-reset: story;
+  border-top: 1px solid rgba(31, 42, 36, .12); }
+.hero-story-steps li { position: relative; display: grid; grid-template-columns: 3.4rem 1fr; align-items: baseline;
+  padding: 1.05rem 0; border-bottom: 1px solid rgba(31, 42, 36, .12); }
+.hero-story-steps li::before { counter-increment: story; content: counter(story, decimal-leading-zero);
+  font-family: var(--serif); font-size: 1.35rem; font-weight: 400; line-height: 1; letter-spacing: -.02em;
+  color: rgba(31, 42, 36, .22); transition: color 500ms ease; }
+/* the rule under the open row draws itself in brass */
+.hero-story-steps li::after { content: ""; position: absolute; left: 0; bottom: -1px; height: 1px; width: 0;
+  background: #93713f; transition: width 900ms cubic-bezier(.22, 1, .36, 1); }
+.hero-story-steps strong { display: block; font-size: 1rem; font-weight: 560; line-height: 1.3; letter-spacing: -.005em;
+  color: rgba(31, 42, 36, .38); transition: color 500ms ease; }
+.hero-story-steps p { margin: 0; max-width: 36ch; color: var(--lum-muted, #5f6660); font-size: .9rem; line-height: 1.55;
+  max-height: 0; opacity: 0; overflow: hidden;
+  transition: max-height 600ms cubic-bezier(.22, 1, .36, 1), opacity 450ms ease, margin 600ms cubic-bezier(.22, 1, .36, 1); }
 
-/* reached steps stay lit; the current one gets a brass ring */
-.hero-story[data-stage="1"] li[data-step="1"],
-.hero-story[data-stage="2"] li:is([data-step="1"], [data-step="2"]),
-.hero-story[data-stage="3"] li:is([data-step="1"], [data-step="2"], [data-step="3"]),
-.hero-story[data-stage="4"] li { opacity: 1; transform: none; }
-.hero-story[data-stage="2"] li[data-step="1"] .hero-story-dot,
-.hero-story[data-stage="3"] li:is([data-step="1"], [data-step="2"]) .hero-story-dot,
-.hero-story[data-stage="4"] li:is([data-step="1"], [data-step="2"], [data-step="3"]) .hero-story-dot {
-  background: #93713f; box-shadow: none; }
-.hero-story[data-stage="1"] li[data-step="1"] .hero-story-dot,
-.hero-story[data-stage="2"] li[data-step="2"] .hero-story-dot,
-.hero-story[data-stage="3"] li[data-step="3"] .hero-story-dot,
-.hero-story[data-stage="4"] li[data-step="4"] .hero-story-dot {
-  background: #b08a4e; box-shadow: 0 0 0 5px rgba(176, 138, 78, .18); }
-.hero-story-foot { margin: .4rem 0 0 calc(16px + 1rem); color: #93713f; font-size: .8rem; font-weight: 600; letter-spacing: .01em; }
+.hero-story-steps li.is-past::before { color: rgba(31, 42, 36, .5); }
+.hero-story-steps li.is-past strong { color: rgba(31, 42, 36, .72); }
+.hero-story-steps li.is-active::before { color: #93713f; }
+.hero-story-steps li.is-active strong { color: var(--lum-ink, #1f2a24); }
+.hero-story-steps li.is-active p { max-height: 6rem; opacity: 1; margin-top: .4rem; }
+.hero-story-steps li.is-active::after { width: 100%; }
+
+.hero-story-foot { margin: 1.3rem 0 0; color: rgba(31, 42, 36, .55); font-size: .78rem; letter-spacing: .01em; }
 
 @media (max-width: 900px) {
   .hero-v2.has-scene .hero-story { margin-top: 2.5rem; }
 }
+/* Without motion, or without the script, every row is simply open. */
 @media (prefers-reduced-motion: reduce) {
-  .hero-story-steps li { opacity: 1; transform: none; }
-  .hero-story-steps::after { height: calc(100% - 28px); }
+  .hero-story-steps strong { color: var(--lum-ink, #1f2a24); }
+  .hero-story-steps p { max-height: none; opacity: 1; margin-top: .4rem; transition: none; }
 }
+.hero-story:not(.is-driven) .hero-story-steps strong { color: var(--lum-ink, #1f2a24); }
+.hero-story:not(.is-driven) .hero-story-steps p { max-height: none; opacity: 1; margin-top: .4rem; }
