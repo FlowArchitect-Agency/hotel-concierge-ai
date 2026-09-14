@@ -875,7 +875,12 @@ var iron = new THREE.MeshStandardMaterial({
        capture, and they were all behind the camera. */
     var ang = Math.PI - 0.34 + eased * 0.64 + Math.sin(clock * 0.25) * 0.03;
     var framed = Math.max(camH, C.minFrame);
-    var rad = 150 + framed * 1.22 + held * 55;
+    /* A phone is a tall, narrow window: at desktop distance the tower filled
+       it edge to edge and lost its spire, and the headline sat on the lattice.
+       Stand further back, and aim above the tower so it settles into the
+       lower half, under the copy. */
+    var tall = camera.aspect < 0.8;
+    var rad = (150 + framed * 1.22 + held * 55) * (tall ? 1.75 : 1);
     /* Low, and looking up the tower. Standing off at height turned the
        capture into an island in a flat sea, because a high camera looking
        down puts the horizon near the top of the frame and everything under
@@ -886,7 +891,7 @@ var iron = new THREE.MeshStandardMaterial({
     camera.position.set(Math.sin(ang) * rad,
                         28 + framed * 0.11 + held * 46 + Math.sin(clock * 0.7) * 2.5,
                         Math.cos(ang) * rad);
-    camera.lookAt(0, framed * 0.62 + held * 8, 0);
+    camera.lookAt(0, framed * (tall ? 0.95 : 0.62) + held * 8, 0);
 
     lighthouse.rotation.y = clock * 3.4;
     uplight.intensity = 15000 + Math.sin(clock * 2.2) * 1400;

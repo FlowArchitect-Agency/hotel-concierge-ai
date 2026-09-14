@@ -146,3 +146,16 @@
   .hero--scene.is-staged .hero-sub,
   .hero--scene.is-staged .hero-ctas { animation: none; opacity: 1; transform: none; }
 }
+
+/* ── Phones ───────────────────────────────────────────────────────────────
+   800vh of pinned scroll is a long walk on a desktop and an endless one on a
+   phone, where a screen is short and thumbs scroll far. The run is cut to
+   a length a thumb gets through; the copy sits at the top over a scrim, and
+   the readout moves to the lower left where it does not sit on the tower. */
+@media (max-width: 760px) {
+  .hero--scene { height: var(--eiffel-run-phone, 360vh); }
+  .hero-scene-pin::before {
+    background: linear-gradient(180deg, rgba(10, 16, 34, .82) 0%, rgba(10, 16, 34, .55) 38%, rgba(10, 16, 34, 0) 62%);
+  }
+  .eiffel-readout { left: 1.25rem; right: auto; bottom: 1.8rem; width: 9.5rem; }
+}

@@ -12,8 +12,8 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=deck-r22">
-    <link rel="stylesheet" href="eiffel-hero.css?v=3">
+    <link rel="stylesheet" href="style.css?v=deck-r23">
+    <link rel="stylesheet" href="eiffel-hero.css?v=4">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
 <body data-page="index">
@@ -861,12 +861,12 @@
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
     } }
     </script>
-    <script type="module" src="monument.js?v=nd-read-r2"></script>
+    <script type="module" src="monument.js?v=nd-read-r3"></script>
     <script type="module" src="backdrop.js?v=17"></script>
     <script type="module">
       // Mounted on the 800vh run, not on #hero: the module reads scroll progress
       // from the element it is given, and #hero is taller than the run itself.
-      import { mount } from './eiffel-hero.js?v=28';
+      import { mount } from './eiffel-hero.js?v=29';
       const scene = document.getElementById('hero-scene');
       if (scene) {
         // The copy is written by the build rather than by a timer, so the two
@@ -894,7 +894,9 @@
 
         // With no JS, or with reduced motion (where the pin collapses and there
         // is no scroll to sync to), the resting state in CSS is fully visible.
-        if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        // On a phone the hero copy is simply there: the run is short and the
+        // first screen should never be an empty sky waiting for a headline.
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches && !matchMedia('(max-width: 760px)').matches) {
           scene.classList.add('is-sync');
         }
 

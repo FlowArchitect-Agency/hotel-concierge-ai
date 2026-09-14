@@ -1119,3 +1119,18 @@ html.has-backdrop #demo { overflow: visible; }
 }
 .hero-story:not(.is-driven) .hero-story-steps strong { color: var(--lum-ink, #1f2a24); }
 .hero-story:not(.is-driven) .hero-story-steps p { max-height: none; opacity: 1; margin-top: .4rem; }
+
+/* ── Phones: hero and cathedral ──────────────────────────────────────────── */
+@media (max-width: 760px) {
+  /* copy at the top of the screen, the tower under it */
+  .hero-scene-pin > .hero-v2-container { align-items: flex-start; padding-top: 5.6rem; }
+  .hero-v2 h1 { font-size: clamp(2.5rem, 11vw, 3.2rem); }
+  .hero-v2 .hero-sub { font-size: .98rem; margin: 1.1rem 0 1.5rem; }
+  .hero-v2-ctas { flex-wrap: wrap; }
+  /* On a phone the hero copy ends at the bottom of the run, so a preview
+     pulled up over the run lands on the buttons. It starts below instead. */
+  .hero-v2.has-scene .hero-product { margin-top: 2.25rem; }
+  .hero-v2.has-scene .hero-story { margin-top: 2.25rem; }
+  /* 480vh of turning cathedral is most of a minute of thumb on a phone */
+  .monument-stage { height: 320vh; }
+}
