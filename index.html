@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=deck-r25">
+    <link rel="stylesheet" href="style.css?v=deck-r26">
     <link rel="stylesheet" href="eiffel-hero.css?v=4">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
@@ -172,6 +172,12 @@
     </div>
   </div>
 
+  <!-- Held like the Arc run is slowed (arc-run.js): the preview and its story
+       pin under the navigation for about a screen and a half of scroll, and the
+       story's rows advance through that hold. -->
+  <div class="arc-run hero-slow" data-slowdown="3" data-hold="1.6" data-under-nav>
+  <div class="arc-run-pin">
+  <div class="arc-run-track">
   <div class="container hero-v2-container">
     <div class="hero-stage">
     <div class="hero-product" aria-label="ConciergeFlow product interface preview">
@@ -280,6 +286,9 @@
     </aside>
     </div>
   </div>
+  </div><!-- /.arc-run-track -->
+  </div><!-- /.arc-run-pin -->
+  </div><!-- /.arc-run.hero-slow -->
 </section>
 
 <!-- The first hand-off into the forthcoming guest-journey story. -->
@@ -942,8 +951,8 @@
         }
       }
     </script>
-    <script src="script.js?v=conciergeflow-v2-product-proof-r5"></script>
-    <script src="arc-run.js?v=1" defer></script>
-    <script src="motion.js?v=28" defer></script>
+    <script src="script.js?v=conciergeflow-v2-product-proof-r6"></script>
+    <script src="arc-run.js?v=3" defer></script>
+    <script src="motion.js?v=29" defer></script>
 </body>
 </html>

@@ -754,7 +754,7 @@ button .ico, a .ico { pointer-events: none; }
 /* The preview rises over the last of the dusk run instead of starting below
    it: with a gap, the moment the pin released was a band of empty paper. */
 .hero-v2.has-scene { padding-bottom: clamp(2.5rem, 5vw, 4.5rem); }
-#hero > .hero-v2-container { position: relative; z-index: 3; }
+#hero > .hero-v2-container, #hero > .hero-slow { position: relative; z-index: 3; }
 .hero-v2.has-scene .hero-product { margin-top: calc(-1 * clamp(7rem, 16vh, 11rem)); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1168,3 +1168,13 @@ html.has-backdrop #demo { overflow: visible; }
 .arc-run { position: relative; z-index: 1; overflow-anchor: none; }
 .arc-run.is-slow > .arc-run-pin { position: sticky; top: 0; height: 100vh; overflow: clip; }
 .arc-run.is-slow .arc-run-track { will-change: transform; }
+
+/* The hero preview's slowed run. The card still rises over the end of the
+   dusk run; the overlap now belongs to the wrapper, because the pinned window
+   clips anything pulled above its own top. Phones keep their plain gap. */
+#hero > .hero-slow.is-slow { margin-top: calc(-1 * clamp(7rem, 16vh, 11rem)); }
+#hero > .hero-slow.is-slow .hero-product { margin-top: 0; }
+@media (max-width: 760px) {
+  #hero > .hero-slow.is-slow { margin-top: 0; }
+  #hero > .hero-slow.is-slow .hero-product { margin-top: 2.25rem; }
+}

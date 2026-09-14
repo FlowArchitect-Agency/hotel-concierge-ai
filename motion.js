@@ -280,7 +280,17 @@
          which made every section read as fully covered from the moment it
          appeared, and left the whole deck permanently shrunk and dimmed.
          offsetTop is layout position and ignores the sticky offset. */
-      out.push(clamp(1 - (DECK[i + 1].offsetTop - y) / (vh || 1)));
+      /* A section inside a slowed run (arc-run.js) sits in a pinned window
+         and is moved by transform, so its offsetTop is relative to that
+         window and says nothing about the page. Its on-screen position is
+         what offsetTop - y used to be for it, so read that instead and the
+         dimming runs exactly as it did before the run was slowed. */
+      var next = DECK[i + 1];
+      if (next.closest('.arc-run-track')) {
+        out.push(clamp(1 - next.getBoundingClientRect().top / (vh || 1)));
+        continue;
+      }
+      out.push(clamp(1 - (next.offsetTop - y) / (vh || 1)));
     }
     return out;
   }

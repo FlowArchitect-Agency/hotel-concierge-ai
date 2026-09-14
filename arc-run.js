@@ -1,4 +1,4 @@
-/* arc-run.js -- the Arc de Triomphe run, at a third of scroll speed.
+/* arc-run.js -- slowed runs: the hero preview and the Arc de Triomphe run.
 
    The glass slides of the run (night operations through control) used to move
    one pixel per pixel of scroll, so the monument run was over in a few flicks.
@@ -10,11 +10,17 @@
    Without script, or with reduced motion, none of this applies: the wrapper is
    inert and the sections scroll normally. */
 (function () {
-  var SLOWDOWN = 3;
-
-  var run = document.querySelector('.arc-run');
-  if (!run) return;
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var runs = document.querySelectorAll('.arc-run');
+  for (var i = 0; i < runs.length; i++) slow(runs[i]);
+
+function slow(run) {
+  var SLOWDOWN = parseFloat(run.getAttribute('data-slowdown')) || 3;
+  /* A run barely taller than the screen has almost nothing to slow, so it can
+     also ask to be held: at least HOLD screens of scroll while it is pinned. */
+  var HOLD = parseFloat(run.getAttribute('data-hold')) || 0;
+  /* Pin below the fixed navigation rather than under it. */
+  var UNDER_NAV = run.hasAttribute('data-under-nav');
   var pin = run.querySelector('.arc-run-pin');
   var track = run.querySelector('.arc-run-track');
   if (!pin || !track) return;
@@ -22,27 +28,35 @@
   run.classList.add('is-slow');
 
   var natural = 0;      // the run's own height, unslowed
-  var viewH = 0;
+  var viewH = 0;        // the pinned window's height
+  var offsetTop = 0;    // where the window pins, from the top of the screen
   var lastW = 0;
 
   function travel() { return Math.max(0, natural - viewH); }
+  function span() { return Math.max(travel() * SLOWDOWN, HOLD * viewH); }
 
   function update() {
     /* Content that grows after the first measure (fonts, the demo chat, a
        reveal) would leave the last slide stranded short of the end. */
     if (track.scrollHeight !== natural) { measure(); return; }
     var r = run.getBoundingClientRect();
-    var span = travel() * SLOWDOWN;
-    var s = Math.min(Math.max(-r.top, 0), span);
-    track.style.transform = 'translate3d(0,' + (-s / SLOWDOWN).toFixed(2) + 'px,0)';
+    var total = span();
+    var s = Math.min(Math.max(offsetTop - r.top, 0), total);
+    var moved = total > 0 ? travel() * (s / total) : 0;
+    track.style.transform = 'translate3d(0,' + (-moved).toFixed(2) + 'px,0)';
+    run.style.setProperty('--run-progress', total > 0 ? (s / total).toFixed(4) : '0');
   }
 
   function measure() {
-    viewH = window.innerHeight || document.documentElement.clientHeight || 0;
-    if (!viewH) return;
+    var screenH = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (!screenH) return;
+    var nav = UNDER_NAV && document.querySelector('.site-nav, #navbar');
+    offsetTop = nav ? Math.round(nav.getBoundingClientRect().height) : 0;
+    viewH = screenH - offsetTop;
     natural = track.scrollHeight;
+    pin.style.top = offsetTop + 'px';
     pin.style.height = viewH + 'px';
-    run.style.height = (travel() * SLOWDOWN + viewH) + 'px';
+    run.style.height = (span() + viewH) + 'px';
     update();
   }
 
@@ -52,7 +66,8 @@
     var runTop = run.getBoundingClientRect().top + window.pageYOffset;
     var nav = document.querySelector('.site-nav, #navbar');
     var navH = nav ? nav.getBoundingClientRect().height : 0;
-    return runTop + Math.max(0, offset - navH) * SLOWDOWN;
+    var t = travel();
+    return runTop - offsetTop + (t > 0 ? Math.min(Math.max(0, offset - navH), t) / t * span() : 0);
   }
 
   function goTo(id, smooth) {
@@ -104,4 +119,5 @@
       setTimeout(function () { if (!touched) { measure(); goTo(id, false); } }, ms);
     });
   });
+}
 })();

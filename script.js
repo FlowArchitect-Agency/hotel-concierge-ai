@@ -1134,10 +1134,18 @@ restoreConversation();
       frame = 0;
       const vh = window.innerHeight || 0;
       if (!vh) return;
-      const r = preview.getBoundingClientRect();
-      const start = vh * 0.85;
-      const travel = Math.max(1, r.height + start - vh * 0.4);
-      const t = Math.min(0.999, Math.max(0, (start - r.top) / travel));
+      // While the preview is held (arc-run.js), the rows follow the hold itself;
+      // otherwise, how far the preview has travelled up the screen.
+      const held = preview.closest('.arc-run.is-slow');
+      let t;
+      if (held) {
+        t = Math.min(0.999, Math.max(0, parseFloat(getComputedStyle(held).getPropertyValue('--run-progress')) || 0));
+      } else {
+        const r = preview.getBoundingClientRect();
+        const start = vh * 0.85;
+        const travel = Math.max(1, r.height + start - vh * 0.4);
+        t = Math.min(0.999, Math.max(0, (start - r.top) / travel));
+      }
       const active = Math.floor(t * rows.length);
       rows.forEach((row, i) => {
         row.classList.toggle('is-active', i === active);
