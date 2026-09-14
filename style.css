@@ -1047,3 +1047,23 @@ html.has-backdrop #demo { overflow: visible; }
 @media (prefers-reduced-motion: reduce) {
   .backdrop { display: none; }
 }
+
+/* Notre-Dame into chapter 02. The paper section used to arrive as a hard-edged
+   slab across the cathedral. Its top now dissolves: a tall veil in the paper
+   colour runs up over the end of the monument run, so the stone fades into the
+   page instead of being cut by it. */
+#human-handoff { position: relative; z-index: 2; }
+#human-handoff::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 100%;
+  height: 42vh;
+  pointer-events: none;
+  background: linear-gradient(to bottom,
+    rgba(247, 245, 240, 0) 0%,
+    rgba(247, 245, 240, .18) 30%,
+    rgba(247, 245, 240, .62) 65%,
+    var(--v2-paper, #f7f5f0) 100%);
+}
+@media (prefers-reduced-motion: reduce) { #human-handoff::before { display: none; } }
