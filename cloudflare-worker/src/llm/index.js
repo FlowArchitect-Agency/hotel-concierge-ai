@@ -110,6 +110,7 @@ function sleep(ms) {
 // generous (30s default), so doubling it would risk far worse latency for
 // what is more likely a genuine provider slowdown than a clearable window.
 const RATE_LIMIT_RETRY_BASE_MS = 350;
+const RATE_LIMIT_RETRY_MAX_MS = 4000;
 
 // Reasoning models write their chain-of-thought as plain text BEFORE the JSON
 // object. The callers' budgets here are 180-350 tokens, sized for Qwen with
@@ -145,9 +146,19 @@ export async function complete(env, rawRequest, { fetchImpl } = {}) {
       continue;
     }
     const candidateRequest = { ...request, model: candidate.model, max_tokens: candidateMaxTokens(candidate, request) };
-    let result = validateStructured(await providerComplete(candidate, candidateRequest, fetchImpl), request);
+    const raw = await providerComplete(candidate, candidateRequest, fetchImpl);
+    let result = validateStructured(raw, request);
     if (result.status === 'rate_limited') {
-      await sleep(RATE_LIMIT_RETRY_BASE_MS + Math.floor(Math.random() * RATE_LIMIT_RETRY_BASE_MS));
+      // Honour the provider's retry-after when it gives one, capped so a guest
+      // never waits more than a few seconds. The old fixed ~0.5 s pause could
+      // not outlast Groq's per-MINUTE token window (8,000 tokens on this
+      // model), so the one retry landed in the same window, the turn came back
+      // empty, and the guest was handed the last-resort fallback sentence.
+      const hinted = Number(raw?.retry_after_ms);
+      const waitMs = Number.isFinite(hinted) && hinted > 0
+        ? Math.min(hinted + 150, RATE_LIMIT_RETRY_MAX_MS)
+        : RATE_LIMIT_RETRY_BASE_MS + Math.floor(Math.random() * RATE_LIMIT_RETRY_BASE_MS);
+      await sleep(waitMs);
       result = validateStructured(await providerComplete(candidate, candidateRequest, fetchImpl), request);
     }
     last = normalizedResult({ ...result, attempts: index + 1, fallback_used: index > 0 });

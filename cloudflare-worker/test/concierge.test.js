@@ -2462,3 +2462,21 @@ test('An acronym-named service is identifiable and skips the category card', asy
     globalThis.fetch = originalFetch;
   }
 });
+
+// A live demo showed "...curate a personalized itinerary for you upon ar":
+// the reply was cut at a hard 360 characters regardless of words.
+test('a long model reply is shortened at sentence or word boundaries, never mid-word', () => {
+  const classification = classifyRequest('What do tourists usually do in Paris?');
+  const longSentence = 'Paris is filled with iconic experiences, from strolling along the Seine and visiting the Eiffel Tower to exploring the Louvre, wandering through Montmartre, browsing the bouquinistes along the quays, and enjoying a long lunch on a terrace near the Champs-Elysees before an evening cruise past the illuminated monuments and a late dinner in the Marais with friends';
+  for (const reply of [
+    `${longSentence}.`,
+    'Paris is wonderful. Since I cannot provide specific booking links, our concierge team would be delighted to curate a personalized itinerary for you upon arrival, with tastings, tours and a private evening cruise.',
+  ]) {
+    const result = enforceContract(
+      { reply, intent: 'faq', requests: [] },
+      { language: 'en', classification: { ...classification, hasIntent: false }, matching: [], excluded: [], externalOptions: [] },
+    );
+    assert.ok(result.reply.length <= 361, result.reply);
+    assert.match(result.reply, /(?:[.!?]|…)$/, `ends mid-word: "${result.reply.slice(-30)}"`);
+  }
+});

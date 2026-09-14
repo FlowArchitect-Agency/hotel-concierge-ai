@@ -101,7 +101,49 @@ test('a failed tool cannot become a successful recommendation and has a grounded
     toolNeeds: { hotelFacts: false, hotelServices: false, externalSearch: true, guestRequest: false, humanTakeover: false },
   }), { external_search: { status: 'unavailable', data: { results: [] } } });
   assert.ok(validateResponseAdherence({ reply: 'I found a wonderful venue for you.' }, handoff).failures.includes('tool_failure_presented_as_success'));
-  assert.match(contextualSafeFallback(handoff, 'en'), /unable to verify/i);
+  // The fallback must not narrate an outage to a guest; it asks one useful
+  // question instead.
+  const fallback = contextualSafeFallback(handoff, 'en');
+  assert.doesNotMatch(fallback, /unable|unavailable|verify|system|tool|search/i);
+  assert.match(fallback, /\?$/);
+});
+
+test('recommending the hotel collection while search is down is not a false success', () => {
+  const handoff = contract(semanticPlan({
+    interactionType: 'external_discovery', activeGoal: 'external_discovery', referenceTarget: 'none',
+    toolNeeds: { hotelFacts: false, hotelServices: false, externalSearch: true, guestRequest: false, humanTakeover: false },
+  }), { external_search: { status: 'unavailable', data: { results: [] } } });
+  assert.equal(validateResponseAdherence({ reply: 'Our concierge can arrange a private after-hours tour of the Louvre, which I recommend.' }, handoff).passed, true);
+});
+
+test('the fallback never quotes a previous message that is itself a fallback', () => {
+  // Reproduces the live demo: each failed turn quoted the one before it.
+  const handoff = buildResponseContract({
+    semanticPlan: semanticPlan({ interactionType: 'clarification', activeGoal: 'clarification', referenceTarget: 'previous_question' }),
+    history: [{ role: 'assistant', content: 'To clarify, I was referring to: Wonderful. To help me find the perfect evening experience for you, could you share a neighbourhood?' }],
+    facts: { text: 'Verified hotel facts only.' },
+  });
+  const reply = contextualSafeFallback(handoff, 'en');
+  assert.doesNotMatch(reply, /To clarify, I was referring to/);
+});
+
+test('a silent provider never produces a quoted-back reply', () => {
+  const handoff = contract();
+  assert.equal(handoff.response_mode, 'clarify_previous_statement');
+  const reply = contextualSafeFallback(handoff, 'en', { providerSilent: true });
+  assert.doesNotMatch(reply, /To clarify|morning meal/i);
+});
+
+test('a price follow-up on a previous option is not answered by reading that option back', () => {
+  // "and how much is that" resolves to previous_option in refine mode; the old
+  // fallback quoted the whole previous message for any mode with a reference.
+  const handoff = buildResponseContract({
+    semanticPlan: semanticPlan({ interactionType: 'hotel_catalogue', activeGoal: 'hotel_catalogue', referenceTarget: 'previous_option' }),
+    history: [{ role: 'assistant', content: 'Partner option: VIP Louvre After-Hours Private Tour (EUR 2800, 120 min).' }],
+    facts: { text: 'Verified hotel facts only.' },
+  });
+  assert.equal(handoff.response_mode, 'refine_recommendation');
+  assert.doesNotMatch(contextualSafeFallback(handoff, 'en'), /To clarify/);
 });
 
 test('the active goal and resolved reference are explicitly bound into the response prompt', () => {

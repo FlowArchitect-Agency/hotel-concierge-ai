@@ -38,10 +38,20 @@ const FALLBACK_PREFIX = {
   ar: 'للتوضيح، كنت أشير إلى:',
 };
 
+// The first sentence of a previous message, or nothing if that message is
+// itself a fallback -- quoting one of those is how the recursion started.
+function firstSentence(value) {
+  const text = compact(value, 420);
+  if (!text) return '';
+  if (Object.values(FALLBACK_PREFIX).some((prefix) => text.includes(prefix))) return '';
+  const sentence = (text.match(/^[^.!?]+[.!?]/) || [text])[0].trim();
+  return sentence.length > 220 ? '' : sentence;
+}
+
 const TOOL_FAILURE_FALLBACK = {
-  en: 'I am unable to verify a current result for that request just now. I can help refine it with a neighbourhood, timing, or preference.',
-  fr: 'Je ne peux pas vérifier un résultat actuel pour cette demande pour le moment. Je peux vous aider à la préciser par quartier, horaire ou préférence.',
-  es: 'No puedo verificar un resultado actual para esta solicitud en este momento. Puedo ayudarle a precisarla por zona, horario o preferencia.',
+  en: 'I would be glad to help with that. Which area of Paris, what time, or what kind of experience would you like, so our concierge can prepare the right options?',
+  fr: 'Avec plaisir. Quel quartier de Paris, quel horaire ou quel type d’expérience souhaitez-vous, afin que notre concierge prépare les bonnes options ?',
+  es: 'Con mucho gusto. ¿Qué zona de París, qué horario o qué tipo de experiencia prefiere, para que nuestro concierge prepare las opciones adecuadas?',
   it: 'Al momento non posso verificare un risultato aggiornato per questa richiesta. Posso aiutarla a precisarla per zona, orario o preferenza.',
   de: 'Ich kann für diese Anfrage gerade kein aktuelles Ergebnis verifizieren. Gern helfe ich Ihnen, sie nach Viertel, Zeitpunkt oder Vorlieben einzugrenzen.',
   ja: '現在、このご希望に合う最新の結果を確認できません。エリア、時間帯、またはご希望を絞り込むお手伝いはできます。',
@@ -209,7 +219,10 @@ export function validateResponseAdherence(model = {}, contract = {}) {
   if (reply && supersededGoalContinued(reply, contract.superseded_goals)) failures.push('superseded_goal_continued');
   if (reply && contract.response_mode === 'report_tool_failure') {
     const successfulNames = (contract.tool_result_summary || []).flatMap((entry) => entry.names || []);
-    if (!successfulNames.length && /\b(?:found|recommend|suggest)\b/i.test(reply)) failures.push('tool_failure_presented_as_success');
+    // The real hazard is claiming a search succeeded ("I found..."). Offering
+    // the hotel's own collection while search is down is the intended
+    // behaviour, so recommend/suggest no longer count as a false success.
+    if (!successfulNames.length && /\b(?:found|search results?)\b/i.test(reply)) failures.push('tool_failure_presented_as_success');
   }
   return { passed: failures.length === 0, failures: [...new Set(failures)] };
 }
@@ -266,20 +279,32 @@ function constrainedFallback(contract, language) {
 }
 
 /** A grounded final fallback used only after both response attempts fail. */
-export function contextualSafeFallback(contract = {}, language = 'en') {
+export function contextualSafeFallback(contract = {}, language = 'en', { providerSilent = false } = {}) {
   if (contract.response_mode === 'report_tool_failure') return TOOL_FAILURE_FALLBACK[language] || TOOL_FAILURE_FALLBACK.en;
   const constrained = constrainedFallback(contract, language);
   if (constrained) return constrained;
+  // Quoting the previous message back is a real answer to exactly one kind of
+  // turn: the guest asking what that message meant. It used to fire for ANY
+  // turn with a resolved reference, and it was mostly reached because the
+  // provider had returned nothing (a rate-limited minute), not because the
+  // model misunderstood. So "and how much is that" got "To clarify, I was
+  // referring to: <last message>"; that sentence then became the last message,
+  // and the next failed turn quoted it inside itself -- "To clarify, I was
+  // referring to: To clarify, I was referring to: Wonderful..." -- in a live
+  // demo. Now: never when the provider was silent, only for clarify/explain,
+  // never a message that is itself one of these fallbacks, and only its first
+  // sentence, so a "Partner option: ..." tail is not read back too.
+  const quotable = !providerSilent
+    && ['clarify_previous_statement', 'explain'].includes(contract.response_mode)
+    && contract.reference && contract.reference !== 'none'
+    ? firstSentence(contract.reference_summary)
+    : '';
+  const prefix = FALLBACK_PREFIX[language] || FALLBACK_PREFIX.en;
   if (contract.response_mode === 'explain' && contract.reference && contract.reference !== 'none') {
-    const reference = compact(contract.reference_summary, 420);
-    const prefix = FALLBACK_PREFIX[language] || FALLBACK_PREFIX.en;
-    return reference
-      ? `${prefix} ${reference} ${EXPLAIN_REFERENCE_FALLBACK[language] || EXPLAIN_REFERENCE_FALLBACK.en}`
-      : (EXPLAIN_REFERENCE_FALLBACK[language] || EXPLAIN_REFERENCE_FALLBACK.en);
+    const why = EXPLAIN_REFERENCE_FALLBACK[language] || EXPLAIN_REFERENCE_FALLBACK.en;
+    return quotable ? `${prefix} ${quotable} ${why}` : why;
   }
-  if (contract.reference && contract.reference !== 'none' && compact(contract.reference_summary)) {
-    return `${FALLBACK_PREFIX[language] || FALLBACK_PREFIX.en} ${compact(contract.reference_summary, 420)}`;
-  }
+  if (quotable) return `${prefix} ${quotable}`;
   // Last resort, reached only when both generation attempts failed the
   // contract. It must be a usable guest-facing answer, not a statement of
   // intent: "I will answer the current request using the verified information

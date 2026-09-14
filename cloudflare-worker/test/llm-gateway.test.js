@@ -222,6 +222,30 @@ test('gateway retries once after a single transient rate limit and recovers', as
   assert.equal(result.content, 'Breakfast starts at 7am.');
 });
 
+// Groq's limit on the primary model is 8,000 tokens per MINUTE. A fixed
+// ~0.5 s pause cannot outlast that window, so the one retry landed in it and
+// the turn came back empty -- which is what put the "To clarify, I was
+// referring to..." fallback in front of a live demo. The retry now waits for
+// the provider's own retry-after.
+test('gateway waits for the provider retry-after before its one retry', async () => {
+  let calls = 0;
+  const startedAt = Date.now();
+  const result = await completeText(env(), {
+    purpose: 'response_generator', messages: [{ role: 'user', content: 'Hello' }],
+  }, {
+    fetchImpl: async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response(null, { status: 429, headers: { 'retry-after': '0.6' } })
+        : Response.json({ choices: [{ message: { content: 'Breakfast starts at 7am.' } }] });
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.status, 'success');
+  assert.ok(Date.now() - startedAt >= 600, 'retry must not fire before retry-after');
+  assert.equal(JSON.stringify(result).includes('retry_after'), false);
+});
+
 test('gateway gives up after a sustained rate limit (retry also limited)', async () => {
   let calls = 0;
   const result = await completeText(env(), {

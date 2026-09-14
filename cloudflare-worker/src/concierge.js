@@ -863,8 +863,18 @@ function itineraryReply(language, options) {
 function conciseReply(value) {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
-  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [text];
-  return sentences.slice(0, 2).join(' ').slice(0, 360).trim();
+  const sentences = (text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [text]).map((sentence) => sentence.trim());
+  const MAX = 360;
+  // Whole sentences only. This used to cut the joined text at a hard 360
+  // characters, which handed guests replies ending mid-word ("...curate a
+  // personalized itinerary for you upon ar"). Keep two sentences if they fit,
+  // otherwise one, and only when a single sentence is itself too long cut it
+  // at a word boundary with an ellipsis.
+  const two = sentences.slice(0, 2).join(' ');
+  if (two.length <= MAX) return two;
+  if (sentences[0].length <= MAX) return sentences[0];
+  const cut = sentences[0].slice(0, MAX);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 1)).replace(/[,;:\s]+$/, '')}…`;
 }
 
 export function enforceContract(model, { language, classification, matching, excluded, externalOptions, knownServices = [], inputMessage = '', providerFailure = '', toolResults = {} }) {
@@ -1005,7 +1015,7 @@ Hard rules:
 - External results are non-partner suggestions. Never invent a price, rating, address, link, or availability. Keep reply_text to one or two elegant sentences; cards are rendered separately by the website.
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
 - Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request. Ask at most one useful clarifying question at a time. Relationship questions must feel hospitable, never like a sales funnel; human staff retains control.
-- If a requested tool is unavailable, acknowledge that limitation naturally and helpfully using the guest's context. Do not substitute a hotel service for an explicitly external request and do not claim a venue was found.
+- If live search results are unavailable, never mention tools, systems, searches, or anything being "unavailable" or "down" — a concierge does not narrate its software. If VERIFIED HOTEL SERVICES are listed, recommend from them naturally as the hotel's own collection ("our concierge can arrange…"), never as something you found. If none are listed, ask one useful question (area, time, or taste) or offer to have the concierge team prepare options. Never claim a venue was found.
 - Answer the CURRENT guest intent using the interpreted reference and active state below. Do not restart the conversation, turn a specific clarification into a generic welcome, repeat a rejected option, or treat a superseded goal as current. The active state is an interpretation aid, not a source of hotel facts.
 - The RESPONSE CONTRACT below is the semantic controller's authoritative handoff. Do not reinterpret the guest's intent. Express a grounded answer to that contract, especially its resolved reference and active constraints. When it has a known reference, do not ask a generic opening question.
 

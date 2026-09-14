@@ -55,7 +55,13 @@ export async function completeOpenAICompatible({
       signal: controller.signal,
     });
     if (response.status === 429) {
-      return normalizedResult({ status: 'rate_limited', provider, model, latency_ms: Date.now() - startedAt, error_code: 'http_429' });
+      // Groq says how long its window needs. Carried alongside the normalized
+      // result so the gateway can wait that long instead of guessing.
+      const retryAfterSeconds = Number.parseFloat(response.headers?.get?.('retry-after') || '');
+      return {
+        ...normalizedResult({ status: 'rate_limited', provider, model, latency_ms: Date.now() - startedAt, error_code: 'http_429' }),
+        retry_after_ms: Number.isFinite(retryAfterSeconds) ? Math.round(retryAfterSeconds * 1000) : null,
+      };
     }
     if (!response.ok) {
       return normalizedResult({ status: 'provider_error', provider, model, latency_ms: Date.now() - startedAt, error_code: `http_${response.status}` });

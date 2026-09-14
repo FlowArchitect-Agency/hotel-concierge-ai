@@ -2697,8 +2697,21 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
     const serviceToolMatches = (responseToolResults.hotel_services?.data?.services || []).map(serviceFromTool).filter((service) => service.isPartner);
     // An explicit external request must never be silently replaced with a
     // hotel partner merely because the search tool is unavailable.
-    const promptServices = withoutRejectedServices(classification.externalDiscovery
+    //
+    // But a general ask ("something special in Paris", "dinner near the
+    // hotel") with search down used to leave the model holding nothing at all,
+    // so every such turn told the guest "I am unable to access external
+    // recommendations" -- a concierge announcing its own outage. With search
+    // unavailable and no explicit insistence on outside venues, the model is
+    // given the hotel's own collection instead, and the prompt requires it to
+    // present those AS the hotel's options, never as search results.
+    const externalSearchDown = ['unavailable', 'error'].includes(responseToolResults.external_search?.status);
+    const insistsOnExternal = Boolean(classification.wantsExternal || guestInsistsOnExternal(input.message));
+    const offerCollectionInstead = classification.externalDiscovery && externalSearchDown && !insistsOnExternal;
+    const promptServices = withoutRejectedServices(classification.externalDiscovery && !offerCollectionInstead
       ? []
+      : offerCollectionInstead
+        ? serviceSet.all
       : classification.route === 'partner_catalog' || classification.contextualHotelCatalogue
         ? serviceSet.all.filter((service) => service.isPartner)
         : uniqueServices([...partnerMatches, ...serviceToolMatches]), semantic.plan);
@@ -2776,9 +2789,14 @@ async function resolveChat(body, env, ctx, reportStatus = () => undefined) {
       }
       if (!adherence.passed) {
         contextualFallbackUsed = true;
+        // Whether the model said nothing at all -- a rate-limited or failed
+        // provider -- rather than something off-contract. Those are different
+        // failures and need different fallbacks: quoting the previous message
+        // back only makes sense when the guest actually asked what it meant.
+        const providerSilent = provider.status !== 'success' || !String(model.reply || '').trim();
         model = {
           ...model,
-          reply: contextualSafeFallback(responseContract, input.language),
+          reply: contextualSafeFallback(responseContract, input.language, { providerSilent }),
           requests: [],
         };
         adherence = validateResponseAdherence(model, responseContract);
