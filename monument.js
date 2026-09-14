@@ -332,13 +332,13 @@ function start(){
     // depends on how wide the frustum is where the subject sits, so derive it
     // from the frustum rather than picking a constant -- a fixed offset gated at
     // one aspect ratio left the model centred on the words at every other width.
-    const fit = camera.aspect < 1 ? 1.55 : camera.aspect < 1.5 ? 1.2 : 1;
+    const fit = camera.aspect < 0.7 ? 1.85 : camera.aspect < 1 ? 1.55 : camera.aspect < 1.5 ? 1.2 : 1;
     const d = radius * cur.dist * fit;
     const sideways = narrow.matches ? 0 : 0.16;
 
     // On a narrow screen the text sits at the bottom instead, so lift the
     // cathedral clear of it by aiming under its centre.
-    AIM.set(0, narrow.matches ? -radius * 0.24 : 0, 0);
+    AIM.set(0, narrow.matches ? -radius * (camera.aspect < 0.7 ? 0.42 : 0.24) : 0, 0);
     camera.position.set(
       Math.sin(cur.az) * Math.cos(cur.el) * d,
       Math.sin(cur.el) * d + radius * 0.06,
