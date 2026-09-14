@@ -473,7 +473,7 @@ footer { padding: 2.7rem 0; color: rgba(255,255,255,.68); background: var(--navy
    body rule above keeps `overflow-x: hidden` -- that propagates to the viewport
    and leaves position:sticky working; `hidden` on `html` instead would make the
    root a scroll container and the pin would never stick. */
-.monument-stage { position: relative; height: 640vh; background: var(--v2-paper); }
+.monument-stage { position: relative; height: 640vh; padding: 0; background: var(--v2-paper); }
 .monument-pin { position: sticky; top: 0; height: 100vh; overflow: hidden;
   background: linear-gradient(#a9c6dd 0%, #cfdce2 46%, #ece6d9 78%, var(--v2-paper) 100%); }
 .monument-pin canvas { display: block; width: 100%; height: 100%; }
@@ -837,6 +837,13 @@ button .ico, a .ico { pointer-events: none; }
    the curve exposed the section beneath through its corners, and against a pale
    ground that read as a stray black shape floating over the page. Variety comes
    from how the contents arrive instead, which is where it belongs. */
+/* The last card in the deck has nothing coming to cover it, and a sticky
+   element can never enter its own margin: the hold margin just scrolled away
+   and left most of a screen of empty paper before Notre-Dame. Its hold is a
+   spacer it stays pinned over instead. */
+#chapter-prearrival { margin-bottom: 0; }
+.deck::after { content: ""; display: block; height: 55vh; }
+
 #platform, #chapter-prearrival {
   border-top-left-radius: clamp(16px, 2.2vw, 34px);
   border-top-right-radius: clamp(16px, 2.2vw, 34px);
