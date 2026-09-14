@@ -12,7 +12,7 @@
      UI: a grotesque with more character than Inter. Two families, nothing else.
      Font Awesome was removed; every icon is now hand-authored inline SVG. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..800&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=deck-r23">
+    <link rel="stylesheet" href="style.css?v=deck-r24">
     <link rel="stylesheet" href="eiffel-hero.css?v=4">
     <link rel="stylesheet" href="motion.css?v=5">
 </head>
@@ -862,11 +862,11 @@
     } }
     </script>
     <script type="module" src="monument.js?v=nd-read-r3"></script>
-    <script type="module" src="backdrop.js?v=17"></script>
+    <script type="module" src="backdrop.js?v=19"></script>
     <script type="module">
       // Mounted on the 800vh run, not on #hero: the module reads scroll progress
       // from the element it is given, and #hero is taller than the run itself.
-      import { mount } from './eiffel-hero.js?v=29';
+      import { mount } from './eiffel-hero.js?v=30';
       const scene = document.getElementById('hero-scene');
       if (scene) {
         // The copy is written by the build rather than by a timer, so the two
@@ -877,13 +877,23 @@
         // Thresholds are build percentages, not scroll fractions -- the module
         // reaches 100% at 70% of the pinned run and holds there, so keying
         // off scroll would finish the copy less than half way up the tower.
-        const steps = [
+        // A phone keeps the same rhythm but starts it at once: the eyebrow and
+        // first line are there on the first screen, so it never opens on an
+        // empty sky, and the buttons still land as the spire tops out.
+        const phone = matchMedia('(max-width: 760px)').matches;
+        const steps = (phone ? [
+          [0,    '.hero-eyebrow'],
+          [0,    'h1 span:first-of-type'],
+          [0.3,  'h1 span:nth-of-type(2)'],
+          [0.6,  '.hero-sub'],
+          [0.93, '.hero-ctas']
+        ] : [
           [0.01, '.hero-eyebrow'],          // footings
           [0.14, 'h1 span:first-of-type'],  // the four legs leave the ground
           [0.38, 'h1 span:nth-of-type(2)'], // the great arch closes
           [0.66, '.hero-sub'],              // second platform
           [0.93, '.hero-ctas']              // the summit: the copy completes with it
-        ].map(([at, sel]) => [at, scene.querySelector(sel)]).filter(([, el]) => el);
+        ]).map(([at, sel]) => [at, scene.querySelector(sel)]).filter(([, el]) => el);
 
         // `is-sync` hides every line until the build reveals it, so it must only
         // ever be on while something is actually driving that reveal. If the
@@ -894,9 +904,7 @@
 
         // With no JS, or with reduced motion (where the pin collapses and there
         // is no scroll to sync to), the resting state in CSS is fully visible.
-        // On a phone the hero copy is simply there: the run is short and the
-        // first screen should never be an empty sky waiting for a headline.
-        if (!matchMedia('(prefers-reduced-motion: reduce)').matches && !matchMedia('(max-width: 760px)').matches) {
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
           scene.classList.add('is-sync');
         }
 

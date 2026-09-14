@@ -1134,3 +1134,28 @@ html.has-backdrop #demo { overflow: visible; }
   /* 480vh of turning cathedral is most of a minute of thumb on a phone */
   .monument-stage { height: 320vh; }
 }
+
+/* ── Phones: the Arc run ──────────────────────────────────────────────────
+   The desktop pane leaves the monument visible in wide margins. A phone has
+   no margins to give, so the pane takes nearly the full width and the Arc is
+   seen in the open space between slides instead. */
+@media (max-width: 760px) {
+  html.has-backdrop #night-operations,
+  html.has-backdrop #demo,
+  html.has-backdrop #operating-layer,
+  html.has-backdrop #implementation,
+  html.has-backdrop #control { padding: 24vh 0; }
+
+  html.has-backdrop #night-operations > .container,
+  html.has-backdrop #demo > .container,
+  html.has-backdrop #operating-layer > .container,
+  html.has-backdrop #implementation > .container,
+  html.has-backdrop #control > .container {
+    width: calc(100% - 1.5rem);
+    padding: 1.7rem 1.15rem;
+    border-radius: 16px;
+    -webkit-backdrop-filter: blur(6px) saturate(115%);
+            backdrop-filter: blur(6px) saturate(115%);
+    box-shadow: 0 18px 44px rgba(40, 44, 52, .2), 0 1px 0 rgba(255, 255, 255, .5) inset;
+  }
+}
