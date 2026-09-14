@@ -751,7 +751,11 @@ button .ico, a .ico { pointer-events: none; }
   display: flex; height: 100%; align-items: center;
   padding-top: clamp(5.5rem, 11vh, 8rem); }
 .hero-scene-pin > .hero-v2-container > .hero-stage { width: 100%; }
-.hero-v2.has-scene .hero-product { margin-top: clamp(3rem, 6vw, 5.5rem); }
+/* The preview rises over the last of the dusk run instead of starting below
+   it: with a gap, the moment the pin released was a band of empty paper. */
+.hero-v2.has-scene { padding-bottom: clamp(2.5rem, 5vw, 4.5rem); }
+#hero > .hero-v2-container { position: relative; z-index: 3; }
+.hero-v2.has-scene .hero-product { margin-top: calc(-1 * clamp(7rem, 16vh, 11rem)); }
 
 @media (prefers-reduced-motion: reduce) {
   /* the pin collapses, so the container spaces itself like an ordinary hero */
