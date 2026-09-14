@@ -29,8 +29,8 @@
     // qwen models were exhausted by readiness testing; gpt-oss-120b scored 3/3
     // valid plans on the production controller prompt and has its own budget.
     "GROQ_MODEL": "qwen/qwen3.6-27b",
-    "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b",
-    "GROQ_MODEL_CHAIN": "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b",
+    "GROQ_FALLBACK_MODEL": "qwen/qwen3.8-27b",
+    "GROQ_MODEL_CHAIN": "openai/gpt-oss-120b,qwen/qwen3.8-27b",
 
     // Cross-provider failover to NVIDIA is WIRED BUT DELIBERATELY OFF.
     //
