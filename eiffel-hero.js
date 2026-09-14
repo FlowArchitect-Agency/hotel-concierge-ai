@@ -736,10 +736,11 @@ var iron = new THREE.MeshStandardMaterial({
                 [0.46,"First platform"],[0.6,"The body"],[0.72,"Second platform"],
                 [0.86,"The shaft"],[0.97,"Summit"],[1.01,"Complete"]];
 
-  /* The build runs almost the whole pinned section. It used to finish at 58%
-     of it and hold for the rest, which is why it could be scrolled past
-     already standing and read as a film someone else had made. */
-  var BUILD_TO = 0.88;
+  /* The build takes most of the pinned run, then the finished tower HOLDS for
+     about a screen of scroll while the camera draws back to show all of it.
+     Finishing at 88% left two wheel clicks between "90%" and the hero
+     scrolling away, so the complete tower was never actually seen. */
+  var BUILD_TO = 0.72;
 
   function apply(p) {
     var q = isFinite(p) ? Math.min(1, Math.max(0, p)) : 0;
