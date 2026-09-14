@@ -47,3 +47,11 @@ test('directory results never carry unverified phone numbers, hours or prices', 
     assert.equal(JSON.stringify(item).match(/\+33|\d{1,2}:\d{2}/), null);
   }
 });
+
+test('a named place inside a broad group returns only that place', () => {
+  const versailles = searchParisDirectory({ query: 'a day trip to Versailles' });
+  assert.ok(versailles.length > 0);
+  assert.ok(versailles.every((item) => /versailles/i.test(`${item.name} ${item.description}`)));
+  // "Louvre" is a museum on its own, but only a location next to "dinner".
+  assert.ok(searchParisDirectory({ query: 'dinner near the Louvre' }).every((item) => !/mus[eé]e/i.test(item.name)));
+});

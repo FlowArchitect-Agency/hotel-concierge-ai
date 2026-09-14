@@ -14,43 +14,45 @@ function has(text, phrase) {
 }
 
 // Guest wording -> directory subcategory. Order matters: more specific first.
+// Several subcategories group different things (a castle_palace may be
+// Versailles or Chambord), so a third element marks words that must also
+// appear in the entry itself.
+const NARROW = true;
+// PLACE words double as locations ("dinner near the Louvre"): they only pick
+// the subcategory when the guest named no other kind of venue.
+const PLACE = true;
 const SUBCATEGORY_WORDS = [
-  ['dinner_cruise', ['dinner cruise', 'diner croisiere', 'dinner on the seine', 'dinner boat']],
-  ['private_boat_rental', ['private boat', 'boat rental', 'rent a boat', 'bateau prive']],
-  ['sightseeing_cruise', ['seine cruise', 'river cruise', 'boat tour', 'bateau mouche', 'sightseeing cruise']],
+  ['sightseeing_dinner_cruise', ['dinner cruise', 'diner croisiere', 'dinner on the seine', 'dinner boat'], NARROW],
+  ['private_boat_rental', ['private boat', 'boat rental', 'rent a boat', 'bateau prive', 'private cruise']],
+  ['sightseeing_dinner_cruise', ['seine cruise', 'river cruise', 'boat tour', 'bateau mouche', 'sightseeing cruise', 'cruise']],
   ['michelin_fine_dining', ['michelin', 'fine dining', 'gastronomic', 'gastronomique', 'starred', 'etoile']],
   ['rooftop_bar', ['rooftop', 'roof top', 'terrace bar']],
   ['jazz_club', ['jazz']],
   ['cocktail_bar', ['cocktail', 'speakeasy', 'mixology']],
   ['wine_bar', ['wine bar', 'bar a vin', 'bar a vins', 'natural wine']],
-  ['wine_tasting', ['wine tasting', 'degustation', 'sommelier']],
-  ['cooking_class', ['cooking class', 'cooking lesson', 'cours de cuisine', 'pastry class', 'baking class']],
-  ['perfume_workshop', ['perfume', 'parfum', 'fragrance']],
-  ['art_class', ['art class', 'painting class', 'art workshop']],
-  ['food_tour', ['food tour', 'culinary tour', 'tasting tour']],
-  ['bike_or_vespa_tour', ['bike tour', 'vespa', 'cycling tour', 'bicycle']],
-  ['photo_tour', ['photo shoot', 'photoshoot', 'photographer', 'photo tour']],
-  ['museum_private_guide', ['museum guide', 'private guide for the louvre', 'museum tour']],
-  ['private_walking_tour', ['walking tour', 'private tour', 'private guide', 'city tour']],
-  ['versailles', ['versailles']],
-  ['giverny', ['giverny', 'monet']],
-  ['champagne_region', ['champagne', 'reims', 'epernay']],
-  ['loire_castles', ['loire', 'chambord', 'chenonceau']],
-  ['mont_saint_michel', ['mont saint michel']],
-  ['normandy', ['normandy', 'normandie', 'd day']],
-  ['cabaret', ['cabaret', 'moulin rouge', 'lido', 'crazy horse']],
-  ['nightclub', ['nightclub', 'night club', 'clubbing', 'dance club']],
-  ['helicopter_tour', ['helicopter']],
-  ['airport_transfer', ['airport', 'cdg', 'orly', 'transfer']],
-  ['private_chauffeur', ['chauffeur', 'private driver', 'car with driver']],
+  ['wine_craft_workshop', ['perfume', 'parfum', 'fragrance', 'champagne tasting'], NARROW],
+  ['wine_craft_workshop', ['wine tasting', 'degustation', 'sommelier', 'workshop', 'atelier', 'art class', 'painting class']],
+  ['cooking_baking_class', ['cooking class', 'cooking lesson', 'cours de cuisine', 'pastry class', 'baking class', 'macaron class']],
+  ['specialty_activity_tour', ['food tour', 'bike', 'vespa', 'cycling', 'bicycle', 'photo', 'photographer', '2cv', 'segway'], NARROW],
+  ['private_walking_tour', ['walking tour', 'private tour', 'private guide', 'city tour', 'guided tour', 'museum guide']],
+  ['castle_palace', ['versailles', 'chambord', 'chenonceau', 'fontainebleau', 'chantilly', 'vaux le vicomte'], NARROW],
+  ['regional_excursion', ['giverny', 'monet', 'champagne', 'reims', 'epernay', 'normandy', 'normandie', 'd day', 'mont saint michel', 'loire', 'disneyland'], NARROW, PLACE],
+  ['castle_palace', ['castle', 'chateau', 'palace tour']],
+  ['regional_excursion', ['day trip', 'excursion', 'outside paris']],
+  ['cabaret_performance', ['moulin rouge', 'lido', 'crazy horse', 'paradis latin'], NARROW],
+  ['cabaret_performance', ['opera', 'ballet'], NARROW, PLACE],
+  ['cabaret_performance', ['cabaret', 'show tonight', 'burlesque', 'theatre', 'theater', 'concert']],
+  ['nightclub_exclusive_bar', ['nightclub', 'night club', 'clubbing', 'dance club', 'private club', 'members club']],
+  ['luxury_chauffeur_transport', ['helicopter', 'airport', 'cdg', 'orly', 'transfer'], NARROW],
+  ['luxury_chauffeur_transport', ['chauffeur', 'private driver', 'car with driver', 'limousine']],
   ['hammam', ['hammam', 'turkish bath']],
   ['massage', ['massage']],
   ['luxury_hotel_spa', ['hotel spa', 'palace spa']],
   ['day_spa', ['day spa', 'spa']],
-  ['department_store', ['department store', 'galeries lafayette', 'printemps', 'bon marche']],
+  ['department_store_concept', ['department store', 'galeries lafayette', 'printemps', 'bon marche', 'concept store'], NARROW],
+  ['department_store_concept', ['department store', 'concept store', 'vintage', 'flea market']],
+  ['luxury_boutique', ['luxury boutique', 'designer', 'haute couture', 'luxury shopping', 'chanel', 'dior', 'hermes', 'louis vuitton', 'cartier'], NARROW],
   ['luxury_boutique', ['luxury boutique', 'designer', 'haute couture', 'luxury shopping']],
-  ['market', ['flea market', 'market', 'marche aux puces']],
-  ['vintage_concept_store', ['vintage', 'concept store']],
   ['japanese', ['japanese', 'japonais', 'sushi', 'ramen']],
   ['italian', ['italian', 'italien', 'italienne', 'pizza', 'pasta', 'trattoria']],
   ['chinese', ['chinese', 'chinois', 'dim sum', 'cantonese']],
@@ -67,13 +69,14 @@ const SUBCATEGORY_WORDS = [
   ['patisserie', ['patisserie', 'pastry', 'pastries', 'macaron']],
   ['bakery', ['bakery', 'boulangerie', 'croissant', 'bread']],
   ['historic_cafe', ['cafe', 'coffee', 'historic cafe']],
-  // Place-like words last, so "Italian near the Opera" stays Italian.
-  ['opera_ballet', ['opera', 'ballet']],
-  ['kids_activity', ['kids', 'children', 'child friendly', 'family activity', 'enfants']],
-  ['museum', ['museum', 'musee', 'gallery']],
-  ['monument', ['monument', 'landmark']],
+  // Place-like words last, so "Italian near the Louvre" stays Italian.
+  ['kids_family_activity', ['kids', 'children', 'child friendly', 'family activity', 'enfants', 'family friendly']],
+  ['museum', ['louvre', 'orsay', 'orangerie', 'rodin', 'pompidou', 'picasso'], NARROW, PLACE],
+  ['museum', ['museum', 'musee', 'gallery', 'exhibition']],
+  ['monument', ['eiffel tower', 'arc de triomphe', 'notre dame', 'sainte chapelle', 'pantheon', 'sacre coeur', 'conciergerie'], NARROW, PLACE],
+  ['monument', ['monument', 'landmark', 'sightseeing']],
   ['garden_park', ['garden', 'park', 'jardin']],
-].map(([subcategory, words]) => [subcategory, words.map(fold)]);
+].map(([subcategory, words, narrow = false, place = false]) => ({ subcategory, words: words.map(fold), narrow, place }));
 
 // Broad wording -> directory category, used only when no subcategory matched.
 const CATEGORY_WORDS = [
@@ -90,6 +93,7 @@ const CATEGORY_WORDS = [
 const ENTRIES = DIRECTORY.map((entry) => ({
   entry,
   place: fold(`${entry.neighborhood} ${entry.address}`),
+  about: fold(`${entry.name} ${entry.description} ${(entry.tags || []).join(' ')}`),
   neighborhoodParts: String(entry.neighborhood).split('/').map(fold).filter((part) => part.length >= 4),
 }));
 
@@ -124,8 +128,13 @@ function locationMatcher(text) {
 export function searchParisDirectory({ query = '', searchQuery = '', location = '', limit = 5 } = {}) {
   const text = fold(`${query} ${searchQuery} ${location}`);
   if (!text) return [];
-  const subcategory = SUBCATEGORY_WORDS.find(([, words]) => words.some((word) => has(text, word)))?.[0];
-  const category = subcategory ? '' : CATEGORY_WORDS.find(([, words]) => words.some((word) => has(text, word)))?.[0];
+  const broadCategory = CATEGORY_WORDS.find(([, words]) => words.some((word) => has(text, word)))?.[0];
+  const matches = (item) => item.words.some((word) => has(text, word));
+  const rule = SUBCATEGORY_WORDS.find((item) => !item.place && matches(item))
+    || (broadCategory ? undefined : SUBCATEGORY_WORDS.find((item) => item.place && matches(item)));
+  const subcategory = rule?.subcategory;
+  const mustMention = rule?.narrow ? rule.words.filter((word) => has(text, word)) : [];
+  const category = subcategory ? '' : broadCategory;
   if (!subcategory && !category) return [];
   // "Peruvian restaurant" names a cuisine the directory does not carry; a
   // generic restaurant list would ignore what the guest asked for.
@@ -134,6 +143,7 @@ export function searchParisDirectory({ query = '', searchQuery = '', location = 
   const inLocation = locationMatcher(text);
   return ENTRIES
     .filter((item) => (subcategory ? item.entry.subcategory === subcategory : item.entry.category === category))
+    .filter((item) => !mustMention.length || mustMention.some((word) => has(item.about, word)))
     .filter((item) => !inLocation || inLocation(item))
     // Exact neighbourhood hits first, then the rest of the arrondissement.
     .sort((a, b) => Number(Boolean(requestedPlace(text) && has(b.place, requestedPlace(text))))

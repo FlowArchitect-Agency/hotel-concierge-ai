@@ -32,9 +32,17 @@ function parseCsv(text) {
 }
 
 async function websiteAnswers(url) {
+  // A guide page (not the venue's own site) proves nothing unless it loads:
+  // the guide's bot wall answers 403 for real and invented slugs alike.
+  const guidePage = /guide\.michelin\.com/i.test(url);
   for (const method of ['HEAD', 'GET']) {
     try {
       const response = await fetch(url, { method, redirect: 'follow', signal: AbortSignal.timeout(12_000), headers: { 'User-Agent': 'Mozilla/5.0 ConciergeFlow directory check' } });
+      if (guidePage) {
+        if (response.status < 400) return true;
+        if (method === 'GET') return false;
+        continue;
+      }
       // Bot protection (403/405/429) still proves the site exists.
       if (response.status < 400 || [401, 403, 405, 429].includes(response.status)) return true;
       if (method === 'GET') return false;
