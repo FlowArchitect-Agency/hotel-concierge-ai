@@ -55,3 +55,12 @@ test('a named place inside a broad group returns only that place', () => {
   // "Louvre" is a museum on its own, but only a location next to "dinner".
   assert.ok(searchParisDirectory({ query: 'dinner near the Louvre' }).every((item) => !/mus[eé]e/i.test(item.name)));
 });
+
+test('"world class museums" finds museums with a museum photo, not cooking classes', () => {
+  // Live demo: "yes world class musuems works good" returned five cooking
+  // schools under a restaurant photo -- "class" matched, "museums" did not.
+  const results = searchParisDirectory({ query: 'yes world class musuems works good', searchQuery: 'world-class museums in Paris' });
+  assert.ok(results.length > 0);
+  assert.ok(results.every((item) => /mus[eé]e|museum|centre pompidou|louvre|gallery/i.test(`${item.name} ${item.description}`)), results.map((item) => item.name).join(', '));
+  assert.ok(results.every((item) => item.imageUrl && !item.imageUrl.includes('1414235077428')), 'museum cards must not carry the restaurant photo');
+});

@@ -267,7 +267,7 @@ function whatsappReplyText(result) {
   // The API reply uses standard Markdown; WhatsApp's text formatter uses one
   // asterisk for bold. Catalogue replies are text-only, never interactive.
   return lines.filter(Boolean).join('\n\n').replace(/\*\*([^*]+)\*\*/g, '*$1*')
-    || 'Thank you for your message. Our concierge will be pleased to assist you.';
+    || 'Thank you for your message. I will be pleased to assist you.';
 }
 
 async function sendWhatsAppText(env, recipient, text) {
@@ -1079,7 +1079,7 @@ const CURATED_DINING_IMAGES = {
 };
 
 const CURATED_DINING_INTRO = {
-  en: 'I have selected a few excellent Paris addresses from our curated dining guide. They are independent recommendations, and our concierge will verify availability once you choose.',
+  en: 'I have selected a few excellent Paris addresses from our curated dining guide. They are independent recommendations, and I will have availability checked once you choose.',
   fr: 'J\u2019ai s\u00e9lectionn\u00e9 quelques excellentes adresses parisiennes dans notre guide de tables. Ce sont des recommandations ind\u00e9pendantes ; notre conciergerie v\u00e9rifiera la disponibilit\u00e9 d\u00e8s votre choix.',
   es: 'He seleccionado algunas excelentes direcciones parisinas de nuestra guia gastronomica. Son recomendaciones independientes y nuestro concierge verificara la disponibilidad cuando elija una.',
   de: 'Ich habe einige ausgezeichnete Pariser Adressen aus unserem kuratierten Dining Guide ausgewahlt. Es sind unabhangige Empfehlungen; unser Concierge pruft die Verfugbarkeit, sobald Sie eine auswahlen.',
@@ -1170,7 +1170,7 @@ function cleanServiceEntry(service, index) {
 function buildCleanDirectoryMessage(collection, language = 'en') {
   const header = '✨ Hôtel Lumière Paris — Signature Collection\n\nHere is our complete digital directory and experiences brochure. Below is our full list of curated privileges:\n\n';
   const entries = collection.map((service, index) => cleanServiceEntry(service, index)).join('\n\n');
-  const footer = '\n\nPlease let me know if you would like to reserve any service or experience, and our concierge team will arrange everything for you.';
+  const footer = '\n\nPlease let me know if you would like to reserve any service or experience, and I will arrange everything for you.';
   return header + entries + footer;
 }
 
@@ -1551,7 +1551,7 @@ function partnerBookingOutcome(input, classification, services) {
   if (!service) return null;
   const partySize = input.message.match(/\b(\d{1,2})\s*(?:people|guests?|persons?)\b/i)?.[1];
   return {
-    reply: `I have recorded your request for ${service.name}${partySize ? ` for ${partySize} guests` : ''}. Our concierge team will verify availability and confirm the details with you shortly.`,
+    reply: `I have recorded your request for ${service.name}${partySize ? ` for ${partySize} guests` : ''}. The hotel team will check availability, and I will confirm the details with you shortly.`,
     intent: 'service_request',
     serviceType: category,
     requiresHuman: true,

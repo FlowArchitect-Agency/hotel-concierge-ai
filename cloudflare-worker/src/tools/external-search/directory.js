@@ -5,8 +5,12 @@
 // a Paris-wide substitute.
 import DIRECTORY from '../../data/paris-directory.js';
 
+// Lower-cased, accent-free, and plural-insensitive, so "museums" finds a
+// museum and "cocktails" a cocktail bar.
 function fold(value) {
-  return String(value ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return String(value ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim()
+    .split(' ').map((word) => (word.length > 4 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word)).join(' ');
 }
 
 function has(text, phrase) {
@@ -72,7 +76,7 @@ const SUBCATEGORY_WORDS = [
   // Place-like words last, so "Italian near the Louvre" stays Italian.
   ['kids_family_activity', ['kids', 'children', 'child friendly', 'family activity', 'enfants', 'family friendly']],
   ['museum', ['louvre', 'orsay', 'orangerie', 'rodin', 'pompidou', 'picasso'], NARROW, PLACE],
-  ['museum', ['museum', 'musee', 'gallery', 'exhibition']],
+  ['museum', ['museum', 'musee', 'musuem', 'museam', 'gallery', 'exhibition', 'art', 'painting', 'sculpture']],
   ['monument', ['eiffel tower', 'arc de triomphe', 'notre dame', 'sainte chapelle', 'pantheon', 'sacre coeur', 'conciergerie'], NARROW, PLACE],
   ['monument', ['monument', 'landmark', 'sightseeing']],
   ['garden_park', ['garden', 'park', 'jardin']],
@@ -125,8 +129,46 @@ function locationMatcher(text) {
     || (place && (has(item.place, place) || placeArrondissements.has(item.entry.arrondissement)));
 }
 
+// Checked by eye: each photo shows the kind of place it stands for. Restaurants
+// return null and keep the cuisine-aware fallback the cards already use.
+const PHOTO = (id) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1200&q=84`;
+const SUBCATEGORY_PHOTOS = {
+  museum: PHOTO('1554907984-15263bfd63bd'),             // a picture gallery
+  monument: PHOTO('1524396309943-e03f5249f002'),        // Paris roofs to the Eiffel Tower
+  garden_park: PHOTO('1585320806297-9794b3e4eeae'),
+  kids_family_activity: PHOTO('1585320806297-9794b3e4eeae'),
+  jazz_club: PHOTO('1415201364774-f6f0bb35f28f'),
+  cabaret_performance: PHOTO('1415201364774-f6f0bb35f28f'),
+  nightclub_exclusive_bar: PHOTO('1566737236500-c8ac43014a67'),
+  cocktail_bar: PHOTO('1514362545857-3bc16c4c7d1b'),
+  rooftop_bar: PHOTO('1514362545857-3bc16c4c7d1b'),
+  wine_bar: PHOTO('1470337458703-46ad1756a187'),
+  historic_cafe: PHOTO('1554118811-1e0d58224f24'),
+  bakery: PHOTO('1509440159596-0249088772ff'),
+  patisserie: PHOTO('1509440159596-0249088772ff'),
+  cooking_baking_class: PHOTO('1556910103-1c02745aae4d'),
+  wine_craft_workshop: PHOTO('1556910103-1c02745aae4d'),
+  luxury_boutique: PHOTO('1441986300917-64674bd600d8'),
+  department_store_concept: PHOTO('1441986300917-64674bd600d8'),
+  sightseeing_dinner_cruise: PHOTO('1499856871958-5b9627545d1a'), // Pont Alexandre III over the Seine
+  private_boat_rental: PHOTO('1499856871958-5b9627545d1a'),
+  luxury_chauffeur_transport: PHOTO('1499856871958-5b9627545d1a'),
+};
+const CATEGORY_PHOTOS = {
+  spa_wellness: PHOTO('1544161515-4ab6ce6db874'),
+  tour_guide: PHOTO('1502602898657-3e91760cbb34'),
+  day_trip: PHOTO('1502602898657-3e91760cbb34'),
+  museum_attraction: PHOTO('1554907984-15263bfd63bd'),
+};
+function imageFor(entry) {
+  // The pyramid is only honest on the Louvre's own card.
+  if (/louvre/i.test(entry.name) && entry.category === 'museum_attraction') return PHOTO('1566127444979-b3d2b654e3d7');
+  return SUBCATEGORY_PHOTOS[entry.subcategory] || CATEGORY_PHOTOS[entry.category] || null;
+}
+
 export function searchParisDirectory({ query = '', searchQuery = '', location = '', limit = 5 } = {}) {
-  const text = fold(`${query} ${searchQuery} ${location}`);
+  // "World-class" is praise, not a class to book.
+  const text = fold(`${query} ${searchQuery} ${location}`).replace(/\b(?:world|first) class\b/g, ' ');
   if (!text) return [];
   const broadCategory = CATEGORY_WORDS.find(([, words]) => words.some((word) => has(text, word)))?.[0];
   const matches = (item) => item.words.some((word) => has(text, word));
@@ -153,7 +195,7 @@ export function searchParisDirectory({ query = '', searchQuery = '', location = 
       name: entry.name,
       description: entry.description,
       websiteUrl: entry.website,
-      imageUrl: null,
+      imageUrl: imageFor(entry),
       address: entry.address,
       snippet: [entry.neighborhood, entry.price_level, entry.description].filter(Boolean).join(' · '),
       rating: null,

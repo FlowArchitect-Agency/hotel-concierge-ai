@@ -49,9 +49,9 @@ function firstSentence(value) {
 }
 
 const TOOL_FAILURE_FALLBACK = {
-  en: 'I would be glad to help with that. Which area of Paris, what time, or what kind of experience would you like, so our concierge can prepare the right options?',
-  fr: 'Avec plaisir. Quel quartier de Paris, quel horaire ou quel type d’expérience souhaitez-vous, afin que notre concierge prépare les bonnes options ?',
-  es: 'Con mucho gusto. ¿Qué zona de París, qué horario o qué tipo de experiencia prefiere, para que nuestro concierge prepare las opciones adecuadas?',
+  en: 'I would be glad to help with that. Which area of Paris, what time, or what kind of experience would you like, so I can suggest the right options?',
+  fr: 'Avec plaisir. Quel quartier de Paris, quel horaire ou quel type d’expérience souhaitez-vous, afin que je vous propose les bonnes options ?',
+  es: 'Con mucho gusto. ¿Qué zona de París, qué horario o qué tipo de experiencia prefiere, para que le proponga las opciones adecuadas?',
   it: 'Al momento non posso verificare un risultato aggiornato per questa richiesta. Posso aiutarla a precisarla per zona, orario o preferenza.',
   de: 'Ich kann für diese Anfrage gerade kein aktuelles Ergebnis verifizieren. Gern helfe ich Ihnen, sie nach Viertel, Zeitpunkt oder Vorlieben einzugrenzen.',
   ja: '現在、このご希望に合う最新の結果を確認できません。エリア、時間帯、またはご希望を絞り込むお手伝いはできます。',

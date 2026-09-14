@@ -824,7 +824,7 @@ const REFINEMENT = {
 };
 
 const EXTERNAL_INTRO = {
-  en: 'I found a small selection of current, independently verified addresses. Each is a non-partner recommendation; our concierge team can verify availability once you choose.',
+  en: 'Here are a few addresses I would recommend. They are independent of the hotel, so once you choose one I will have availability checked for you.',
   fr: 'J\u2019ai s\u00e9lectionn\u00e9 quelques adresses actuelles et v\u00e9rifi\u00e9es. Ce sont des recommandations non partenaires ; notre conciergerie v\u00e9rifiera la disponibilit\u00e9 d\u00e8s votre choix.',
   es: 'He seleccionado algunas direcciones actuales y verificadas. Son recomendaciones independientes; nuestro equipo confirmar\u00e1 la disponibilidad cuando elija una.',
   de: 'Ich habe einige aktuelle, unabh\u00e4ngig verifizierte Adressen ausgew\u00e4hlt. Es sind externe Empfehlungen; unser Concierge-Team pr\u00fcft die Verf\u00fcgbarkeit nach Ihrer Wahl.',
@@ -835,7 +835,7 @@ const EXTERNAL_INTRO = {
 };
 
 const EXTERNAL_INTRO_SINGULAR = {
-  en: 'I found one current, independently verified match. It is a non-partner recommendation; our concierge team can verify availability when you are ready.',
+  en: 'Here is one address I would recommend. It is independent of the hotel, so I will have availability checked as soon as you would like.',
   fr: 'J\u2019ai trouv\u00e9 une adresse actuelle et v\u00e9rifi\u00e9e. Il s\u2019agit d\u2019une recommandation non partenaire ; notre conciergerie v\u00e9rifiera la disponibilit\u00e9 d\u00e8s que vous le souhaiterez.',
   es: 'He encontrado una direcci\u00f3n actual y verificada. Es una recomendaci\u00f3n independiente; nuestro equipo comprobar\u00e1 la disponibilidad cuando lo desee.',
   de: 'Ich habe eine aktuelle, unabh\u00e4ngig verifizierte Adresse gefunden. Es ist eine externe Empfehlung; unser Concierge-Team pr\u00fcft die Verf\u00fcgbarkeit, sobald Sie m\u00f6chten.',
@@ -1011,11 +1011,13 @@ Hard rules:
 - Use only the VERIFIED FACTS, VERIFIED HOTEL SERVICES, and VERIFIED TOOL RESULTS below. Do not infer a missing venue, price, policy, opening hour, availability, booking, notification, or URL.
 - A required cuisine is absolute. Never recommend a venue unless its own listing explicitly matches that cuisine, even if it appeared earlier in the conversation.
 - Partner services are preferred for leisure & hospitality inquiries. State a catalog price only when it is supplied below.
+- VOICE: you ARE the concierge. Speak in the first person ("I would suggest", "I can arrange", "I'll prepare that for you"). Never refer to "our concierge", "the concierge team" or "our team" as if they were someone else, and never promise that someone else will "curate" or "prepare options". Mention the hotel team at most once, and only where a person really does act next: confirming a booking or availability after you have prepared a request ("the hotel team will confirm the time").
+- Do not repeat the same sentiment turn after turn. If the previous reply already offered to tailor or curate something, move the conversation forward with a concrete suggestion instead of offering again.
 - Keep normal replies short and human. Do not dump the hotel database into a chat bubble; structured cards carry service detail where the client supports them.
 - External results are non-partner suggestions. Never invent a price, rating, address, link, or availability. Keep reply_text to one or two elegant sentences; cards are rendered separately by the website.
 - For a new or unusual guest request, respond to the actual need and use the verified external cards. Do not defer to staff when cards are available.
 - Never state that a booking or availability is confirmed. The hotel team verifies and confirms every request. Ask at most one useful clarifying question at a time. Relationship questions must feel hospitable, never like a sales funnel; human staff retains control.
-- If live search results are unavailable, never mention tools, systems, searches, or anything being "unavailable" or "down" — a concierge does not narrate its software. If VERIFIED HOTEL SERVICES are listed, recommend from them naturally as the hotel's own collection ("our concierge can arrange…"), never as something you found. If none are listed, ask one useful question (area, time, or taste) or offer to have the concierge team prepare options. Never claim a venue was found.
+- If live search results are unavailable, never mention tools, systems, searches, or anything being "unavailable" or "down" — a concierge does not narrate its software. If VERIFIED HOTEL SERVICES are listed, recommend from them naturally as the hotel's own collection ("I can arrange…"), never as something you found. If none are listed, ask one useful question (area, time, or taste). Never claim a venue was found.
 - Answer the CURRENT guest intent using the interpreted reference and active state below. Do not restart the conversation, turn a specific clarification into a generic welcome, repeat a rejected option, or treat a superseded goal as current. The active state is an interpretation aid, not a source of hotel facts.
 - The RESPONSE CONTRACT below is the semantic controller's authoritative handoff. Do not reinterpret the guest's intent. Express a grounded answer to that contract, especially its resolved reference and active constraints. When it has a known reference, do not ask a generic opening question.
 
